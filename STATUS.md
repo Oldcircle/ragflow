@@ -6,9 +6,17 @@
 
 ## 最近更新：2026-04-21（深夜）
 
-**当前阶段**：**Phase 1 M1.2 已完成** — 4 个核心 Tool 全部实现 + 单测 + README
+**当前阶段**：**Phase 1 M1.3 已完成** — HTTP API + DB 三表 + SSE 流式 + 端到端持久化验证
 **阻塞项**：无
-**下一步入口**：M1.3（HTTP API + DB 持久化 + SSE 流式）
+**下一步入口**：M1.4（前端 Agent 工作台页面）
+
+### M1.3 验收结果
+- ✅ 3 张 DB 表（agent_v2_session / message / tool_call）自动建表
+- ✅ Session Service 3 个 pytest 通过（真 MySQL 读写）
+- ✅ Blueprint `/v1/agent_v2/*` 自动注册（session CRUD + tool list + SSE conversation）
+- ✅ End-to-end persistence：session 1 行 + messages 2 行 + tool_call 1 行
+- ✅ Agent 自主调工具 + DeepSeek 答复 + 三表落库一气呵成
+- 实测：单轮 46s / 1 次 rag_retrieve / $0.12 / 答复 791 字
 
 ### M1.2 验收结果
 - ✅ 4 个工具全部实现：`rag_retrieve` / `rag_list_docs` / `rag_read_doc` / `rag_graph_query`

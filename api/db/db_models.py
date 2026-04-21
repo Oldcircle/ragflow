@@ -1334,6 +1334,67 @@ class SystemSettings(DataBaseModel):
     class Meta:
         db_table = "system_settings"
 
+
+# ────────────────────────────────────────────────────────────────────────────
+# Agent v2（Claude Agent SDK 驱动的 Agent 运行时）— 表前缀统一 agent_v2_
+# 详见 DESIGN.md 第四节
+# ────────────────────────────────────────────────────────────────────────────
+class AgentV2Session(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    user_id = CharField(max_length=255, null=True, index=True, help_text="creator user_id")
+    name = CharField(max_length=255, null=True, index=True, help_text="session display name")
+    kb_ids = JSONField(null=False, default=[], help_text="KBs this session can query")
+    tool_names = JSONField(null=True, default=None, help_text="enabled tool whitelist; null = all registered")
+    system_prompt = TextField(null=True, default="", help_text="system prompt")
+    model_config_json = JSONField(
+        null=False,
+        default={"model": "claude-sonnet-4-5", "base_url": None, "auth_token_id": None},
+        help_text="ModelConfig serialized; auth_token_id references tenant's LLM config",
+    )
+    max_turns = IntegerField(default=20)
+    max_budget_usd = FloatField(null=True, default=1.0)
+    status = CharField(
+        max_length=16, null=False, default="active", index=True,
+        help_text="active | archived | deleted",
+    )
+
+    class Meta:
+        db_table = "agent_v2_session"
+
+
+class AgentV2Message(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    session_id = CharField(max_length=32, null=False, index=True)
+    role = CharField(max_length=16, null=False, index=True, help_text="user | assistant | system")
+    content = LongTextField(null=True, default="", help_text="main text body")
+    thinking = LongTextField(null=True, default="", help_text="extended thinking text (optional)")
+    tool_call_ids = JSONField(null=False, default=[], help_text="tool_call ids triggered by this msg")
+    usage = JSONField(null=True, default={}, help_text="token usage for this turn")
+
+    class Meta:
+        db_table = "agent_v2_message"
+
+
+class AgentV2ToolCall(DataBaseModel):
+    id = CharField(max_length=64, primary_key=True, help_text="SDK-provided tool_use_id")
+    session_id = CharField(max_length=32, null=False, index=True)
+    message_id = CharField(max_length=32, null=True, index=True, help_text="parent assistant message")
+    tool_name = CharField(max_length=64, null=False, index=True)
+    args = JSONField(null=False, default={}, help_text="tool input arguments")
+    result = LongTextField(null=True, default="", help_text="tool output (may be JSON text)")
+    error = TextField(null=True, default="", help_text="error message if failed")
+    status = CharField(
+        max_length=16, null=False, default="pending", index=True,
+        help_text="pending | success | error | timeout",
+    )
+    duration_ms = IntegerField(null=True, default=0)
+    start_time = BigIntegerField(null=True, index=True)
+
+    class Meta:
+        db_table = "agent_v2_tool_call"
+
+
 def alter_db_add_column(migrator, table_name, column_name, column_type):
     try:
         migrate(migrator.add_column(table_name, column_name, column_type))
