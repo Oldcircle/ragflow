@@ -1,0 +1,243 @@
+# FORK.md — 与上游 infiniflow/ragflow 的差异和同步策略
+
+> 本文件追踪：我们的 fork 相对上游做了哪些改动、哪些文件冲突风险高、如何定期 merge upstream。
+
+---
+
+## 基本信息
+
+| 项 | 值 |
+|---|---|
+| 上游仓库 | <https://github.com/infiniflow/ragflow> |
+| 我方 fork | <https://github.com/Oldcircle/ragflow> |
+| 本地路径 | `~/Opensource/forks/ragflow` |
+| 起始基线 | `upstream/main` @ v0.24.0（2026-04-21 fork） |
+| 协议 | Apache 2.0 |
+
+## Git Remote 配置
+
+```
+origin   → https://github.com/Oldcircle/ragflow.git  (fetch + push)
+upstream → https://github.com/infiniflow/ragflow.git (fetch + push)
+```
+
+## 同步策略
+
+### 上游追踪节奏
+
+| 场景 | 频率 |
+|---|---|
+| 主动关注 upstream release | 每 2 周看一次 |
+| 定期 merge | 每月一次（大版本则临时 merge） |
+| 紧急 CVE / 安全补丁 | 随时 |
+
+### Merge 流程
+
+```bash
+cd ~/Opensource/forks/ragflow
+
+# 1. 拉上游
+git fetch upstream
+
+# 2. 切一个临时分支做 merge（避免污染 main 和 feat/*）
+git checkout -b sync/upstream-$(date +%Y%m%d) main
+
+# 3. 合并
+git merge upstream/main
+
+# 4. 解冲突（见下方「冲突热点」）
+# 5. 跑测试（至少黄金 e2e）
+# 6. PR 到 origin/main
+```
+
+### 冲突热点（提前心理准备）
+
+| 文件 / 目录 | 冲突概率 | 原因 |
+|---|---|---|
+| `pyproject.toml` | 高 | 依赖频繁升级；我们加了 `[tool.uv.sources]` 覆盖 |
+| `api/apps/__init__.py` | 高 | 我们注册了 `agent_v2_app` blueprint |
+| `web/src/routes.tsx` | 中 | 我们加了 `/agent-chat` 路由 |
+| `docker/.env` | 中 | 我们启用了 `MACOS=1` |
+| `CLAUDE.md` | 中 | 上游改上游的，我们补 Fork/端口/首次运行记录 |
+| `api/db/db_models.py` | 低-中 | 我们只在文件尾部加表，冲突小 |
+| `agent/component/*` | 低 | 我们不改原画布组件 |
+
+### 冲突解决原则
+
+1. **上游删了的我们要保留的**：先看是否必要；若必要，把它搬到我们的 `api/agent_v2/` 下
+2. **上游改的我们改的同一处**：优先接受上游，再把我们的改动重新 apply
+3. **我们新增的文件**：不会冲突
+4. **新增依赖**：手动合并，注意版本范围兼容
+
+---
+
+## 差异清单
+
+### A. 构建 / 环境（已 commit 或待 commit）
+
+#### `pyproject.toml`
+
+**改动**：新增 `[tool.uv.sources]` 段，强制 `graspologic` 从 github 拉而非 gitee。
+
+```toml
+[tool.uv.sources]
+graspologic = { git = "https://github.com/infiniflow/graspologic.git", rev = "38e680cab72bc9fb68a7992c3bcc2d53b24e42fd" }
+```
+
+**原因**：gitee.com 对境外 IP 不稳定，多次 `git fetch` RPC 中断导致 `uv sync` 失败。github 同 SHA 镜像稳定。
+
+**同步策略**：每次 upstream 升级 `graspologic` 版本时，同步更新 rev，保留从 github 拉。
+
+---
+
+#### `docker/.env`
+
+**改动**：启用 `MACOS=1`。
+
+```diff
+- # MACOS=1
++ MACOS=1
+```
+
+**原因**：本地 macOS 开发专属优化（上游注释里建议 macOS 用户启用）。
+
+**同步策略**：upstream 改其他 env 时不影响此行，低冲突风险。
+
+---
+
+### B. 文档（项目说明书级）
+
+#### `CLAUDE.md`
+
+**改动**：保留上游所有段，**在文末追加**以下段：
+- `## Fork 信息`（本 Fork 和 upstream 的关系）
+- `## 端口`（各服务端口说明）
+- `## macOS 本地开发`（绕过 `launch_backend_service.sh` 的启动方式）
+- `## 活跃文档`（指向 PLAN/STATUS/DESIGN/FORK）
+- `## 首次运行记录`（日期、耗时、踩坑点、已知现象）
+- `## Task Executor`（macOS 单独启 worker 的方法）
+
+**冲突**：上游几乎不改 `CLAUDE.md`（他们的 CLAUDE.md 面向通用开发者）。若冲突，保留双方内容。
+
+---
+
+#### `AGENTS.md`
+
+**改动**：上游原本是独立文件（GitHub Copilot 用），我们改成 `AGENTS.md → CLAUDE.md` 软链接。
+
+**原因**：工作区规范要求所有 Agent 读同一份指令文件；原 AGENTS.md 内容已并入 CLAUDE.md。
+
+**同步策略**：upstream 若更新 AGENTS.md，仅参考新内容更新 CLAUDE.md，不恢复独立文件。
+
+---
+
+### C. 新增文件（零冲突）
+
+| 文件 | 用途 |
+|---|---|
+| `PLAN.md` | 二改总体计划 |
+| `STATUS.md` | 会话交接 |
+| `DESIGN.md` | Phase 1 架构设计 |
+| `FORK.md`（本文件） | Fork 差异记录 |
+| `logs/` | 本地运行日志（.gitignore 里） |
+| `nltk_data/` | NLTK 数据（.gitignore 里） |
+
+---
+
+### D. Phase 1 计划新增（尚未开发）
+
+以下内容在 `feat/agent-v2` 分支开发，merge 到 `origin/main` 后需列入本清单：
+
+#### 后端
+
+| 文件 / 目录 | 性质 | 冲突风险 |
+|---|---|---|
+| `api/agent_v2/` 整个目录 | 新增 | 无 |
+| `api/apps/agent_v2_app.py` | 新增 | 无 |
+| `api/apps/__init__.py` | 改（注册 blueprint） | 中 |
+| `api/db/db_models.py` | 文末加 3 张表 | 低 |
+| `pyproject.toml` | 加 `claude-agent-sdk` 依赖 | 中 |
+
+#### 前端
+
+| 文件 / 目录 | 性质 | 冲突风险 |
+|---|---|---|
+| `web/src/pages/agent-chat/` | 新增 | 无 |
+| `web/src/routes.tsx` | 加 `/agent-chat` | 中 |
+| `web/src/layouts/*` | 改：菜单加入口 | 中 |
+
+---
+
+## 长期差异策略
+
+### 永远不合入上游的内容
+- 我们的 `PLAN.md` / `STATUS.md` / `FORK.md`（属于我们的项目管理）
+- `CLAUDE.md` 中的 Fork/首次运行 专属段
+- `kb-data/` 引用（在 gitignore 里）
+- `logs/`（在 gitignore 里）
+
+### 考虑贡献回上游的
+- Agent v2 的某些通用工具（若打磨到生产级）
+- macOS 启动脚本改造（若上游还没做）
+- pyproject.toml graspologic github 源（若上游也觉得 gitee 不稳）
+
+### 永远从上游接受的
+- 安全补丁
+- RAG 核心改进（DeepDoc / GraphRAG）
+- 新增 LLM provider 接入
+- 向量引擎更新
+
+---
+
+## 冲突预案手册
+
+### 场景 1：pyproject.toml 合并冲突
+
+```bash
+# 先看冲突
+git diff --name-only --diff-filter=U
+
+# 手动编辑 pyproject.toml：
+# 1. 接受上游对 dependencies 块的更改
+# 2. 保留我们的 [tool.uv.sources] 块
+# 3. 更新 graspologic rev 为 upstream 新版本的 SHA（去 github 搜）
+
+# 验证
+uv sync --python 3.12 --all-extras --dry-run
+```
+
+### 场景 2：api/apps/__init__.py 冲突（blueprint 注册）
+
+```python
+# 典型冲突：上游加了新 blueprint，我们也加了 agent_v2
+# 解决：两个都保留
+from .kb_app import manager as kb_manager
+from .upstream_new_app import manager as new_manager  # 接受上游
+from .agent_v2_app import manager as agent_v2_manager  # 保留我们的
+```
+
+### 场景 3：上游改了我们依赖的服务（如 RetrievalService）
+
+**风险**：我们的 Tool 基于 RetrievalService 的 API 写，若上游改接口，Tool 会挂。
+
+**应对**：
+- 在 `api/agent_v2/tools/rag_retrieve.py` 顶部写清依赖的上游 API 版本和函数签名
+- 每次 merge 后跑 e2e 黄金用例
+- 若签名破坏，在工具层做 adapter
+
+---
+
+## 提交规范（本 fork）
+
+- 用 Conventional Commits（feat/fix/docs/chore/refactor）
+- 分支命名：`feat/xxx`、`fix/xxx`、`sync/upstream-YYYYMMDD`
+- PR 到 `origin/main`，不直接 push
+- 提交前跑：`ruff check` + `pytest` 最小集
+
+---
+
+## 版本记录
+
+| 日期 | 版本 | 变更 |
+|---|---|---|
+| 2026-04-21 | v0.1 | 初始 Fork；记录环境/pyproject/macOS 适配改动 |
