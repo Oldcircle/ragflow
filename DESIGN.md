@@ -5,6 +5,42 @@
 
 ---
 
+## 〇、SDK 与内部 API 核查（2026-04-21 补）
+
+### claude-agent-sdk 真实特性（0.1.64）
+
+| 项 | 实际行为 |
+|---|---|
+| 身份 | 官方 Python SDK for **Claude Code**（不是通用 Agent 框架） |
+| 运行方式 | 每次 `query()` spawn 一个 bundled Claude Code CLI 子进程，通过 stdio + JSON-RPC 通信 |
+| 工具协议 | **MCP**（Model Context Protocol），用 `@tool` 装饰 + `create_sdk_mcp_server()` 注册 |
+| 模型 | 默认 Claude；第三方通过 `ANTHROPIC_BASE_URL` 环境变量重定向到 Anthropic 兼容端点 |
+| DeepSeek | 提供 `https://api.deepseek.com/anthropic/v1` Anthropic 兼容端点，可用但可能丢失 thinking/cache 特性 |
+| 关键入口 | `query(prompt, options)` 异步迭代器 / `ClaudeSDKClient` 有状态客户端 |
+| Options | `ClaudeAgentOptions(model, mcp_servers, system_prompt, max_turns, max_budget_usd, ...)` |
+| 权限模型 | `PermissionMode`: `default/acceptEdits/plan/bypassPermissions/dontAsk/auto` + `can_use_tool` 回调 |
+| Hooks | `PreToolUse / PostToolUse / Stop / Notification / PermissionRequest` 等 10+ 钩子 |
+| 会话 | 内置 `SessionStore` 接口 + `continue_conversation / resume / fork_session` |
+
+**简化**：原设计里的 `ToolRegistry` 不必自造——直接用 `@tool` 装饰函数 + `create_sdk_mcp_server` 聚合即可。
+
+### RAGFlow 内部服务（真实调用点）
+
+| 服务 | 入口 | 签名 |
+|---|---|---|
+| 检索 | `rag/nlp/search.py:37` `class Dealer` | `async retrieval(question, embd_mdl, tenant_ids, kb_ids, page, page_size, similarity_threshold=0.2, vector_similarity_weight=0.3, top=1024, doc_ids=None, aggs=True, rerank_mdl=None, highlight=False, rank_feature=...)` |
+| GraphRAG | `rag/graphrag/search.py:35` `class KGSearch(Dealer)` | `async retrieval(question, tenant_ids, kb_ids, emb_mdl, llm, max_token=8196, ent_topn=6, rel_topn=6, comm_topn=1, ent_sim_threshold=0.3, rel_sim_threshold=0.3, **kwargs)` |
+| 文档列表 | `api/db/services/document_service.py:45` `class DocumentService` | `get_list(kb_id, page_number, items_per_page, orderby, desc, keywords, id, name, ...)` |
+| 文档文件 | `api/apps/sdk/doc.py:117-118` | `File2DocumentService.get_storage_address(doc_id) → (id, location)` + `settings.STORAGE_IMPL.get(id, location)` |
+| LLMBundle | `api/db/services/llm_service.py` | `LLMBundle(tenant_id, LLMType.XXX)` — 按 tenant 和类型拿模型 |
+| 登录装饰 | `api/apps/__init__.py:158-193` | `@login_required`（JWT 或 APIToken） |
+| 响应格式 | `api/apps/__init__.py:247` | `get_json_result(code, message, data)` 返回 `{"code":..., "message":..., "data":...}` |
+| Blueprint | `api/apps/__init__.py:253-302` 自动扫描 `*_app.py` | 约定：文件内有 `manager = Blueprint(...)` |
+| SSE 模式 | `api/apps/restful_apis/chat_api.py:1066-1080` | `Response(stream(), mimetype="text/event-stream")` + `async for ans in ...: yield "data:" + json.dumps(...) + "\n\n"` |
+| DB 模型 | `api/db/db_models.py` `class DataBaseModel` | peewee ORM，无自动 migration；新表继承 DataBaseModel |
+
+---
+
 ## 一、目标与范围
 
 ### 功能目标
@@ -133,28 +169,58 @@ ragflow/
 
 ### 3.1 `api/agent_v2/runner.py`
 
-**职责**：Claude Agent SDK 的适配层。把 RAGFlow 的概念（session、KB、tenant）喂给 SDK；把 SDK 的事件翻译成统一 Event。
+**职责**：Claude Agent SDK 的适配层。把 RAGFlow 的 tenant/kb 上下文喂给 SDK；从 SDK 的异步消息流翻译成统一 Event。
 
-**关键接口**：
+**关键代码骨架**（基于 SDK 0.1.64 真实 API）：
 
 ```python
-# 仅示意，不是最终代码
-class AgentRunner:
-    def __init__(
-        self,
-        session_id: str,
-        tenant_id: str,
-        tools: list[Tool],
-        system_prompt: str,
-        model: ModelConfig,     # provider + model_name + api_key
-        max_iterations: int = 20,
-        max_tokens_budget: int = 100_000,
-    ): ...
+# api/agent_v2/runner.py（示意，M1.1 会落成真代码）
+from claude_agent_sdk import (
+    query, ClaudeAgentOptions, create_sdk_mcp_server,
+    AssistantMessage, UserMessage, SystemMessage, ResultMessage,
+    TextBlock, ToolUseBlock, ToolResultBlock,
+)
+from .tools.rag_retrieve import rag_retrieve
+from .event import Event  # 我们统一的事件类型
 
-    async def run(
-        self, user_message: str, *, history: list[Message]
-    ) -> AsyncIterator[Event]: ...
+class AgentRunner:
+    def __init__(self, *, tenant_id, kb_ids, system_prompt,
+                 model="claude-sonnet-4-5", max_turns=20,
+                 max_budget_usd=1.0, extra_env=None):
+        self.tenant_id = tenant_id
+        self.kb_ids = kb_ids
+        self.system_prompt = system_prompt
+        self.model = model
+        self.max_turns = max_turns
+        self.max_budget_usd = max_budget_usd
+        self.extra_env = extra_env or {}
+
+    async def run(self, user_message: str):
+        # 组装工具集（MCP 内进程 server）
+        mcp_server = create_sdk_mcp_server(
+            name="ragflow-tools", version="0.1.0",
+            tools=[rag_retrieve]  # @tool 装饰过的函数
+        )
+        options = ClaudeAgentOptions(
+            model=self.model,
+            system_prompt=self.system_prompt,
+            mcp_servers={"ragflow": mcp_server},
+            allowed_tools=["mcp__ragflow__rag_retrieve"],
+            max_turns=self.max_turns,
+            max_budget_usd=self.max_budget_usd,
+            permission_mode="bypassPermissions",  # 服务端不弹权限框
+            env={
+                "RAGFLOW_TENANT_ID": self.tenant_id,
+                "RAGFLOW_KB_IDS": ",".join(self.kb_ids),
+                **self.extra_env,
+            },
+        )
+        async for msg in query(prompt=user_message, options=options):
+            # msg 可能是 UserMessage/AssistantMessage/SystemMessage/ResultMessage/StreamEvent
+            yield self._translate(msg)
 ```
+
+**切换模型**：通过 `ClaudeAgentOptions.env` 注入 `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` 即可切 DeepSeek 或其他 Anthropic 兼容端点。
 
 **Event 类型**（`event.py`）：
 
@@ -179,38 +245,68 @@ class AgentRunner:
 
 ### 3.2 `api/agent_v2/registry.py`
 
-**职责**：工具注册中心 + JSON Schema 导出（给模型看）。
+**职责**：聚合所有 RAGFlow 工具到一个 MCP server 实例。
+
+SDK 已提供 `create_sdk_mcp_server(name, version, tools=[...])`，不需要我们自造 Registry。本文件只保留一个工厂函数：
 
 ```python
-# 仅示意
-class ToolRegistry:
-    def register(self, tool: Tool): ...
-    def get(self, name: str) -> Tool: ...
-    def schemas_for_model(self) -> list[dict]: ...   # 喂给 SDK
-    def filter(self, allowed: list[str]) -> "ToolRegistry": ...
+# api/agent_v2/registry.py
+from claude_agent_sdk import create_sdk_mcp_server
+from .tools.rag_retrieve import rag_retrieve
+# 后续 M1.2 加入其他工具
+# from .tools.rag_graph_query import rag_graph_query
+# from .tools.rag_list_docs import rag_list_docs
+# from .tools.rag_read_doc import rag_read_doc
+
+def build_ragflow_mcp_server(enabled: list[str] | None = None):
+    all_tools = {"rag_retrieve": rag_retrieve}
+    tools = list(all_tools.values()) if enabled is None \
+            else [all_tools[n] for n in enabled if n in all_tools]
+    return create_sdk_mcp_server("ragflow-tools", "0.1.0", tools=tools)
 ```
 
 ### 3.3 `api/agent_v2/tools/base.py`
 
-**`@tool` 装饰器**：
+**直接使用 SDK 自带的 `@tool` 装饰器**：
 
 ```python
-# 仅示意
+# api/agent_v2/tools/base.py（小工具集）
+import os
+from claude_agent_sdk import tool
+
+def get_ctx():
+    """从环境变量读取 Runner 注入的 RAGFlow 上下文"""
+    return {
+        "tenant_id": os.environ.get("RAGFLOW_TENANT_ID"),
+        "kb_ids": [x for x in os.environ.get("RAGFLOW_KB_IDS", "").split(",") if x],
+    }
+
+__all__ = ["tool", "get_ctx"]
+```
+
+**实际工具定义样式**（见 `rag_retrieve.py`）：
+
+```python
+# api/agent_v2/tools/rag_retrieve.py
+from .base import tool, get_ctx
+
 @tool(
     name="rag_retrieve",
-    description="检索企业知识库，返回相关政策条款原文片段",
-    schema={
+    description="在企业知识库中检索与 query 语义相关的原文片段。用于查政策、条款、说明等。",
+    input_schema={
         "type": "object",
         "properties": {
             "query": {"type": "string", "description": "检索关键词"},
-            "kb_id": {"type": "string", "description": "知识库 ID"},
             "top_n": {"type": "integer", "default": 8},
+            "similarity_threshold": {"type": "number", "default": 0.2},
         },
-        "required": ["query", "kb_id"],
+        "required": ["query"],
     },
 )
-async def rag_retrieve(query: str, kb_id: str, top_n: int = 8):
-    ...
+async def rag_retrieve(args: dict) -> dict:
+    ctx = get_ctx()
+    # ... 调 RAGFlow Dealer.retrieval()
+    return {"content": [{"type": "text", "text": ...}]}  # MCP tool 输出格式
 ```
 
 **工具契约**：

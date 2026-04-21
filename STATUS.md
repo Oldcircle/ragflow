@@ -4,11 +4,27 @@
 
 ---
 
-## 最近更新：2026-04-21
+## 最近更新：2026-04-21（晚间）
 
-**当前阶段**：Phase 0（验证）— **进行中**
+**当前阶段**：**Phase 1 M1.1 已完成** — SDK 跑通、首个 Tool 可用
 **阻塞项**：无
-**下一步入口**：前端建 Agent v2 demo（见下方「下次继续」）
+**下一步入口**：M1.2（实现其余 3 个 Tool：graph_query / list_docs / read_doc）
+
+### M1.1 验收结果
+- ✅ Claude Agent SDK 集成成功（Python SDK 0.1.64）
+- ✅ DeepSeek 通过 `https://api.deepseek.com/anthropic` 端点可用
+- ✅ 工具 `rag_retrieve` 连通 RAGFlow Dealer.retrieval()
+- ✅ 保障房场景 demo：Agent 自主 5 次检索 → 综合答复准确（社保 3 年 + 特殊家庭豁免均正确）
+- ✅ ContextVar 机制成功（解决 In-Process MCP server 跨进程 env 传不过来的问题）
+- 实测：114s / $0.148 / 5 次 tool call
+
+### 可运行的命令
+```bash
+cd ~/Opensource/forks/ragflow
+export AGENT_V2_PROVIDER=deepseek DEEPSEEK_API_KEY=sk-... NLTK_DATA=./nltk_data
+.venv/bin/python scripts/test_agent_v2.py \
+  --question "你的问题" --max-turns 6 --log-level WARNING
+```
 
 ---
 
