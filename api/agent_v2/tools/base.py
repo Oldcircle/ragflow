@@ -67,14 +67,31 @@ def get_ctx(require: list[str] | None = None) -> ToolContext:
     return ctx
 
 
-def mcp_text_response(text: str) -> dict:
-    """生成符合 MCP tool-result 规范的文本输出。"""
+# 单次 tool 输出最大字节数（保护上下文不被炸）
+MAX_TOOL_OUTPUT_BYTES = 32 * 1024
+
+
+def mcp_text_response(text: str, *, truncate: bool = True) -> dict:
+    """生成符合 MCP tool-result 规范的文本输出。
+
+    Args:
+        text: 输出文本
+        truncate: 超过 MAX_TOOL_OUTPUT_BYTES 时自动截断并附"... [truncated]"后缀
+    """
+    if truncate:
+        encoded = text.encode("utf-8")
+        if len(encoded) > MAX_TOOL_OUTPUT_BYTES:
+            cut = encoded[:MAX_TOOL_OUTPUT_BYTES].decode("utf-8", errors="ignore")
+            text = cut + "\n\n... [truncated due to size limit]"
     return {"content": [{"type": "text", "text": text}]}
 
 
-def mcp_json_response(obj) -> dict:
+def mcp_json_response(obj, *, truncate: bool = True) -> dict:
     """生成符合 MCP tool-result 规范的 JSON 文本输出。"""
-    return mcp_text_response(json.dumps(obj, ensure_ascii=False, indent=2))
+    return mcp_text_response(
+        json.dumps(obj, ensure_ascii=False, indent=2, default=str),
+        truncate=truncate,
+    )
 
 
 __all__ = [
@@ -85,4 +102,5 @@ __all__ = [
     "get_ctx",
     "mcp_text_response",
     "mcp_json_response",
+    "MAX_TOOL_OUTPUT_BYTES",
 ]

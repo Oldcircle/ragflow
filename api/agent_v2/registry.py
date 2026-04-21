@@ -4,15 +4,17 @@ from __future__ import annotations
 
 from claude_agent_sdk import create_sdk_mcp_server
 
+from .tools.rag_graph_query import rag_graph_query
+from .tools.rag_list_docs import rag_list_docs
+from .tools.rag_read_doc import rag_read_doc
 from .tools.rag_retrieve import rag_retrieve
 
 # 所有已实现工具的注册表
 ALL_TOOLS = {
     "rag_retrieve": rag_retrieve,
-    # M1.2 将加入：
-    # "rag_graph_query": rag_graph_query,
-    # "rag_list_docs": rag_list_docs,
-    # "rag_read_doc": rag_read_doc,
+    "rag_list_docs": rag_list_docs,
+    "rag_read_doc": rag_read_doc,
+    "rag_graph_query": rag_graph_query,
 }
 
 # MCP server 名（给 SDK 用）；SDK 生成的工具名是 ``mcp__<server>__<tool>``

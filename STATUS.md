@@ -4,11 +4,18 @@
 
 ---
 
-## 最近更新：2026-04-21（晚间）
+## 最近更新：2026-04-21（深夜）
 
-**当前阶段**：**Phase 1 M1.1 已完成** — SDK 跑通、首个 Tool 可用
+**当前阶段**：**Phase 1 M1.2 已完成** — 4 个核心 Tool 全部实现 + 单测 + README
 **阻塞项**：无
-**下一步入口**：M1.2（实现其余 3 个 Tool：graph_query / list_docs / read_doc）
+**下一步入口**：M1.3（HTTP API + DB 持久化 + SSE 流式）
+
+### M1.2 验收结果
+- ✅ 4 个工具全部实现：`rag_retrieve` / `rag_list_docs` / `rag_read_doc` / `rag_graph_query`
+- ✅ 直接调用 smoke test 全过（list 到 22 文件 / retrieve 相似度 0.52 / graph 无图谱 KB 返回空）
+- ✅ pytest 单元测试 **37/37 通过**（base 9 / event 9 / registry 5 / schemas 14）
+- ✅ 工具输出 32KB 截断机制生效
+- ✅ `tools/README.md` 文档完整
 
 ### M1.1 验收结果
 - ✅ Claude Agent SDK 集成成功（Python SDK 0.1.64）
