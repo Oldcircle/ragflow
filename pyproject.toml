@@ -186,6 +186,9 @@ constraint-dependencies = [
     "pyasn1>=0.6.3",
 ]
 
+[tool.uv.sources]
+graspologic = { git = "https://github.com/infiniflow/graspologic.git", rev = "38e680cab72bc9fb68a7992c3bcc2d53b24e42fd" }
+
 [[tool.uv.index]]
 url = "https://mirrors.aliyun.com/pypi/simple"
 
