@@ -116,6 +116,11 @@ export default {
       model: '模型',
       modelKeyHint:
         '认证 Key 从服务端 AGENT_V2_DEEPSEEK_KEY / AGENT_V2_ANTHROPIC_KEY 环境变量读取。',
+      modelProviderHint:
+        '模型来自你的"模型供应商"配置。若没有请先去模型供应商添加 DeepSeek 或 Anthropic。',
+      noModelHint:
+        '尚未配置 Chat 模型。请先在"模型供应商"中添加 DeepSeek 或 Anthropic 的 Chat 模型。',
+      selectModel: '选择模型',
       systemPrompt: 'System Prompt',
       maxTurns: '最大 Agent 轮数',
       maxBudget: '预算上限（美元）',

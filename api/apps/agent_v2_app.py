@@ -30,6 +30,7 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
+from api.agent_v2.model_resolver import list_available_chat_models, resolve_model
 from api.agent_v2.registry import ALL_TOOLS, list_tool_names
 from api.agent_v2.runner import AgentRunner, ModelConfig
 from common.constants import RetCode
@@ -40,35 +41,19 @@ logger = logging.getLogger("ragflow.agent_v2.app")
 # ────────────────────────────────────── Helpers ──────────────────────────────────────
 
 
-def _build_model_config(conf: dict | None) -> ModelConfig:
-    """根据 session 的 model_config_json 构造 ModelConfig。
+def _build_model_config(conf: dict | None, tenant_id: str) -> ModelConfig:
+    """根据 session 的 model_config_json + TenantLLM + env 构造 ModelConfig。
 
-    Phase 1 简化策略：
-    - 若 conf 里有 `auth_token` 直接用
-    - 否则按 provider 从环境变量取 key（`AGENT_V2_DEEPSEEK_KEY` / `AGENT_V2_ANTHROPIC_KEY`）
-    Phase 3 再做 TenantLLM 集成。
+    见 `api/agent_v2/model_resolver.py` 的优先级规则。
     """
-    conf = conf or {}
-    model = conf.get("model") or "claude-sonnet-4-5"
-    base_url = conf.get("base_url") or None
-    token = conf.get("auth_token")
-
-    if not token:
-        if base_url and "deepseek" in (base_url or "").lower():
-            token = os.environ.get("AGENT_V2_DEEPSEEK_KEY") or os.environ.get(
-                "DEEPSEEK_API_KEY"
-            )
-        else:
-            token = os.environ.get("AGENT_V2_ANTHROPIC_KEY") or os.environ.get(
-                "ANTHROPIC_API_KEY"
-            )
-
-    return ModelConfig(
-        model=model,
-        base_url=base_url,
-        auth_token=token,
-        extra_env=conf.get("extra_env") or {},
+    resolved = resolve_model(conf, tenant_id)
+    logger.info(
+        "model resolved: %s (source=%s) for tenant=%s",
+        resolved.display_name,
+        resolved.source,
+        tenant_id,
     )
+    return resolved.config
 
 
 def _session_dict(session) -> dict:
@@ -211,6 +196,17 @@ async def delete_session(session_id: str):
 # ────────────────────────────────────── Tools info ──────────────────────────────────────
 
 
+@manager.route("/model", methods=["GET"])  # noqa: F821
+@login_required
+async def list_available_models():
+    """列出当前 tenant 配置过的 Chat 模型，供 NewSessionDialog 下拉用。"""
+    try:
+        models = list_available_chat_models(current_user.id)
+        return get_json_result(data={"models": models})
+    except Exception as e:
+        return server_error_response(e)
+
+
 @manager.route("/tool", methods=["GET"])  # noqa: F821
 @login_required
 async def list_agent_tools():
@@ -253,10 +249,14 @@ async def send_message():
         session_id=session_id, role="user", content=user_message
     )
 
-    model_cfg = _build_model_config(session.model_config_json)
+    try:
+        model_cfg = _build_model_config(session.model_config_json, session.tenant_id)
+    except ValueError as e:
+        return get_data_error_result(message=str(e))
     if not model_cfg.auth_token:
         return get_data_error_result(
-            message="Model auth token not configured. Set AGENT_V2_DEEPSEEK_KEY or AGENT_V2_ANTHROPIC_KEY env var."
+            message="Model auth token missing. Configure a Chat model in Model Providers "
+            "or set AGENT_V2_DEEPSEEK_KEY / AGENT_V2_ANTHROPIC_KEY env var."
         )
 
     # 生成稳定的 assistant msg id（供事件流和落库共用）

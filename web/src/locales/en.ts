@@ -134,6 +134,11 @@ export default {
       model: 'Model',
       modelKeyHint:
         'Auth keys are read from AGENT_V2_DEEPSEEK_KEY / AGENT_V2_ANTHROPIC_KEY env vars on the server.',
+      modelProviderHint:
+        'Models come from your Model Providers page. Configure a Chat model there first.',
+      noModelHint:
+        'No Chat model configured. Go to Model Providers and add DeepSeek or Anthropic first.',
+      selectModel: 'Select a model',
       systemPrompt: 'System prompt',
       maxTurns: 'Max agent turns',
       maxBudget: 'Max budget (USD)',
