@@ -1,0 +1,30 @@
+/* Agent v2 Workbench — 配合 theme.ts 的 tokens */
+
+@keyframes agent-v2-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+.agent-v2-root {
+  font-family:
+    'Inter Tight',
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    system-ui,
+    sans-serif;
+}
+
+/* 让 session-sidebar 的删除按钮在 hover item 时才出现 */
+.agent-v2-root .group .group-hover\:opacity-100 {
+  opacity: 0;
+}
+.agent-v2-root .group:hover .group-hover\:opacity-100 {
+  opacity: 1;
+}

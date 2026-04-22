@@ -32,6 +32,7 @@ export enum Routes {
   SearchShare = '/search/share',
   Chats = '/chats',
   Chat = '/chat',
+  AgentChat = '/agent-chat',
   Files = '/files',
   ProfileSetting = '/profile-setting',
   Profile = '/profile',
@@ -205,6 +206,10 @@ const routeConfigOptions = [
       {
         path: Routes.Chats,
         Component: () => import('@/pages/next-chats'),
+      },
+      {
+        path: Routes.AgentChat,
+        Component: () => import('@/pages/agent-chat'),
       },
       {
         path: Routes.Searches,

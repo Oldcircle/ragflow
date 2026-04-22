@@ -4,11 +4,24 @@
 
 ---
 
-## 最近更新：2026-04-21（深夜）
+## 最近更新：2026-04-22
 
-**当前阶段**：**Phase 1 M1.3 已完成** — HTTP API + DB 三表 + SSE 流式 + 端到端持久化验证
+**当前阶段**：**Phase 1 M1.4 已完成** — 前端 Agent 工作台页面（基于 Claude Design 知源设计稿）
 **阻塞项**：无
-**下一步入口**：M1.4（前端 Agent 工作台页面）
+**下一步入口**：M1.5（保障房 3 道黄金题端到端 + 调优）
+
+### M1.4 验收结果
+- ✅ 新页面 `web/src/pages/agent-chat/`（3 列布局 + 设计系统）
+- ✅ 设计语言：Linear/Vercel 风格，teal 品牌色 #0f766e，Inter Tight 字体
+- ✅ 3 列布局：会话侧栏 260px / 消息流 / 工具调用侧栏 340px
+- ✅ 组件：SessionSidebar / MessageList / ThinkingBlock / ToolCallCard / ToolCallsSidebar / Composer / NewSessionDialog
+- ✅ SSE 消费：原生 fetch + EventSourceParserStream
+- ✅ 路由 `/agent-chat` 已注册 + 主导航新增"工作台"入口
+- ✅ 双语 i18n（en / zh）
+- ✅ TypeScript 0 errors（本模块）
+
+### 可访问
+打开 http://localhost:9222/agent-chat 登录后即可用。
 
 ### M1.3 验收结果
 - ✅ 3 张 DB 表（agent_v2_session / message / tool_call）自动建表

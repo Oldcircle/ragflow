@@ -26,6 +26,11 @@ const menuItems = [
     /* icon: MessageSquareText, */ 'data-testid': 'nav-chat',
   },
   {
+    path: Routes.AgentChat,
+    name: 'header.agentChat',
+    'data-testid': 'nav-agent-chat',
+  },
+  {
     path: Routes.Searches,
     name: 'header.search',
     /* icon: Search, */ 'data-testid': 'nav-search',
