@@ -33,6 +33,7 @@ from api.utils.api_utils import (
 from api.agent_v2.model_resolver import list_available_chat_models, resolve_model
 from api.agent_v2.registry import ALL_TOOLS, list_tool_names
 from api.agent_v2.runner import AgentRunner, ModelConfig
+from api.agent_v2.templates import get_template, list_templates
 from common.constants import RetCode
 
 logger = logging.getLogger("ragflow.agent_v2.app")
@@ -194,6 +195,16 @@ async def delete_session(session_id: str):
 
 
 # ────────────────────────────────────── Tools info ──────────────────────────────────────
+
+
+@manager.route("/template", methods=["GET"])  # noqa: F821
+@login_required
+async def list_agent_templates():
+    """列出所有预置 Agent 模板，供 NewSessionDialog 一键选用。"""
+    try:
+        return get_json_result(data={"templates": list_templates()})
+    except Exception as e:
+        return server_error_response(e)
 
 
 @manager.route("/model", methods=["GET"])  # noqa: F821

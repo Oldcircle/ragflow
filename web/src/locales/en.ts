@@ -139,6 +139,9 @@ export default {
       noModelHint:
         'No Chat model configured. Go to Model Providers and add DeepSeek or Anthropic first.',
       selectModel: 'Select a model',
+      startFromTemplate: 'Start from template (optional)',
+      templateHint:
+        'Picks a vetted system prompt + sensible defaults. You still choose KB + model.',
       systemPrompt: 'System prompt',
       maxTurns: 'Max agent turns',
       maxBudget: 'Max budget (USD)',

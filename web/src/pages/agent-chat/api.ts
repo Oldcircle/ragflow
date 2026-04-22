@@ -68,6 +68,19 @@ export interface AgentV2ModelInfo {
   note?: string | null;
 }
 
+export interface AgentV2Template {
+  id: string;
+  name: string;
+  description: string;
+  category: 'policy' | 'legal' | 'finance' | 'customer' | 'general' | string;
+  icon: string;
+  system_prompt: string;
+  default_max_turns: number;
+  default_max_budget_usd: number;
+  suggested_tool_names: string[] | null;
+  kb_hints: string[];
+}
+
 export const agentV2Api = {
   async listSessions(params?: {
     page?: number;
@@ -116,5 +129,10 @@ export const agentV2Api = {
   async listModels() {
     const { data } = await request.get('/v1/agent_v2/model');
     return data.data as { models: AgentV2ModelInfo[] };
+  },
+
+  async listTemplates() {
+    const { data } = await request.get('/v1/agent_v2/template');
+    return data.data as { templates: AgentV2Template[] };
   },
 };

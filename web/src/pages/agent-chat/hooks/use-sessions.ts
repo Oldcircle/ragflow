@@ -62,4 +62,12 @@ export function useAvailableModels() {
   });
 }
 
+export function useTemplates() {
+  return useQuery({
+    queryKey: ['agent-v2', 'templates'] as const,
+    queryFn: () => agentV2Api.listTemplates(),
+    staleTime: 300_000, // 模板不常变
+  });
+}
+
 export const AgentV2QueryKeys = K;
