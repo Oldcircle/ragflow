@@ -1,44 +1,50 @@
 /**
- * 知源 design tokens（从 Claude Design 稿移植，oklch 冷灰 + teal 品牌色）。
+ * 知源 design tokens — 映射到全局 CSS 变量，自动跟随 light / dark 主题。
  *
- * 只在本页面局部使用，避免污染 RAGFlow 全局 Tailwind 变量。
- * 通过 React inline style 注入，无需修改 Tailwind 配置。
+ * 历史上这里是写死的 oklch 冷灰 + teal 十六进制色，但全局默认主题是 dark，
+ * 会造成 /agent-chat 变成一块亮白色块嵌在深色 shell 里。
+ *
+ * 现在所有值都走 `var(--*)`，而 `--bg-base` / `--bg-component` / `--bg-card`
+ * / `--text-primary` 等都在 `tailwind.css` 里为 light 与 `.dark` 分别定义了值，
+ * 组件用 inline style 写 `background: T.bg` 时就会自动拿到当前主题下的颜色。
+ *
+ * 状态色（success / warning / danger / info / 高亮）保持固定，两种主题下语义一致。
  */
 
 export const T = {
-  // Neutral scale
-  bg: '#fafafa',
-  surface: '#ffffff',
-  surface2: '#f5f5f4',
-  surface3: '#efeeec',
-  border: '#e7e5e4',
-  border2: '#d6d3d1',
-  divider: '#eeeceb',
+  // Neutral surfaces — 走 CSS var，自动跟随主题
+  bg: 'var(--bg-base)',
+  surface: 'var(--bg-component)',
+  surface2: 'var(--bg-card)',
+  surface3: 'var(--bg-card)',
+  border: 'var(--border-button)',
+  border2: 'var(--border-button)',
+  divider: 'var(--border-button)',
 
-  // Text
-  text: '#1c1917',
-  textMuted: '#57534e',
-  textDim: '#a8a29e',
+  // Text — 用 `rgb(var(--*))` 拆 channel，和 Tailwind 保持一致
+  text: 'rgb(var(--text-primary))',
+  textMuted: 'rgb(var(--text-secondary))',
+  textDim: 'rgb(var(--text-secondary) / 0.65)',
 
-  // Brand — teal
-  accent: '#0f766e',
-  accentHover: '#115e55',
-  accentSoft: '#ccfbf1',
+  // Brand — teal，light/dark 下语义一致
+  accent: 'rgb(var(--accent-primary))',
+  accentHover: 'rgb(var(--accent-primary) / 0.85)',
+  accentSoft: 'rgb(var(--accent-primary) / 0.15)',
   accentFg: '#ffffff',
-  accentBorder: '#14b8a6',
+  accentBorder: 'rgb(var(--accent-primary))',
 
-  // Status
+  // Status — 固定色，两种主题下语义一致
   success: '#15803d',
-  successBg: '#dcfce7',
+  successBg: 'rgba(21, 128, 61, 0.15)',
   warning: '#b45309',
-  warningBg: '#fef3c7',
+  warningBg: 'rgba(180, 83, 9, 0.15)',
   danger: '#b91c1c',
-  dangerBg: '#fee2e2',
+  dangerBg: 'rgba(185, 28, 28, 0.15)',
   info: '#1d4ed8',
-  infoBg: '#dbeafe',
+  infoBg: 'rgba(29, 78, 216, 0.15)',
 
   // Highlight for retrieved chunk
-  hlBg: '#fff7d6',
+  hlBg: 'rgba(234, 179, 8, 0.18)',
   hlBorder: '#eab308',
 
   // Typography

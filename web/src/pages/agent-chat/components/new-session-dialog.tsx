@@ -150,16 +150,16 @@ export const NewSessionDialog = memo(function NewSessionDialog({
                       onClick={() => applyTemplate(tpl)}
                       className={`text-left p-3 rounded-md border transition-colors ${
                         active
-                          ? 'border-teal-600 bg-teal-50'
-                          : 'border-gray-200 bg-white hover:bg-gray-50'
+                          ? 'border-accent-primary bg-accent-primary/10'
+                          : 'border-border-button bg-bg-component hover:bg-bg-card'
                       }`}
                     >
-                      <div className="flex items-center gap-2 mb-1 text-sm font-medium">
+                      <div className="flex items-center gap-2 mb-1 text-sm font-medium text-text-primary">
                         <span>{tpl.icon}</span>
                         <span className="truncate">{tpl.name}</span>
                       </div>
                       <div
-                        className="text-xs text-gray-500"
+                        className="text-xs text-text-secondary"
                         style={{
                           display: '-webkit-box',
                           WebkitLineClamp: 2,
@@ -216,8 +216,8 @@ export const NewSessionDialog = memo(function NewSessionDialog({
                     }}
                     className={`px-3 py-1.5 rounded-full border text-xs transition-colors ${
                       checked
-                        ? 'bg-teal-600 text-white border-teal-600'
-                        : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-700'
+                        ? 'bg-accent-primary text-white border-accent-primary'
+                        : 'bg-bg-component hover:bg-bg-card border-border-button text-text-secondary'
                     }`}
                   >
                     {kb.name}
@@ -234,7 +234,7 @@ export const NewSessionDialog = memo(function NewSessionDialog({
                 {t('common.loading')}
               </div>
             ) : supportedModels.length === 0 ? (
-              <div className="text-xs text-red-600">
+              <div className="text-xs text-state-error">
                 {t('agentV2.noModelHint')}
               </div>
             ) : (
@@ -316,7 +316,9 @@ function Field({
 }) {
   return (
     <div>
-      <div className="text-xs font-medium mb-1.5 text-gray-700">{label}</div>
+      <div className="text-xs font-medium mb-1.5 text-text-primary">
+        {label}
+      </div>
       {children}
       {hint && <div className="text-xs text-muted-foreground mt-1">{hint}</div>}
     </div>
