@@ -1,4 +1,3 @@
-import { IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,6 +19,7 @@ import React, { useMemo } from 'react';
 import { Link, useLocation } from 'react-router';
 import { BellButton } from './bell-button';
 import GlobalNavbar from './global-navbar';
+import { ProductMark } from './product-mark';
 import ThemeButton from './theme-button';
 
 import { supportedLanguages } from '@/locales/config';
@@ -53,7 +53,7 @@ export function Header({
     <header
       key="app-navbar"
       className={cn(
-        'w-full grid grid-cols-[1fr_auto_1fr] grid-rows-1 items-center gap-8',
+        'w-full grid grid-cols-[minmax(180px,1fr)_auto_minmax(180px,1fr)] grid-rows-1 items-center gap-6 border-b border-border-button bg-bg-base/95',
         className,
       )}
       {...props}
@@ -62,8 +62,9 @@ export function Header({
         <Link
           to={Routes.Root}
           aria-current={pathname === Routes.Root ? 'page' : undefined}
+          className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary/30"
         >
-          <img src={'/logo.svg'} alt="RAGFlow logo" className="size-10" />
+          <ProductMark />
         </Link>
       </div>
 
@@ -73,24 +74,6 @@ export function Header({
         className="flex items-center justify-end gap-4 text-text-badge"
         data-testid="auth-status"
       >
-        <a
-          className="p-2 text-text-secondary hover:text-text-primary focus-visible:text-text-primary"
-          target="_blank"
-          href="https://discord.com/invite/NjYzJD3GM3"
-          rel="noreferrer noopener"
-        >
-          <IconFontFill name="a-DiscordIconSVGVectorIcon" />
-        </a>
-
-        <a
-          className="p-2 text-text-secondary hover:text-text-primary focus-visible:text-text-primary"
-          target="_blank"
-          href="https://github.com/infiniflow/ragflow"
-          rel="noreferrer noopener"
-        >
-          <IconFontFill name="GitHub" />
-        </a>
-
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button className="flex items-center gap-1" variant="ghost">

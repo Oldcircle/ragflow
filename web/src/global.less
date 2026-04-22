@@ -23,6 +23,20 @@ body,
   padding: 0;
 }
 
+body {
+  background: var(--bg-base);
+  color: rgb(var(--text-primary));
+  -webkit-font-smoothing: antialiased;
+}
+
+.zy-grid-bg {
+  background-color: var(--bg-base);
+  background-image:
+    linear-gradient(var(--border-button) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border-button) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
 .vue-office-excel {
   height: 100%;
 }
@@ -35,16 +49,19 @@ body,
 
 /* Track */
 ::-webkit-scrollbar-track {
-  background: rgb(219, 218, 218);
+  background: transparent;
 }
 
 /* Handle */
 ::-webkit-scrollbar-thumb {
-  background: #aaaaaa;
+  background: var(--border-default);
   border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 /* Handle on hover */
 ::-webkit-scrollbar-thumb:hover {
-  background: #888;
+  background: rgb(var(--text-secondary));
+  background-clip: padding-box;
 }

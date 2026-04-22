@@ -7,12 +7,12 @@ import {
   useRegister,
 } from '@/hooks/use-login-request';
 import { useSystemConfig } from '@/hooks/use-system-request';
+import { ProductMark } from '@/layouts/components/product-mark';
 import { rsaPsw } from '@/utils';
 import { useContext, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 
-import Spotlight from '@/components/spotlight';
 import { Button, ButtonLoading } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -28,7 +28,6 @@ import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
-import { BgSvg } from './bg';
 import FlipCard3D, { FlipFaceContext } from './card';
 import './index.less';
 
@@ -64,12 +63,13 @@ function LoginFormContent({
 
   return (
     <div className="flex flex-col items-center justify-center w-full">
-      <div className="text-center mb-8">
+      <div className="mb-6 text-center">
         <h2 className="text-xl font-semibold text-text-primary">
           {title === 'login' ? t('loginTitle') : t('signUpTitle')}
         </h2>
+        <p className="mt-2 text-sm text-text-secondary">{t('description')}</p>
       </div>
-      <div className=" w-full max-w-[540px] bg-bg-component backdrop-blur-sm rounded-2xl shadow-xl pt-14 pl-10 pr-10 pb-2 border border-border-button ">
+      <div className="w-full max-w-[430px] rounded-xl border border-border-button bg-bg-component px-8 pb-4 pt-9 shadow-sm">
         {!disablePasswordLogin && (
           <Form {...form}>
             <form
@@ -176,7 +176,7 @@ function LoginFormContent({
                 data-testid="auth-submit"
                 type="submit"
                 loading={loading}
-                className="bg-metallic-gradient border-b-[#00BEB4] border-b-2 hover:bg-metallic-gradient hover:border-b-[#02bcdd] w-full my-8"
+                className="my-6 w-full border-none bg-accent-primary text-white hover:bg-accent-primary/90 focus-visible:bg-accent-primary/90"
               >
                 {title === 'login' ? t('login') : t('continue')}
               </ButtonLoading>
@@ -210,13 +210,13 @@ function LoginFormContent({
 
         {!disablePasswordLogin && title === 'login' && registerEnabled && (
           <div className="mt-10 text-right">
-            <p className="text-text-disabled text-sm">
+            <p className="text-sm text-text-secondary">
               {t('signInTip')}
               <Button
                 data-testid="auth-toggle-register"
                 variant={'transparent'}
                 onClick={changeTitle}
-                className="text-accent-primary/90 hover:text-accent-primary hover:bg-transparent font-medium border-none transition-colors duration-200"
+                className="border-none font-medium text-accent-primary transition-colors duration-200 hover:bg-transparent hover:text-accent-primary/90"
               >
                 {t('signUp')}
               </Button>
@@ -225,13 +225,13 @@ function LoginFormContent({
         )}
         {!disablePasswordLogin && title === 'register' && (
           <div className="mt-10 text-right">
-            <p className="text-text-disabled text-sm">
+            <p className="text-sm text-text-secondary">
               {t('signUpTip')}
               <Button
                 data-testid="auth-toggle-login"
                 variant={'transparent'}
                 onClick={changeTitle}
-                className="text-accent-primary/90 hover:text-accent-primary hover:bg-transparent font-medium border-none transition-colors duration-200"
+                className="border-none font-medium text-accent-primary transition-colors duration-200 hover:bg-transparent hover:text-accent-primary/90"
               >
                 {t('login')}
               </Button>
@@ -336,48 +336,63 @@ const Login = () => {
           setTitle('login');
         }
       }
-    } catch (errorInfo) {
-      console.log('Failed:', errorInfo);
+    } catch {
+      // Login request hooks surface user-facing errors.
     }
   };
 
   return (
-    <>
-      <Spotlight opcity={0.4} coverage={60} color={'rgb(128, 255, 248)'} />
-      <Spotlight
-        opcity={0.3}
-        coverage={12}
-        X={'10%'}
-        Y={'-10%'}
-        color={'rgb(128, 255, 248)'}
-      />
-      <Spotlight
-        opcity={0.3}
-        coverage={12}
-        X={'90%'}
-        Y={'-10%'}
-        color={'rgb(128, 255, 248)'}
-      />
-      <div className=" h-[inherit] relative overflow-auto">
-        <BgSvg isPaused />
+    <div className="zy-grid-bg h-[inherit] overflow-auto">
+      <div className="mx-auto grid min-h-[900px] w-full max-w-7xl grid-cols-1 gap-10 px-6 py-8 lg:grid-cols-[1.05fr_0.95fr] lg:px-10">
+        <section className="flex min-h-[420px] flex-col">
+          <ProductMark size="lg" />
 
-        <div className="z-20 absolute top-3 flex flex-col items-center mb-12 w-full text-text-primary">
-          <div className="flex items-center mb-4 w-full pl-10 pt-10 ">
-            <div className="w-12 h-12 p-2 rounded-lg flex items-center justify-center mr-3">
-              <img
-                src={'/logo.svg'}
-                alt="logo"
-                className="size-8 mr-[12] cursor-pointer"
-              />
+          <div className="flex flex-1 flex-col justify-center py-10">
+            <div className="max-w-[620px]">
+              <div className="mb-4 inline-flex rounded-full border border-border-button bg-bg-component px-3 py-1 text-xs font-medium text-text-secondary">
+                Agent-first enterprise knowledge base
+              </div>
+              <h1 className="text-[42px] font-semibold leading-tight tracking-normal text-text-primary lg:text-[56px]">
+                {t('title')}
+              </h1>
+              <p className="mt-5 max-w-[520px] text-base leading-7 text-text-secondary">
+                {t('description')}
+              </p>
             </div>
-            <div className="text-xl font-bold self-center">RAGFlow</div>
+
+            <div className="mt-10 max-w-[640px] rounded-xl border border-border-button bg-bg-component p-4 shadow-sm">
+              <div className="mb-4 flex items-center justify-between border-b border-border-button pb-3">
+                <div className="text-sm font-semibold text-text-primary">
+                  政策咨询 Agent
+                </div>
+                <div className="rounded-full bg-accent-primary/10 px-2 py-1 text-xs font-medium text-accent-primary">
+                  可信引用
+                </div>
+              </div>
+              <div className="space-y-3">
+                {[
+                  ['知识库检索', '深圳保障房政策库 · 22 份文档'],
+                  ['工具调用', 'rag_retrieve · rag_read_document'],
+                  ['回答依据', '[1] 公共租赁住房管理办法'],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="grid grid-cols-[92px_1fr] items-center gap-3 rounded-lg bg-bg-card px-3 py-2"
+                  >
+                    <div className="text-xs font-medium text-text-secondary">
+                      {label}
+                    </div>
+                    <div className="truncate text-sm text-text-primary">
+                      {value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
-          <h1 className="text-[36px] font-medium  text-center mb-2">
-            {t('title')}
-          </h1>
-        </div>
-        <div className="relative z-10 flex flex-col items-center justify-center min-h-[1050px] px-4 sm:px-6 lg:px-8">
-          {/* Login Form */}
+        </section>
+
+        <div className="flex items-center justify-center">
           <FlipCard3D isLoginPage={isLoginPage}>
             <LoginFormContent
               isLoginPage={isLoginPage}
@@ -395,7 +410,7 @@ const Login = () => {
           </FlipCard3D>
         </div>
       </div>
-    </>
+    </div>
   );
 };
 

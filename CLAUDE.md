@@ -165,6 +165,7 @@ cd web && nohup npm run dev > ../logs/frontend.log 2>&1 &
 - `PLAN.md` — Agent 二改总体计划（Phase 0-3 路线图）
 - `STATUS.md` — 会话交接，当前进度快照（上次更新：2026-04-22，Phase 1 已完成）
 - `DESIGN.md` — Phase 1 Agent v2 架构设计（M1.1-M1.3 完成后稳定）
+- `PRODUCT-UI-PLAN.md` — Phase 1.7 企业知识库前端产品化重构计划（基于 `design-refs/zhiyuan`）
 - `FORK.md` — 与上游 infiniflow/ragflow 的差异 + 13 个已推送 commits
 - `README-agent-v2.md` — Agent v2 最终用户/开发者使用指南
 - `test/e2e/baojian_house.md` — 保障房 10 题黄金用例规范

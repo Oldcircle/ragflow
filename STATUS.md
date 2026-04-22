@@ -4,11 +4,58 @@
 
 ---
 
-## 最近更新：2026-04-22（晚）
+## 最近更新：2026-04-22（夜）
 
-**当前阶段**：**Phase 1 M1.6 已完成** — 模型供应商集成 + 模板系统 + [N] 脚注
-**Phase 1 全部完成（M1.1-M1.6）**
-**下一步入口**：Phase 2（Multi-Agent 协作 / Trigger / 部署渠道 / 企业功能等）
+**当前阶段**：**Phase 1 已完成，进入 Phase 1.7 前端产品化重构**
+**下一步入口**：P1.7-A — 全局品牌外壳、登录页、首页
+
+### P1.7 当前任务（2026-04-22）
+
+用户明确目标：当前前端仍然完全是 RAGFlow 前端，需要包装成我们自己的企业知识库项目。项目内参考稿为 `design-refs/zhiyuan/`，应参考其「知源 · 企业知识库」设计语言重构整个前端，但保留全部功能，只重构前端和 UI。
+
+**已新增文档**：
+- `PRODUCT-UI-PLAN.md` — Phase 1.7 企业知识库前端产品化重构计划
+
+**执行策略**：
+- 先改全局可见外壳：`web/src/layouts/*`、`web/src/pages/login-next/*`、`web/src/pages/home/*`
+- 保留所有已有 routes 和业务 hooks
+- 后续逐批改知识库、Agent 工作台、聊天/搜索/文件/设置等页面
+
+### P1.7-A 已完成首批改造（2026-04-22）
+
+**已改代码**：
+- 新增 `web/src/layouts/components/product-mark.tsx`：统一「知源 / 企业知识库」品牌标识
+- 重构 `web/src/layouts/components/header.tsx`：移除显眼 RAGFlow / Discord / GitHub 外部入口，保留语言、帮助、主题、通知、用户设置
+- 重构 `web/src/layouts/components/global-navbar.tsx`：导航改为「概览 / 知识库 / 对话 / Agent / 检索 / 编排 / 记忆 / 文件」，保留全部原路由
+- 重构 `web/src/pages/login-next/index.tsx`：登录页改为企业知识库入口，保留登录、注册、SSO、禁用密码登录等逻辑
+- 重构 `web/src/pages/home/index.tsx`：首页改为企业知识库概览 + 快速入口 + 原知识库/应用列表
+- 更新 `web/src/locales/zh.ts` / `en.ts`：核心产品文案从 RAGFlow 转为企业知识库
+- 更新 `web/src/app.tsx` 默认浅色主题；更新 `web/src/global.less`、`page-container.tsx` 的基础视觉
+
+**验证**：
+- 本次改动文件 targeted ESLint 通过
+- `npm run type-check` 未通过，但失败来自仓库既有大量 TS 债；本次新增的唯一未使用导入已修复
+- 已启动前端 dev server：`http://127.0.0.1:9223/`
+- Vite 已成功转换并返回首页、登录页、Header、Nav 模块（HTTP 200）
+
+### P1.7-A 暗色主题兼容修正（2026-04-22）
+
+用户反馈：切到全白背景后，原本按暗色主题设计的组件出现对比度/层级问题。
+
+**修正**：
+- `web/src/app.tsx` 默认主题恢复为 `ThemeEnum.Dark`
+- 移除首批改造里的硬编码白底/黑字：`bg-white`、`#fafafa`、`#1c1917` 等改为现有主题 token
+- 新增 `.zy-grid-bg`，登录页背景跟随 `--bg-base` / `--border-button`
+- Header / Nav / 首页 / 登录页统一使用 `bg-bg-base`、`bg-bg-component`、`bg-bg-card`、`text-text-primary`、`text-text-secondary`、`border-border-button`、`accent-primary`
+
+**验证**：
+- targeted ESLint 通过
+- `git diff --check` 通过
+- Vite 成功转换首页、登录页、Header、Nav 模块（HTTP 200）
+
+**下一步入口**：
+- P1.7-B：统一 `/agent-chat` 与新全局 shell 的视觉细节
+- P1.7-C：开始重构 `/datasets` 和 `/dataset/**`，这是 RAGFlow 痕迹最重的核心业务区
 
 ### M1.6 完成内容（2026-04-22）
 

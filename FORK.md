@@ -199,6 +199,19 @@ graspologic = { git = "https://github.com/infiniflow/graspologic.git", rev = "38
   - 改造思路：采纳设计语言（tokens / 3 列布局 / 思考块 / chip 发送器），替换右侧栏语义（引用 → 工具调用），不照搬 KB/图谱/检索测试页
   - 已加入 `.gitignore`，不会被推到 GitHub
 
+### F. Phase 1.7 前端产品化重构（进行中）
+
+目标：把 RAGFlow 原版前端外壳重构成我们自己的企业知识库产品前端。保留全部功能、路由、API 和后端能力，只替换 UI / UX / 信息架构 / 文案。
+
+参考源：`design-refs/zhiyuan/project/知源 · 企业知识库.html`。
+
+首批改造范围：
+- `web/src/layouts/*` — 全局品牌 shell 和导航
+- `web/src/pages/login-next/*` — 登录页品牌化
+- `web/src/pages/home/*` — 企业知识库首页概览
+- `web/src/locales/zh.ts` / `web/src/locales/en.ts` — 产品文案
+- `web/src/global.less` — 全局视觉 tokens 和滚动条
+
 ---
 
 ## 长期差异策略
