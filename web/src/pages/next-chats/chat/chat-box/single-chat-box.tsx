@@ -70,12 +70,12 @@ export function SingleChatBox({
   }, [conversationId, setDerivedMessages]);
 
   return (
-    <section className="flex flex-col h-full gap-4">
+    <section className="flex h-full flex-col gap-4">
       <div
         ref={messageContainerRef}
-        className="p-5 flex-1 overflow-auto min-h-0 scrollbar-auto"
+        className="min-h-0 flex-1 overflow-auto p-5 scrollbar-auto"
       >
-        <div className="w-full pr-5">
+        <div className="mx-auto w-full max-w-[880px] pr-5">
           {derivedMessages?.map((message, i) => (
             <MessageItem
               loading={
@@ -106,7 +106,7 @@ export function SingleChatBox({
         <div ref={scrollRef} />
       </div>
 
-      <div className="p-5 pt-0">
+      <div className="mx-auto w-full max-w-[920px] p-5 pt-0">
         <NextMessageInput
           disabled={disabled}
           sendDisabled={sendDisabled}

@@ -114,7 +114,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
   return (
     <>
       {settingVisible || (
-        <div className="p-5">
+        <div className="chat-workbench-panel border-l p-5">
           <Button
             onClick={switchSettingVisible}
             disabled={!hasSingleChatBox}
@@ -130,13 +130,13 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       <section
         data-testid="chat-detail-settings"
         className={cn(
-          'transition-[width] ease-out duration-300 flex-shrink-0 flex flex-col overflow-hidden',
+          'chat-workbench-panel transition-[width] ease-out duration-300 flex-shrink-0 flex flex-col overflow-hidden border-l',
           settingVisible ? 'w-[440px]' : 'w-0',
         )}
       >
         {settingVisible && (
           <>
-            <div className="p-5 pb-2 flex justify-between items-center text-base">
+            <div className="flex items-center justify-between p-5 pb-2 text-base font-semibold text-text-primary">
               {t('chat.chatSetting')}
 
               <Button

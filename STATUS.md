@@ -7,7 +7,7 @@
 ## 最近更新：2026-04-22（夜）
 
 **当前阶段**：**Phase 1 已完成，进入 Phase 1.7 前端产品化重构**
-**下一步入口**：P1.7-A — 全局品牌外壳、登录页、首页
+**下一步入口**：P1.7-B — 对话页向 Agent 工作台继续细节对齐；随后进入 P1.7-C 知识库 / 文档页
 
 ### P1.7 当前任务（2026-04-22）
 
@@ -17,9 +17,10 @@
 - `PRODUCT-UI-PLAN.md` — Phase 1.7 企业知识库前端产品化重构计划
 
 **执行策略**：
-- 先改全局可见外壳：`web/src/layouts/*`、`web/src/pages/login-next/*`、`web/src/pages/home/*`
+- 已完成全局可见外壳：`web/src/layouts/*`、`web/src/pages/login-next/*`、`web/src/pages/home/*`
+- 当前统一高频工作台体验：`web/src/pages/agent-chat/*`、`web/src/pages/next-chats/chat/*`
 - 保留所有已有 routes 和业务 hooks
-- 后续逐批改知识库、Agent 工作台、聊天/搜索/文件/设置等页面
+- 后续逐批改知识库、文档、搜索、文件、设置等页面
 
 ### P1.7-A 已完成首批改造（2026-04-22）
 
@@ -30,7 +31,7 @@
 - 重构 `web/src/pages/login-next/index.tsx`：登录页改为企业知识库入口，保留登录、注册、SSO、禁用密码登录等逻辑
 - 重构 `web/src/pages/home/index.tsx`：首页改为企业知识库概览 + 快速入口 + 原知识库/应用列表
 - 更新 `web/src/locales/zh.ts` / `en.ts`：核心产品文案从 RAGFlow 转为企业知识库
-- 更新 `web/src/app.tsx` 默认浅色主题；更新 `web/src/global.less`、`page-container.tsx` 的基础视觉
+- 更新 `web/src/global.less`、`page-container.tsx` 的基础视觉（后续已恢复默认暗色主题兼容）
 
 **验证**：
 - 本次改动文件 targeted ESLint 通过
@@ -70,6 +71,23 @@
 - targeted ESLint 通过
 - `git diff --check` 通过
 - Vite 成功转换 root layout、sidebar shell、sidebar nav、home 模块（HTTP 200）
+
+### P1.7-B 对话页向 Agent 工作台对齐（2026-04-22）
+
+用户反馈：`/agent-chat` 和原「对话」页面前端风格差别太大，需要将对话页面风格向 Agent 对齐。
+
+**已改代码**：
+- `web/src/pages/next-chats/chat/index.tsx`：对话详情页改为 Agent 风格工作台结构：全局 shell + 左会话栏 / 中消息区 / 右设置栏
+- `web/src/pages/next-chats/chat/styles.css`：新增对话工作台样式 tokens，复用暗色主题变量
+- `web/src/pages/next-chats/chat/sessions.tsx`：会话列表边框、背景、选中态向 Agent 会话栏靠齐
+- `web/src/pages/next-chats/chat/chat-box/single-chat-box.tsx`：消息区和输入框收窄到更接近 Agent 的阅读宽度
+- `web/src/pages/next-chats/chat/app-settings/chat-settings.tsx`：右侧设置栏改为 Agent 工具栏类似的边框/面板层级
+- `web/src/pages/next-chats/chat/chat-box/next-multiple-chat-box.tsx`：多模型调试页输入区宽度和工作台 spacing 对齐
+
+**验证**：
+- targeted ESLint 通过
+- `git diff --check` 通过
+- Vite 成功转换 chat detail、sessions、single chat box、settings 模块（HTTP 200）
 
 ### M1.6 完成内容（2026-04-22）
 

@@ -39,16 +39,17 @@ Phase 1 已完成 Agent v2 后端、SSE 会话、工具调用可视化、模板�
 ### P1.7-A — 全局品牌与外壳
 
 - 更新全局品牌名、Logo 组件和基础 tokens。
-- 重构顶部导航为企业知识库信息架构。
+- 重构全局 shell 为左侧企业工作台导航（参考 `design-refs/zhiyuan/project/ui.jsx` 的 Sidebar / Topbar 模式）。
 - 移除公网 RAGFlow / Discord / GitHub 的显眼入口，保留帮助、语言、主题、通知、用户设置。
 - 重构登录页为企业知识库产品入口。
 - 重构首页为企业知识库概览，继续复用真实知识库 / 应用列表数据。
 
-### P1.7-B — Agent 工作台统一
+### P1.7-B — Agent / 对话工作台统一
 
 - 将 `/agent-chat` 与全局 shell 视觉完全统一。
 - 保留现有 SSE、Session、工具调用、引用、模板能力。
 - 优化空状态、新建会话、工具侧栏与引用阅读体验。
+- 将原「对话」详情页向 `/agent-chat` 的工作台体验靠齐：左会话栏 / 中消息区 / 右设置栏、暗色 token、阅读宽度、选中态。
 
 ### P1.7-C — 知识库与文档页面
 
@@ -57,7 +58,7 @@ Phase 1 已完成 Agent v2 后端、SSE 会话、工具调用可视化、模板�
 
 ### P1.7-D — 其余功能收口
 
-- 重构聊天、搜索、Agent 编排、记忆、文件管理、用户设置。
+- 重构搜索、Agent 编排、记忆、文件管理、用户设置。
 - 统一空状态、表格、卡片、弹窗、表单、侧栏和响应式行为。
 - 最后扫掉 RAGFlow 显性品牌文案与旧视觉碎片。
 
@@ -65,15 +66,17 @@ Phase 1 已完成 Agent v2 后端、SSE 会话、工具调用可视化、模板�
 
 - 登录后主路径不再显得是原版 RAGFlow 前端。
 - 所有已有路由仍可访问，核心功能按钮仍在。
-- `npm run type-check` 通过。
+- 本批改动文件 targeted ESLint 通过。
+- 关键入口模块可被 Vite 正常转换返回（开发期用本地 dev server 抽查）。
+- 全量 `npm run type-check` 当前存在上游/既有 TS 债，不作为 P1.7 单批阻塞项；若本批引入新类型错误，需要单独修复。
 - 至少手动检查：登录页、首页、知识库列表、Agent 工作台、文件管理、用户设置。
 
 ## 当前入口
 
-从 P1.7-A 开始：
+当前继续入口：
 
-1. `web/src/layouts/*`
-2. `web/src/pages/login-next/*`
-3. `web/src/pages/home/*`
-4. `web/src/locales/zh.ts` / `web/src/locales/en.ts`
-5. `web/src/global.less`
+1. `web/src/pages/next-chats/chat/*` — 对话页继续向 Agent 工作台细节对齐
+2. `web/src/pages/agent-chat/*` — 与全局左侧 shell 的 spacing / token 收口
+3. `web/src/pages/datasets/*`、`web/src/pages/dataset/**` — 下一批核心业务页
+4. `web/src/locales/zh.ts` / `web/src/locales/en.ts` — 新产品文案
+5. `web/src/global.less`、`web/src/layouts/*` — 全局主题和 shell

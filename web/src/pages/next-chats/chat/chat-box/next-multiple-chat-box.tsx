@@ -332,9 +332,9 @@ export function MultipleChatBox({
   );
 
   return (
-    <section className="flex flex-1 min-h-0 flex-col px-5">
+    <section className="flex min-h-0 flex-1 flex-col px-5">
       <div
-        className="flex gap-4 flex-1 px-5 pb-14 min-h-0"
+        className="flex min-h-0 flex-1 gap-4 px-5 pb-14"
         data-testid="chat-detail-multimodel-grid"
       >
         {chatBoxIds.map((id, idx) => (
@@ -357,7 +357,7 @@ export function MultipleChatBox({
           ></ChatCard>
         ))}
       </div>
-      <div className="px-[20%]">
+      <div className="mx-auto w-full max-w-[920px]">
         <NextMessageInput
           disabled={disabled}
           sendDisabled={sendDisabled}

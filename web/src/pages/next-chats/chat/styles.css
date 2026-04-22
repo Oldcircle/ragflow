@@ -1,0 +1,50 @@
+.chat-workbench-root {
+  background: #fafafa;
+  color: #1c1917;
+  font-family:
+    'Inter Tight',
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    system-ui,
+    sans-serif;
+}
+
+.dark .chat-workbench-root {
+  background: var(--bg-base);
+  color: rgb(var(--text-primary));
+}
+
+.chat-workbench-topbar {
+  display: flex;
+  height: 56px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid var(--border-button);
+  background: var(--bg-component);
+  padding: 0 24px;
+}
+
+.chat-workbench-panel {
+  border-color: var(--border-button);
+  background: var(--bg-component);
+}
+
+.chat-workbench-muted-panel {
+  background: var(--bg-base);
+}
+
+.chat-workbench-soft-item {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.chat-workbench-soft-item:hover {
+  border-color: var(--border-button);
+  background: var(--bg-card);
+}

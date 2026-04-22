@@ -47,3 +47,12 @@ For React Query / cache invalidation bugs, **carefully compare query keys across
 - Extract complex logic into hooks or utils; keep components lean.
 - Use `PascalCase` for constants and component names.
 - Avoid duplicating component structures in JSX; favor render props or reusable components.
+
+### Product UI Refactor (Phase 1.7)
+The fork is being re-skinned as 「知源 · 企业知识库」. For product-facing routes, prefer the local reference package in `../design-refs/zhiyuan/project/` and the existing Agent v2 workbench style over upstream RAGFlow visual patterns.
+
+- Keep the global shell as a left sidebar workspace (`src/layouts/root-layout.tsx`, `src/layouts/components/header.tsx`, `global-navbar.tsx`). Do not reintroduce a top pill navigation for authenticated product routes.
+- Preserve all existing routes, hooks, request services, permissions, and business behavior. UI changes should wrap or restyle existing logic rather than replacing data flows.
+- Use theme tokens (`bg-bg-base`, `bg-bg-component`, `bg-bg-card`, `text-text-primary`, `text-text-secondary`, `border-border-button`, `accent-primary`) instead of hard-coded white/black/gray values. The default app theme remains dark, and new UI must be legible in dark mode first.
+- When aligning legacy pages with Agent v2, prefer the workbench structure: left contextual sidebar, central reading/conversation surface, right inspector/settings/tool panel, and constrained message/content width.
+- Avoid visible upstream/community branding in the authenticated product shell. External RAGFlow docs links may remain only where they are clearly help/documentation actions.

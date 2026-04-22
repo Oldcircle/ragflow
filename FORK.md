@@ -159,6 +159,8 @@ graspologic = { git = "https://github.com/infiniflow/graspologic.git", rev = "38
 - `3418bad` refactor(agent-v2): wire NewSessionDialog to /v1/agent_v2/model endpoint (M1.6 Step 1 FE)
 - `4c45929` feat(agent-v2): inline [N] citation footnotes with hover+click highlight (M1.6 Step 3)
 - `824ee28` feat(agent-v2): M1.6 Step 2 — Agent template system (6 presets)
+- `ec8afc200` feat(ui): rebrand shell as enterprise knowledge base
+- `a91f546bc` feat(ui): switch product shell to sidebar workspace
 
 #### 后端（已落地）
 
@@ -211,6 +213,14 @@ graspologic = { git = "https://github.com/infiniflow/graspologic.git", rev = "38
 - `web/src/pages/home/*` — 企业知识库首页概览
 - `web/src/locales/zh.ts` / `web/src/locales/en.ts` — 产品文案
 - `web/src/global.less` — 全局视觉 tokens 和滚动条
+
+已推送：
+- `ec8afc200`：产品品牌、文档计划、登录页、首页、顶部导航首批改造；随后恢复暗色主题兼容
+- `a91f546bc`：全局 shell 从顶部导航切换为左侧企业工作台 sidebar
+
+进行中（未推送）：
+- `web/src/pages/next-chats/chat/*`：原「对话」详情页向 `/agent-chat` 工作台风格对齐
+- `web/src/pages/next-chats/chat/styles.css`：对话工作台样式层，复用暗色主题 token
 
 ---
 

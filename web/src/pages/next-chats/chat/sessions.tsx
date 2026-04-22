@@ -168,7 +168,7 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
 
   return (
     <aside
-      className="p-5 w-[296px] flex flex-col"
+      className="chat-workbench-panel flex w-[296px] flex-col border-r p-5"
       role="complementary"
       data-testid="chat-detail-sessions"
     >
@@ -297,7 +297,7 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
         ></SearchInput>
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto scrollbar-auto">
         {selectionMode ? (
           <ul className="space-y-2" role="listbox" aria-multiselectable>
             {conversationList.map((x) => (
@@ -327,15 +327,12 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
               {conversationList.map((x) => (
                 <li
                   key={x.id}
-                  className="
-                      group pr-3 flex items-center gap-1 rounded-lg
-                      aria-selected:bg-bg-card has-[>button:focus-visible]:bg-bg-card
-                    "
+                  className="group flex items-center gap-1 rounded-lg pr-2 aria-selected:bg-accent-primary/10 aria-selected:shadow-[inset_2px_0_0_rgb(var(--accent-primary))] has-[>button:focus-visible]:bg-bg-card"
                   aria-selected={conversationId === x.id}
                 >
                   <button
                     type="button"
-                    className="focus-visible:outline-none px-3 py-2 text-left flex-1 truncate"
+                    className="flex-1 truncate px-3 py-2 text-left text-sm text-text-secondary focus-visible:outline-none group-aria-selected:text-text-primary"
                     onClick={() => handleConversationCardClick(x.id, x.is_new)}
                     data-testid="chat-detail-session-item"
                     data-session-id={x.id}
