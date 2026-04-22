@@ -4,10 +4,42 @@
 
 ---
 
-## 最近更新：2026-04-22（夜）
+## 最近更新：2026-04-22（深夜）
 
-**当前阶段**：**Phase 1 已完成，进入 Phase 1.7 前端产品化重构**
-**下一步入口**：P1.7-B — 对话页向 Agent 工作台继续细节对齐；随后进入 P1.7-C 知识库 / 文档页
+**当前阶段**：**Phase 1.7 前端产品化重构进行中**（A/B 完成；C 首批：`/datasets` 列表完成）
+**下一步入口**：P1.7-C 继续 — `/dataset/**` 详情、侧栏、文档表格、检索测试、知识图谱
+
+### P1.7 审计与回归修复（2026-04-22 深夜）
+
+对活跃的 3 个 UI commit 做整体审计后发现并修复：
+
+- `chat-settings.tsx` 关闭按钮的 `LucidePanelRightClose` 同时挂了 `onClick`，与外层 `<Button onClick>` 叠加导致点击图标时 panel 双向切换不生效 → 去掉 icon 上的冗余 `onClick`
+- `chat/styles.css` 中 `.chat-workbench-root` 把浅色态硬编码为 `#fafafa / #1c1917`，偏离全局主题 token → 全部改为 `var(--bg-base)` / `rgb(var(--text-primary))`
+- `header.tsx` / `home/index.tsx` / `login-next/index.tsx` 里的硬编码中文改走 `useTranslation`；新增 `header.newAgentSession / agentV2Title / agentV2Description / workspaceSettings / workspaceGroup / buildGroup / docsUrl / helpCenter`、`workspaceHome.*`、`login.tagline / policyCard*` 等 key（en / zh 同步）
+- `index.html` `<title>` 从 `RAGFlow` 改为 `知源 · 企业知识库`
+
+**验证**：
+- 229 个 repo-wide TS 错误均为上游 legacy debt，本批 11 个文件 + 新增文件本地 0 TS 错误
+- ESLint 通过
+- Vite dev server `http://127.0.0.1:9222` 上 `/`、`/login-next`、`/datasets`、`/chats`、`/agent-chat`、`/searches`、`/agents`、`/memories`、`/files`、`/profile-setting/profile` 全部 200
+- 源模块（header、nav、product-mark、home、login、chat index/styles/sessions/single-chat-box/chat-settings）Vite transform 全部 200
+
+### P1.7-C 首批：`/datasets` 列表完成（2026-04-22 深夜）
+
+**已改代码**：
+- `web/src/pages/datasets/index.tsx`：页头改为知源风格，标题 + 副标题 + 资产统计三联（知识库 / 文档 / 切片），保留 `ListFilterBar`（搜索、所有者筛选）与创建按钮；分页区移入底部边框条
+- `web/src/pages/datasets/dataset-card.tsx`：放弃共享 `HomeCard`，改为自管的企业资产卡 — 头像 + 名称 + 团队/仅自己 badge + 归属、两段式描述、`document_count / chunk_count` 度量栏、embedding 模型 + 更新时间页脚，整卡 hover 高亮 + 键盘 Enter/Space 可达
+- `web/src/locales/zh.ts` / `en.ts`：新增 `knowledgeList.listSubtitle / metricDocuments / metricChunks / embeddingModel / updatedAt / permissionTeam / permissionMe / ownerPrefix`
+
+**保留**：
+- `useFetchNextKnowledgeListByPage`、`useSelectOwners`、`useSaveKnowledge`、`useRenameDataset`、`useNavigatePage` hooks
+- 分页、搜索（含防抖）、所有者筛选、创建 / 重命名 / 删除弹窗、`isCreate=true` 自动打开创建弹窗
+- `data-testid` 全部保留（`datasets-list`、`datasets-create`、`dataset-card`、`dataset-name`）
+
+**验证**：
+- 本批 ESLint 通过，本批 TS 无新增错误
+- Vite transform `/src/pages/datasets/index.tsx`、`/src/pages/datasets/dataset-card.tsx`、`/src/locales/*.ts` 均 200
+- `/datasets` 整页入口 200
 
 ### P1.7 当前任务（2026-04-22）
 

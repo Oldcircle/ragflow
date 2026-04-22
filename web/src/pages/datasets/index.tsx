@@ -8,8 +8,8 @@ import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { useFetchNextKnowledgeListByPage } from '@/hooks/use-knowledge-request';
 import { useQueryClient } from '@tanstack/react-query';
 import { pick } from 'lodash';
-import { Plus } from 'lucide-react';
-import { useCallback, useEffect } from 'react';
+import { Database, Layers, Plus, Sparkles } from 'lucide-react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router';
 import { DatasetCard } from './dataset-card';
@@ -68,24 +68,81 @@ export default function Datasets() {
     }
   }, [isCreate, showModal, searchUrl, setSearchUrl, queryClient]);
 
+  const summary = useMemo(() => {
+    const documents = kbs.reduce(
+      (sum, item) => sum + (item.document_count ?? 0),
+      0,
+    );
+    const chunks = kbs.reduce((sum, item) => sum + (item.chunk_count ?? 0), 0);
+    return [
+      {
+        key: 'datasets',
+        label: t('knowledgeList.welcome'),
+        value: total_datasets || kbs.length || 0,
+        icon: Sparkles,
+      },
+      {
+        key: 'documents',
+        label: t('knowledgeList.metricDocuments'),
+        value: documents.toLocaleString(),
+        icon: Database,
+      },
+      {
+        key: 'chunks',
+        label: t('knowledgeList.metricChunks'),
+        value: chunks.toLocaleString(),
+        icon: Layers,
+      },
+    ];
+  }, [kbs, total_datasets, t]);
+
+  const hasListContent = !!kbs?.length || !!searchString;
+
   return (
     <>
-      {kbs?.length || searchString ? (
+      {hasListContent ? (
         <article
-          className="size-full flex flex-col"
+          className="flex size-full flex-col bg-bg-base"
           data-testid="datasets-list"
         >
-          <header className="px-5 pt-8 mb-4">
+          <header className="border-b border-border-button bg-bg-component/60 px-8 pb-5 pt-8">
+            <div className="mb-4 flex items-baseline justify-between gap-4">
+              <div className="min-w-0">
+                <h1 className="text-[22px] font-semibold tracking-normal text-text-primary">
+                  {t('header.dataset')}
+                </h1>
+                <p className="mt-1 text-sm text-text-secondary">
+                  {t('knowledgeList.listSubtitle', {
+                    count: total_datasets || kbs.length,
+                  })}
+                </p>
+              </div>
+              <dl className="hidden shrink-0 items-center gap-3 md:flex">
+                {summary.map(({ key, label, value, icon: Icon }) => (
+                  <div
+                    key={key}
+                    className="flex items-center gap-2 rounded-lg border border-border-button bg-bg-component px-3 py-2"
+                  >
+                    <Icon className="size-3.5 text-accent-primary" />
+                    <dt className="text-xs text-text-secondary">{label}</dt>
+                    <dd className="font-mono text-sm font-medium text-text-primary">
+                      {value}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+
             <ListFilterBar
-              title={t('header.dataset')}
+              title={null}
               searchString={searchString}
               onSearchChange={handleInputChange}
               value={filterValue}
               filters={owners}
               onChange={handleFilterSubmit}
-              icon={'datasets'}
+              className="gap-3"
             >
-              <Button onClick={showModal}>
+              <Button onClick={showModal} data-testid="datasets-create">
                 <Plus className="size-[1em]" />
                 {t('knowledgeList.createKnowledgeBase')}
               </Button>
@@ -94,7 +151,7 @@ export default function Datasets() {
 
           {kbs?.length ? (
             <>
-              <CardContainer className="flex-1 overflow-auto px-5">
+              <CardContainer className="flex-1 overflow-auto px-8 py-6">
                 {kbs.map((dataset) => (
                   <DatasetCard
                     dataset={dataset}
@@ -104,7 +161,7 @@ export default function Datasets() {
                 ))}
               </CardContainer>
 
-              <footer className="mt-4 px-5 pb-5">
+              <footer className="border-t border-border-button bg-bg-component/40 px-8 py-4">
                 <RAGFlowPagination
                   {...pick(pagination, 'current', 'pageSize')}
                   total={total_datasets}
@@ -113,7 +170,7 @@ export default function Datasets() {
               </footer>
             </>
           ) : (
-            <div className="flex-1 flex items-center justify-center">
+            <div className="flex flex-1 items-center justify-center">
               <EmptyAppCard
                 showIcon
                 size="large"
@@ -127,7 +184,7 @@ export default function Datasets() {
         </article>
       ) : (
         <article
-          className="size-full flex items-center justify-center"
+          className="flex size-full items-center justify-center bg-bg-base"
           data-testid="datasets-list"
         >
           <EmptyAppCard
@@ -144,7 +201,7 @@ export default function Datasets() {
           hideModal={hideModal}
           onOk={onCreateOk}
           loading={creatingLoading}
-        ></DatasetCreatingDialog>
+        />
       )}
       {datasetRenameVisible && (
         <RenameDialog
@@ -152,7 +209,7 @@ export default function Datasets() {
           onOk={onDatasetRenameOk}
           initialName={initialDatasetName}
           loading={datasetRenameLoading}
-        ></RenameDialog>
+        />
       )}
     </>
   );

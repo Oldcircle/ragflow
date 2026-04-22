@@ -282,6 +282,14 @@ export default {
       noMoreData: '没有更多数据了',
       parserRequired: '分块方法必填',
       dataFlowRequired: '数据流必填',
+      listSubtitle: '{{count}} 个知识库 · 面向企业场景的可信知识资产',
+      metricDocuments: '文档',
+      metricChunks: '切片',
+      embeddingModel: '向量模型',
+      updatedAt: '更新于',
+      permissionTeam: '团队',
+      permissionMe: '仅自己',
+      ownerPrefix: '归属',
     },
     knowledgeDetails: {
       metadata: {
