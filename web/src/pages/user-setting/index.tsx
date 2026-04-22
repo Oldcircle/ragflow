@@ -1,14 +1,15 @@
 import { Outlet } from 'react-router';
 import { SideBar } from './sidebar';
 
-import { cn } from '@/lib/utils';
-
 const UserSetting = () => {
   return (
-    <section className="pt-8 size-full grid grid-cols-[auto_1fr] grid-rows-1">
+    <section
+      className="grid size-full grid-cols-[auto_1fr] grid-rows-1 bg-bg-base"
+      data-testid="user-setting"
+    >
       <SideBar />
 
-      <div className={cn('pr-6 pb-6 flex flex-1 rounded-lg overflow-hidden')}>
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <Outlet />
       </div>
     </section>

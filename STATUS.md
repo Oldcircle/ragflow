@@ -6,8 +6,8 @@
 
 ## 最近更新：2026-04-22（深夜 +1）
 
-**当前阶段**：**Phase 1.7 前端产品化重构进行中**（A / B / C / D1-D4 完成）
-**下一步入口**：P1.7-D 收尾 — 用户设置 `/profile-setting/*`（含 Api / Mcp / Team / Plan / Model / Prompt / DataSource）；上下游扫尾 RAGFlow 文案碎片
+**当前阶段**：**Phase 1.7 前端产品化重构几乎完成**（A / B / C / D1-D5 完成；仅剩品牌文案扫尾）
+**下一步入口**：Phase 2 — Multi-Agent 协作、垂直模板、Trigger、部署渠道（按 `PLAN.md` 第五节推进）
 
 ### P1.7-C2：知识库详情 shell + sidebar（2026-04-22 深夜 +1）
 
@@ -59,6 +59,27 @@
 - 16 个核心路由 Vite dev server 全部 200，包括 `/searches`、`/agents`、`/agent-templates`、`/memories`、`/files`
 - 4 个文件 ESLint 通过
 - HMR 日志无错误（中间有一次 dataset-setting 编辑中过渡态错误，保存后立即 hmr update 恢复）
+
+### P1.7-D5：用户设置 shell + sidebar + 所有子页（2026-04-22 深夜 +4）
+
+**已改代码**：
+- `web/src/pages/user-setting/index.tsx`：outer wrapper 去掉 `pt-8` 与 `pr-6 pb-6` 的 RAGFlow 遗留 padding，改为与 dataset wrapper 一致的 `grid-cols-[auto_1fr]` + `bg-bg-base`
+- `web/src/pages/user-setting/sidebar/index.tsx`：重做为企业工作台侧栏 — 「返回」链接 + 用户头像/昵称/邮箱 + 「设置」纵向导航（激活态复用 `bg-accent-primary/10 + inset shadow`）+ 底部 `version / 主题切换 / 登出`；每个导航项补 `data-testid`
+- `web/src/pages/user-setting/components/user-setting-header/index.tsx`：`ProfileSettingWrapperCard` 与 `Title` 全部改为 `<article>` 布局 + `border-b border-border-button bg-bg-component/60 px-8 py-5` 的统一 workbench 头；`Title` 字号升到 `text-[22px] font-semibold`；DataSource / MCP / Profile / Team 四个子页**自动受益**
+- `web/src/pages/user-setting/setting-model/index.tsx`：外层 `div` 改为 `<article>` 结构，顶部补 title header，保留原 3/5 + 2/5 分栏（已配置模型 + 可选模型）
+- `web/src/pages/user-setting/setting-api/index.tsx`：从极简 `<ApiContent />` 壳升级为 `<article>` + title header，内容区有 `px-8 py-6` 滚动容器
+
+**验证**：
+- ESLint 通过（只剩 `no-console` 上游 warning）
+- 17 个核心路由 Vite dev server 全部 200（含 `/user-setting/{data-source,model,team,api,mcp,profile}`）
+- 本批文件 Vite transform 均 200，HMR 日志无错误
+- 整站 RAGFlow 品牌残留扫描：只剩共享组件名（`RAGFlowFormItem` / `RAGFlowSelect` / `RAGFlowAvatar` / `RAGFlowPagination` / `RAGFlowTooltip`）、OAuth postMessage 协议 ID（`ragflow-google-drive-oauth` 等）、Jira 表单占位符示例（`placeholder: 'RAGFlow'`）—— 均非用户可感知品牌露出，不影响 Phase 1.7 验收
+
+### P1.7 验收结论
+
+用户可见的产品 shell 已完全是「知源 · 企业知识库」：
+- 登录页、首页、导航侧栏、所有列表页、知识库详情五页、对话与 Agent 工作台、用户设置六个子页，布局、字号、token、文案一致
+- 所有业务能力（数据抓取 / 搜索 / 筛选 / 分页 / 创建 / 重命名 / 批量操作 / 上传 / 移动 / 解析 / 检索测试 / 图谱 / 模型配置 / SSO / MCP）完整保留
 
 
 

@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { TFunction } from 'i18next';
 import {
+  ArrowLeft,
   LucideBox,
   LucideServer,
   LucideUnplug,
@@ -20,48 +21,46 @@ import {
 } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router';
 import { useHandleMenuClick } from './hooks';
 
 const menuItems = (t: TFunction) => [
   {
-    icon: <LucideServer className="size-[1em]" />,
+    icon: <LucideServer className="size-4" />,
     label: t('setting.dataSources'),
     key: Routes.DataSource,
+    testId: 'settings-nav-data-source',
   },
   {
-    icon: <LucideBox className="size-[1em]" />,
+    icon: <LucideBox className="size-4" />,
     label: t('setting.model'),
     key: Routes.Model,
-    'data-testid': 'settings-nav-model-providers',
+    testId: 'settings-nav-model-providers',
   },
   {
-    icon: <IconFontFill name="mcp" className="size-[1em]" />,
+    icon: <IconFontFill name="mcp" className="size-4" />,
     label: 'MCP',
     key: Routes.Mcp,
+    testId: 'settings-nav-mcp',
   },
   {
-    icon: <LucideUsers className="size-[1em]" />,
+    icon: <LucideUsers className="size-4" />,
     label: t('setting.team'),
     key: Routes.Team,
+    testId: 'settings-nav-team',
   },
   {
-    icon: <LucideUser className="size-[1em]" />,
+    icon: <LucideUser className="size-4" />,
     label: t('setting.profile'),
     key: Routes.Profile,
+    testId: 'settings-nav-profile',
   },
   {
-    icon: <LucideUnplug className="size-[1em]" />,
+    icon: <LucideUnplug className="size-4" />,
     label: t('setting.api'),
     key: Routes.Api,
+    testId: 'settings-nav-api',
   },
-  // {
-  //   icon: MessageSquareQuote,
-  //   label: 'Prompt Templates',
-  //   key: Routes.Profile,
-  // },
-  // { icon: TextSearch, label: 'Retrieval Templates', key: Routes.Profile },
-  // { icon: Cog, label: t('setting.system'), key: Routes.System },
-  // { icon: Banknote, label: 'Plan', key: Routes.Plan },
 ];
 
 export function SideBar() {
@@ -69,71 +68,108 @@ export function SideBar() {
   const { handleMenuClick, active: activeItemKey } = useHandleMenuClick();
   const { version, fetchSystemVersion } = useFetchSystemVersion();
   const { t } = useTranslation();
+
   useEffect(() => {
     if (location.host !== Domain) {
       fetchSystemVersion();
     }
   }, [fetchSystemVersion]);
+
   const { logout } = useLogout();
 
   return (
-    <aside className="w-[303px] bg-bg-base flex flex-col">
-      <header>
-        <h1 className="px-6 flex gap-2.5 items-center font-normal">
-          <RAGFlowAvatar
-            avatar={userInfo?.avatar}
-            name={userInfo?.nickname}
-            isPerson
-          />
+    <aside
+      className="flex w-64 shrink-0 flex-col gap-4 overflow-y-auto border-r border-border-button bg-bg-component/60 px-4 py-5"
+      data-testid="user-setting-sidebar"
+    >
+      <Link
+        to={Routes.Root}
+        className="inline-flex items-center gap-1.5 text-xs text-text-secondary transition hover:text-text-primary"
+        data-testid="user-setting-back"
+      >
+        <ArrowLeft className="size-3" />
+        {t('common.back')}
+      </Link>
 
-          <p className="text-sm text-text-primary">{userInfo?.email}</p>
-        </h1>
-      </header>
+      <section className="flex items-start gap-3">
+        <RAGFlowAvatar
+          avatar={userInfo?.avatar}
+          name={userInfo?.nickname}
+          isPerson
+          className="size-11 shrink-0"
+        />
+        <div className="min-w-0 flex-1">
+          <h2
+            className="truncate text-[15px] font-semibold leading-tight text-text-primary"
+            title={userInfo?.nickname}
+          >
+            {userInfo?.nickname || '—'}
+          </h2>
+          <p
+            className="mt-1 truncate text-[11px] text-text-disabled"
+            title={userInfo?.email}
+          >
+            {userInfo?.email || '—'}
+          </p>
+        </div>
+      </section>
 
-      <nav className="flex-1 overflow-auto mt-4 py-1">
-        <ul className="px-6 flex flex-col gap-5">
+      <nav aria-label={t('setting.setting')}>
+        <div className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-disabled">
+          {t('setting.setting')}
+        </div>
+        <ul className="space-y-1">
           {menuItems(t).map((item) => {
-            const { key, icon, label, ...rest } = item;
+            const { key, icon, label, testId } = item;
+            const active = activeItemKey === key;
 
             return (
               <li key={key}>
-                <Button
-                  {...rest}
-                  block
-                  variant="ghost"
-                  className={cn(
-                    'justify-start gap-2.5 px-3 relative h-10 text-base',
-                    activeItemKey === key && 'bg-bg-card text-text-primary',
-                  )}
+                <button
+                  type="button"
                   onClick={handleMenuClick(key)}
+                  aria-current={active ? 'page' : undefined}
+                  data-testid={testId}
+                  className={cn(
+                    'group flex h-9 w-full items-center gap-3 rounded-lg px-3 text-sm transition',
+                    'text-text-secondary hover:bg-bg-card hover:text-text-primary focus-visible:bg-bg-card focus-visible:text-text-primary focus-visible:outline-none',
+                    active &&
+                      'bg-accent-primary/10 text-text-primary shadow-[inset_2px_0_0_rgb(var(--accent-primary))]',
+                  )}
                 >
-                  <section className="flex items-center gap-2.5">
+                  <span
+                    className={cn(
+                      'flex text-text-secondary transition group-hover:text-text-primary',
+                      active && 'text-accent-primary',
+                    )}
+                  >
                     {icon}
-                    <span>{label}</span>
-                  </section>
-                  {/* {item.key === Routes.System && (
-                    <div className="mr-2 px-2 bg-accent-primary-5 text-accent-primary rounded-md">
-                      {version}
-                    </div>
-                  )} */}
-                  {/* {active && (
-                    <div className="absolute right-0 w-[5px] h-[66px] bg-primary rounded-l-xl shadow-[0_0_5.94px_#7561ff,0_0_11.88px_#7561ff,0_0_41.58px_#7561ff,0_0_83.16px_#7561ff,0_0_142.56px_#7561ff,0_0_249.48px_#7561ff]" />
-                  )} */}
-                </Button>
+                  </span>
+                  <span className="truncate">{label}</span>
+                </button>
               </li>
             );
           })}
         </ul>
       </nav>
 
-      <footer className="p-6 mt-auto">
-        <div className="flex items-center gap-2 mb-6 justify-between">
-          <span className="text-xs text-accent-primary">{version}</span>
+      <div className="flex-1" />
 
+      <footer className="space-y-3 border-t border-border-button pt-4">
+        <div className="flex items-center justify-between gap-2">
+          <span className="font-mono text-xs text-text-disabled">
+            {version || ''}
+          </span>
           <ThemeSwitch />
         </div>
 
-        <Button block size="lg" variant="transparent" onClick={() => logout()}>
+        <Button
+          block
+          size="sm"
+          variant="outline"
+          onClick={() => logout()}
+          data-testid="user-setting-logout"
+        >
           {t('setting.logout')}
         </Button>
       </footer>

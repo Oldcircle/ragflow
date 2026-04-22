@@ -1,31 +1,48 @@
 import Spotlight from '@/components/spotlight';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 import { PropsWithChildren } from 'react';
 
 export function Title({ children }: PropsWithChildren) {
-  return <span className="font-bold text-xl">{children}</span>;
+  return (
+    <span className="text-[22px] font-semibold leading-tight tracking-normal text-text-primary">
+      {children}
+    </span>
+  );
 }
 
 type ProfileSettingWrapperCardProps = {
   header: React.ReactNode;
+  className?: string;
+  contentClassName?: string;
 } & PropsWithChildren;
 
 export function ProfileSettingWrapperCard({
   header,
   children,
+  className,
+  contentClassName,
 }: ProfileSettingWrapperCardProps) {
   return (
-    <Card
-      as="article"
-      className="relative w-full border-border-button bg-transparent border-0.5 flex flex-col"
+    <article
+      className={cn(
+        'relative flex size-full min-h-0 w-full flex-col overflow-hidden bg-bg-base',
+        className,
+      )}
     >
-      <CardHeader className="flex-0 border-b-0.5 border-border-button p-5">
+      <header className="shrink-0 border-b border-border-button bg-bg-component/60 px-8 py-5">
         {header}
-      </CardHeader>
+      </header>
 
-      <CardContent className="flex-1 h-0 p-0">{children}</CardContent>
+      <div
+        className={cn(
+          'min-h-0 flex-1 overflow-auto scrollbar-auto',
+          contentClassName,
+        )}
+      >
+        {children}
+      </div>
 
       <Spotlight />
-    </Card>
+    </article>
   );
 }

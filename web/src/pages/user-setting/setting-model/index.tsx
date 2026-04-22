@@ -2,6 +2,7 @@ import Spotlight from '@/components/spotlight';
 import { LLMFactory } from '@/constants/llm';
 import { LlmItem, useFetchMyLlmListDetailed } from '@/hooks/use-llm-request';
 import { useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { isLocalLlmFactory } from '../utils';
 import SystemSetting from './components/system-setting';
 import { AvailableModels } from './components/un-add-model';
@@ -35,6 +36,7 @@ import SparkModal from './modal/spark-modal';
 import VolcEngineModal from './modal/volcengine-modal';
 import YiyanModal from './modal/yiyan-modal';
 const ModelProviders = () => {
+  const { t } = useTranslation();
   const { saveSystemModelSettingLoading, onSystemSettingSavingOk } =
     useSubmitSystemModelSetting();
   const { data: detailedLlmList } = useFetchMyLlmListDetailed();
@@ -276,21 +278,32 @@ const ModelProviders = () => {
   });
 
   return (
-    <div className="flex w-full border-[0.5px] border-border-button rounded-lg relative ">
-      <Spotlight />
-      <section className="flex flex-col gap-4 w-3/5 px-5 border-r-[0.5px] border-border-button overflow-auto scrollbar-auto">
-        <SystemSetting
-          onOk={onSystemSettingSavingOk}
-          loading={saveSystemModelSettingLoading}
-        />
-        <UsedModel
-          handleAddModel={handleAddModel}
-          handleEditModel={handleEditModel}
-        />
-      </section>
-      <section className="flex flex-col w-2/5 overflow-auto scrollbar-auto">
-        <AvailableModels handleAddModel={handleAddModel} />
-      </section>
+    <article
+      className="relative flex size-full min-h-0 w-full flex-col overflow-hidden bg-bg-base"
+      data-testid="user-setting-model"
+    >
+      <header className="shrink-0 border-b border-border-button bg-bg-component/60 px-8 py-5">
+        <h1 className="text-[22px] font-semibold leading-tight tracking-normal text-text-primary">
+          {t('setting.model')}
+        </h1>
+      </header>
+
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <Spotlight />
+        <section className="flex w-3/5 flex-col gap-4 overflow-auto border-r border-border-button px-8 py-5 scrollbar-auto">
+          <SystemSetting
+            onOk={onSystemSettingSavingOk}
+            loading={saveSystemModelSettingLoading}
+          />
+          <UsedModel
+            handleAddModel={handleAddModel}
+            handleEditModel={handleEditModel}
+          />
+        </section>
+        <section className="flex w-2/5 flex-col overflow-auto px-6 py-5 scrollbar-auto">
+          <AvailableModels handleAddModel={handleAddModel} />
+        </section>
+      </div>
       <ApiKeyModal
         visible={apiKeyVisible}
         hideModal={hideApiKeyModal}
@@ -391,7 +404,7 @@ const ModelProviders = () => {
         loading={paddleocrLoading}
         onVerify={onApiKeyVerifying}
       ></PaddleOCRModal>
-    </div>
+    </article>
   );
 };
 export default ModelProviders;
