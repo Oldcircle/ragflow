@@ -8,7 +8,16 @@
  * - 去重按 doc_id + chunk content hash
  */
 
-import { memo, useMemo, useState } from 'react';
+import {
+  forwardRef,
+  memo,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { AgentV2ToolCall } from '../api';
 import { StreamingToolCall } from '../hooks/use-agent-stream';
@@ -33,222 +42,263 @@ interface Props {
   toolCalls: Array<StreamingToolCall | AgentV2ToolCall>;
 }
 
-export const ReferencesList = memo(function ReferencesList({
-  toolCalls,
-}: Props) {
-  const { t } = useTranslation();
-  const [openChunk, setOpenChunk] = useState<string | null>(null);
+/** 暴露给父组件的 imperative API — 让 [N] 点击触发滚动高亮。 */
+export interface ReferencesListHandle {
+  highlightCitation: (idx: number) => void;
+}
 
-  const { chunks, docs } = useMemo(() => extractChunks(toolCalls), [toolCalls]);
+export const ReferencesList = memo(
+  forwardRef<ReferencesListHandle, Props>(function ReferencesList(
+    { toolCalls },
+    ref,
+  ) {
+    const { t } = useTranslation();
+    const [openChunk, setOpenChunk] = useState<string | null>(null);
+    const [activeIdx, setActiveIdx] = useState<number | null>(null);
+    const chunkRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
-  if (docs.length === 0) return null;
+    const highlightCitation = useCallback((idx: number) => {
+      setActiveIdx(idx);
+      // 确保 details 展开
+      const el = chunkRefs.current[idx - 1];
+      if (el) {
+        const details = el.closest('details') as HTMLDetailsElement | null;
+        if (details && !details.open) details.open = true;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, []);
 
-  return (
-    <div
-      style={{
-        marginTop: 14,
-        padding: '12px 14px',
-        background: T.surface,
-        border: `1px solid ${T.border}`,
-        borderRadius: T.radius,
-      }}
-    >
+    useImperativeHandle(ref, () => ({ highlightCitation }), [
+      highlightCitation,
+    ]);
+
+    // 点击外部清除高亮
+    useEffect(() => {
+      if (activeIdx == null) return;
+      const timer = setTimeout(() => setActiveIdx(null), 2500);
+      return () => clearTimeout(timer);
+    }, [activeIdx]);
+
+    const { chunks, docs } = useMemo(
+      () => extractChunks(toolCalls),
+      [toolCalls],
+    );
+
+    if (docs.length === 0) return null;
+
+    return (
       <div
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          fontSize: 11,
-          color: T.textMuted,
-          fontWeight: 500,
-          marginBottom: 8,
-          textTransform: 'uppercase',
-          letterSpacing: 0.4,
+          marginTop: 14,
+          padding: '12px 14px',
+          background: T.surface,
+          border: `1px solid ${T.border}`,
+          borderRadius: T.radius,
         }}
       >
-        <I.book size={12} />
-        {t('agentV2.references')} · {docs.length} {t('agentV2.filesLabel')} ·{' '}
-        {chunks.length} {t('agentV2.chunksLabel')}
-      </div>
-
-      {/* 文件列表 */}
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: 6,
-          marginBottom: chunks.length > 0 ? 8 : 0,
-        }}
-      >
-        {docs.map((d) => (
-          <div
-            key={d.doc_id}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '4px 10px',
-              background: T.accentSoft,
-              color: T.accent,
-              border: `1px solid ${T.accentBorder}33`,
-              borderRadius: 999,
-              fontSize: 11,
-              fontWeight: 500,
-              maxWidth: 320,
-            }}
-            title={d.doc_name}
-          >
-            <I.book size={10} />
-            <span
-              style={{
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {shortName(d.doc_name)}
-            </span>
-            <span
-              style={{
-                fontSize: 10,
-                opacity: 0.75,
-                fontFamily: T.fontMono,
-              }}
-            >
-              {d.count}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      {/* chunk 列表（可展开） */}
-      {chunks.length > 0 && (
-        <details
+        <div
           style={{
-            marginTop: 4,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
             fontSize: 11,
             color: T.textMuted,
-            lineHeight: 1.6,
+            fontWeight: 500,
+            marginBottom: 8,
+            textTransform: 'uppercase',
+            letterSpacing: 0.4,
           }}
         >
-          <summary
+          <I.book size={12} />
+          {t('agentV2.references')} · {docs.length} {t('agentV2.filesLabel')} ·{' '}
+          {chunks.length} {t('agentV2.chunksLabel')}
+        </div>
+
+        {/* 文件列表 */}
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 6,
+            marginBottom: chunks.length > 0 ? 8 : 0,
+          }}
+        >
+          {docs.map((d) => (
+            <div
+              key={d.doc_id}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '4px 10px',
+                background: T.accentSoft,
+                color: T.accent,
+                border: `1px solid ${T.accentBorder}33`,
+                borderRadius: 999,
+                fontSize: 11,
+                fontWeight: 500,
+                maxWidth: 320,
+              }}
+              title={d.doc_name}
+            >
+              <I.book size={10} />
+              <span
+                style={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {shortName(d.doc_name)}
+              </span>
+              <span
+                style={{
+                  fontSize: 10,
+                  opacity: 0.75,
+                  fontFamily: T.fontMono,
+                }}
+              >
+                {d.count}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* chunk 列表（可展开） */}
+        {chunks.length > 0 && (
+          <details
             style={{
-              cursor: 'pointer',
-              userSelect: 'none',
-              color: T.textDim,
+              marginTop: 4,
               fontSize: 11,
-              padding: '2px 0',
+              color: T.textMuted,
+              lineHeight: 1.6,
             }}
           >
-            {t('agentV2.viewChunks')}
-          </summary>
-          <div
-            style={{
-              marginTop: 6,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 8,
-            }}
-          >
-            {chunks.map((c, i) => {
-              const key = `${c.doc_id}:${i}`;
-              const expanded = openChunk === key;
-              return (
-                <div
-                  key={key}
-                  onClick={() => setOpenChunk(expanded ? null : key)}
-                  style={{
-                    padding: '8px 10px',
-                    background: T.surface2,
-                    border: `1px solid ${T.border}`,
-                    borderRadius: T.radius,
-                    cursor: 'pointer',
-                  }}
-                >
+            <summary
+              style={{
+                cursor: 'pointer',
+                userSelect: 'none',
+                color: T.textDim,
+                fontSize: 11,
+                padding: '2px 0',
+              }}
+            >
+              {t('agentV2.viewChunks')}
+            </summary>
+            <div
+              style={{
+                marginTop: 6,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              {chunks.map((c, i) => {
+                const key = `${c.doc_id}:${i}`;
+                const expanded = openChunk === key;
+                const isActive = activeIdx === i + 1;
+                return (
                   <div
+                    key={key}
+                    ref={(el) => {
+                      chunkRefs.current[i] = el;
+                    }}
+                    onClick={() => setOpenChunk(expanded ? null : key)}
+                    className={`agent-v2-ref-chunk${isActive ? ' is-active' : ''}`}
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      marginBottom: 4,
+                      padding: '8px 10px',
+                      background: T.surface2,
+                      border: `1px solid ${T.border}`,
+                      borderRadius: T.radius,
+                      cursor: 'pointer',
+                      transition: 'background 0.2s, outline 0.2s',
                     }}
                   >
-                    <span
+                    <div
                       style={{
-                        display: 'inline-flex',
+                        display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'center',
-                        width: 18,
-                        height: 18,
-                        background: T.accent,
-                        color: '#fff',
-                        borderRadius: 4,
-                        fontSize: 10,
-                        fontWeight: 700,
+                        gap: 8,
+                        marginBottom: 4,
                       }}
                     >
-                      {i + 1}
-                    </span>
-                    <span
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: 18,
+                          height: 18,
+                          background: T.accent,
+                          color: '#fff',
+                          borderRadius: 4,
+                          fontSize: 10,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {i + 1}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 11,
+                          color: T.text,
+                          fontWeight: 500,
+                          flex: 1,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {shortName(c.doc_name)}
+                      </span>
+                      {c.page != null && (
+                        <span
+                          style={{
+                            fontSize: 10,
+                            color: T.textDim,
+                            fontFamily: T.fontMono,
+                          }}
+                        >
+                          p.{c.page}
+                        </span>
+                      )}
+                      {c.similarity != null && (
+                        <span
+                          style={{
+                            fontSize: 10,
+                            color: T.success,
+                            fontFamily: T.fontMono,
+                          }}
+                        >
+                          {c.similarity.toFixed(3)}
+                        </span>
+                      )}
+                    </div>
+                    <div
                       style={{
                         fontSize: 11,
-                        color: T.text,
-                        fontWeight: 500,
-                        flex: 1,
+                        color: T.textMuted,
+                        lineHeight: 1.6,
+                        whiteSpace: 'pre-wrap',
+                        maxHeight: expanded ? 'unset' : 54,
                         overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
+                        display: expanded ? 'block' : '-webkit-box',
+                        WebkitLineClamp: 3,
+                        WebkitBoxOrient: 'vertical',
                       }}
                     >
-                      {shortName(c.doc_name)}
-                    </span>
-                    {c.page != null && (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          color: T.textDim,
-                          fontFamily: T.fontMono,
-                        }}
-                      >
-                        p.{c.page}
-                      </span>
-                    )}
-                    {c.similarity != null && (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          color: T.success,
-                          fontFamily: T.fontMono,
-                        }}
-                      >
-                        {c.similarity.toFixed(3)}
-                      </span>
-                    )}
+                      {c.content}
+                    </div>
                   </div>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: T.textMuted,
-                      lineHeight: 1.6,
-                      whiteSpace: 'pre-wrap',
-                      maxHeight: expanded ? 'unset' : 54,
-                      overflow: 'hidden',
-                      display: expanded ? 'block' : '-webkit-box',
-                      WebkitLineClamp: 3,
-                      WebkitBoxOrient: 'vertical',
-                    }}
-                  >
-                    {c.content}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </details>
-      )}
-    </div>
-  );
-});
+                );
+              })}
+            </div>
+          </details>
+        )}
+      </div>
+    );
+  }),
+);
 
 function shortName(full: string): string {
   // 去掉 kb-data/<kb-name>/ 前缀，保留文件名

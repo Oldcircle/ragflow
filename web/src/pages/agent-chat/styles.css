@@ -143,3 +143,36 @@
   border-radius: 6px;
   margin: 8px 0;
 }
+
+/* ───── Inline [N] 脚注徽标 ───── */
+.agent-v2-md sup.agent-v2-cite {
+  display: inline-block;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  margin: 0 2px;
+  background: #ccfbf1;
+  color: #0f766e;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  line-height: 16px;
+  vertical-align: super;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s;
+  text-align: center;
+}
+.agent-v2-md sup.agent-v2-cite:hover {
+  background: #5eead4;
+  color: #134e4a;
+}
+
+/* ───── References list chunk 高亮（被引用点击激活时） ───── */
+.agent-v2-ref-chunk.is-active {
+  outline: 2px solid #14b8a6;
+  outline-offset: -2px;
+  background: #ccfbf1 !important;
+}

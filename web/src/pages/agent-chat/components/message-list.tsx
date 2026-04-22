@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef } from 'react';
+import { memo, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AgentV2Message, AgentV2ToolCall } from '../api';
 import {
@@ -8,7 +8,7 @@ import {
 import { T } from '../theme';
 import { I } from './icons';
 import { AgentV2Markdown } from './markdown-content';
-import { ReferencesList } from './references-list';
+import { ReferencesList, ReferencesListHandle } from './references-list';
 import { ThinkingBlock } from './thinking-block';
 
 interface Props {
@@ -238,6 +238,11 @@ function AssistantMessage({
   streaming,
   toolCalls = [],
 }: AssistantMessageProps) {
+  const refsRef = useRef<ReferencesListHandle>(null);
+  const handleCitationClick = useCallback((idx: number) => {
+    refsRef.current?.highlightCitation(idx);
+  }, []);
+
   const costStr =
     typeof usage?.total_cost_usd === 'number'
       ? `$${(usage.total_cost_usd as number).toFixed(4)}`
@@ -270,7 +275,10 @@ function AssistantMessage({
 
         {text ? (
           <div style={{ position: 'relative' }}>
-            <AgentV2Markdown content={text} />
+            <AgentV2Markdown
+              content={text}
+              onCitationClick={handleCitationClick}
+            />
             {streaming && (
               <span
                 style={{
@@ -299,7 +307,9 @@ function AssistantMessage({
           )
         )}
 
-        {toolCalls.length > 0 && <ReferencesList toolCalls={toolCalls} />}
+        {toolCalls.length > 0 && (
+          <ReferencesList ref={refsRef} toolCalls={toolCalls} />
+        )}
 
         {(costStr || toolSummary) && !streaming && (
           <div
