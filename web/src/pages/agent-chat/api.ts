@@ -59,6 +59,15 @@ export interface AgentV2ToolInfo {
   input_schema: Record<string, unknown>;
 }
 
+export interface AgentV2ModelInfo {
+  llm_name: string;
+  factory: string;
+  display_name: string;
+  api_base: string;
+  supported: boolean;
+  note?: string | null;
+}
+
 export const agentV2Api = {
   async listSessions(params?: {
     page?: number;
@@ -102,5 +111,10 @@ export const agentV2Api = {
       tools: AgentV2ToolInfo[];
       mcp_tool_names: string[];
     };
+  },
+
+  async listModels() {
+    const { data } = await request.get('/v1/agent_v2/model');
+    return data.data as { models: AgentV2ModelInfo[] };
   },
 };

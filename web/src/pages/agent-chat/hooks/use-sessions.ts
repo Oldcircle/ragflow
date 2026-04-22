@@ -9,6 +9,7 @@ const K = {
   sessions: ['agent-v2', 'sessions'] as const,
   session: (id: string) => ['agent-v2', 'session', id] as const,
   tools: ['agent-v2', 'tools'] as const,
+  models: ['agent-v2', 'models'] as const,
 };
 
 export function useSessions() {
@@ -50,6 +51,14 @@ export function useTools() {
     queryKey: K.tools,
     queryFn: () => agentV2Api.listTools(),
     staleTime: 60_000,
+  });
+}
+
+export function useAvailableModels() {
+  return useQuery({
+    queryKey: K.models,
+    queryFn: () => agentV2Api.listModels(),
+    staleTime: 30_000,
   });
 }
 

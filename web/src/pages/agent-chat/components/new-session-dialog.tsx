@@ -1,8 +1,8 @@
 /**
  * 新建 Agent 会话对话框。
  *
- * 接 RAGFlow 现有的 useFetchKnowledgeList 拿 KB 清单；
- * 模型 key 走后端 AGENT_V2_DEEPSEEK_KEY / AGENT_V2_ANTHROPIC_KEY 环境变量。
+ * - KB 列表走 RAGFlow 的 useFetchKnowledgeList
+ * - 模型下拉走后端 /v1/agent_v2/model（从 TenantLLM 读）
  */
 
 import { Button } from '@/components/ui/button';
@@ -23,8 +23,9 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useFetchKnowledgeList } from '@/hooks/use-knowledge-request';
-import { memo, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useAvailableModels } from '../hooks/use-sessions';
 
 const DEFAULT_SYSTEM_PROMPT = `你是一名严谨的企业知识库顾问。工作方式：
 
@@ -38,27 +39,6 @@ const DEFAULT_SYSTEM_PROMPT = `你是一名严谨的企业知识库顾问。工�
 - 编造数字、名称、时间；
 - 把其他场景的规则套到本知识库。`;
 
-const MODEL_PRESETS = [
-  {
-    label: 'DeepSeek (DeepSeek 官方 /anthropic 端点)',
-    value: 'deepseek',
-    model: 'deepseek-chat',
-    base_url: 'https://api.deepseek.com/anthropic',
-  },
-  {
-    label: 'Claude Sonnet 4.5 (Anthropic)',
-    value: 'claude-sonnet-4-5',
-    model: 'claude-sonnet-4-5',
-    base_url: null,
-  },
-  {
-    label: 'Claude Haiku 4.5 (Anthropic)',
-    value: 'claude-haiku-4-5',
-    model: 'claude-haiku-4-5',
-    base_url: null,
-  },
-];
-
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -67,7 +47,7 @@ interface Props {
     name: string;
     kb_ids: string[];
     system_prompt: string;
-    model_config: { model: string; base_url: string | null };
+    model_config: { llm_name: string; factory: string };
     max_turns: number;
     max_budget_usd: number;
   }) => void;
@@ -81,30 +61,50 @@ export const NewSessionDialog = memo(function NewSessionDialog({
 }: Props) {
   const { t } = useTranslation();
   const { list: kbList, loading: kbLoading } = useFetchKnowledgeList(true);
+  const { data: modelData, isLoading: modelsLoading } = useAvailableModels();
+
+  const supportedModels = useMemo(
+    () => (modelData?.models ?? []).filter((m) => m.supported),
+    [modelData?.models],
+  );
 
   const [name, setName] = useState('');
   const [kbIds, setKbIds] = useState<string[]>([]);
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT);
-  const [preset, setPreset] = useState(MODEL_PRESETS[0].value);
+  const [modelKey, setModelKey] = useState<string>(''); // `${factory}|${llm_name}`
   const [maxTurns, setMaxTurns] = useState(20);
   const [maxBudget, setMaxBudget] = useState(0.5);
 
-  const selectedPreset = useMemo(
-    () => MODEL_PRESETS.find((p) => p.value === preset) ?? MODEL_PRESETS[0],
-    [preset],
-  );
+  // 默认选中第一个 supported 模型
+  useEffect(() => {
+    if (!modelKey && supportedModels.length > 0) {
+      const m = supportedModels[0];
+      setModelKey(`${m.factory}|${m.llm_name}`);
+    }
+  }, [supportedModels, modelKey]);
 
-  const canSubmit = name.trim().length > 0 && kbIds.length > 0 && !submitting;
+  const selectedModel = useMemo(() => {
+    const [factory, llm_name] = modelKey.split('|');
+    return supportedModels.find(
+      (m) => m.factory === factory && m.llm_name === llm_name,
+    );
+  }, [modelKey, supportedModels]);
+
+  const canSubmit =
+    name.trim().length > 0 &&
+    kbIds.length > 0 &&
+    !!selectedModel &&
+    !submitting;
 
   const handleSubmit = () => {
-    if (!canSubmit) return;
+    if (!canSubmit || !selectedModel) return;
     onSubmit({
       name: name.trim(),
       kb_ids: kbIds,
       system_prompt: systemPrompt,
       model_config: {
-        model: selectedPreset.model,
-        base_url: selectedPreset.base_url,
+        llm_name: selectedModel.llm_name,
+        factory: selectedModel.factory,
       },
       max_turns: maxTurns,
       max_budget_usd: maxBudget,
@@ -172,20 +172,33 @@ export const NewSessionDialog = memo(function NewSessionDialog({
 
           {/* 模型 */}
           <Field label={t('agentV2.model')}>
-            <Select value={preset} onValueChange={setPreset}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {MODEL_PRESETS.map((p) => (
-                  <SelectItem key={p.value} value={p.value}>
-                    {p.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {modelsLoading ? (
+              <div className="text-xs text-muted-foreground">
+                {t('common.loading')}
+              </div>
+            ) : supportedModels.length === 0 ? (
+              <div className="text-xs text-red-600">
+                {t('agentV2.noModelHint')}
+              </div>
+            ) : (
+              <Select value={modelKey} onValueChange={setModelKey}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t('agentV2.selectModel')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {supportedModels.map((m) => (
+                    <SelectItem
+                      key={`${m.factory}|${m.llm_name}`}
+                      value={`${m.factory}|${m.llm_name}`}
+                    >
+                      {m.display_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <div className="text-xs text-muted-foreground mt-1">
-              {t('agentV2.modelKeyHint')}
+              {t('agentV2.modelProviderHint')}
             </div>
           </Field>
 
