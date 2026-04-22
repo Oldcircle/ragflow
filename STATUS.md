@@ -23,6 +23,24 @@
 ### 可访问
 打开 http://localhost:9222/agent-chat 登录后即可用。
 
+### 体验路径（Phase 1 M1.4 完成后即可）
+1. 硬刷新浏览器 `Cmd+Shift+R`
+2. 顶部菜单点「工作台」（或直接访问 /agent-chat）
+3. 左侧「新建会话」：
+   - 名称随便（如"保障房政策顾问 v2"）
+   - 知识库选「深圳保障房政策库」
+   - 模型选 DeepSeek（服务端已配 AGENT_V2_DEEPSEEK_KEY）
+   - System Prompt 默认已包含严格防幻觉指令
+   - 创建
+4. 聊：问「公共租赁住房申请条件和社保年限」之类的问题
+5. 观察右侧工具调用侧栏：每次 rag_retrieve 的 args + 召回结果都在
+
+### M1.5 入口（下一步）
+1. 建 3 道黄金用例文档 `tests/e2e/baojian_house.md`
+2. 对保障房场景跑 10 个问题，人工打分
+3. 按打分结果调 System Prompt / Tool 描述 / top_n / 阈值
+4. Langfuse 接入（RAGFlow 已内置 langfuse 依赖，需创建 tracer）
+
 ### M1.3 验收结果
 - ✅ 3 张 DB 表（agent_v2_session / message / tool_call）自动建表
 - ✅ Session Service 3 个 pytest 通过（真 MySQL 读写）

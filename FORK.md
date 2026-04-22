@@ -144,27 +144,54 @@ graspologic = { git = "https://github.com/infiniflow/graspologic.git", rev = "38
 
 ---
 
-### D. Phase 1 计划新增（尚未开发）
+### D. Phase 1 实际落地改动（feat/agent-v2 分支）
 
-以下内容在 `feat/agent-v2` 分支开发，merge 到 `origin/main` 后需列入本清单：
+**commits 已推送**：
+- `3e68fcb` chore: fork setup for macOS local development
+- `f403cdf` docs: add agent v2 project planning and fork docs
+- `e72760a` feat(agent-v2): M1.1 minimal runner with rag_retrieve tool
+- `1832b5f` feat(agent-v2): M1.2 complete tool set + unit tests + docs
+- `529b75a` feat(agent-v2): M1.3 HTTP API + DB persistence + SSE streaming
+- `ddb4b3a` feat(agent-v2): M1.4 frontend workbench with 知源 design language
 
-#### 后端
-
-| 文件 / 目录 | 性质 | 冲突风险 |
-|---|---|---|
-| `api/agent_v2/` 整个目录 | 新增 | 无 |
-| `api/apps/agent_v2_app.py` | 新增 | 无 |
-| `api/apps/__init__.py` | 改（注册 blueprint） | 中 |
-| `api/db/db_models.py` | 文末加 3 张表 | 低 |
-| `pyproject.toml` | 加 `claude-agent-sdk` 依赖 | 中 |
-
-#### 前端
+#### 后端（已落地）
 
 | 文件 / 目录 | 性质 | 冲突风险 |
 |---|---|---|
-| `web/src/pages/agent-chat/` | 新增 | 无 |
-| `web/src/routes.tsx` | 加 `/agent-chat` | 中 |
-| `web/src/layouts/*` | 改：菜单加入口 | 中 |
+| `api/agent_v2/` 整个目录（runner/event/errors/registry + tools/*） | 新增 7 文件 | 无 |
+| `api/apps/agent_v2_app.py` | 新增（自动注册到 `/v1/agent_v2`） | 无 |
+| `api/db/db_models.py` | 文末加 3 张表（AgentV2Session/Message/ToolCall） | 低 |
+| `api/db/services/agent_v2_service.py` | 新增 CRUD | 无 |
+| `pyproject.toml` | + `claude-agent-sdk>=0.1.64` + graspologic github 源 | 中 |
+
+#### 前端（已落地，采用 Claude Design「知源」设计语言）
+
+| 文件 / 目录 | 性质 | 冲突风险 |
+|---|---|---|
+| `web/src/pages/agent-chat/` 整个目录（theme/api/hooks/components） | 新增 15 文件 | 无 |
+| `web/src/routes.tsx` | + `Routes.AgentChat` + route entry | 中 |
+| `web/src/layouts/components/global-navbar.tsx` | + 菜单项「工作台」 | 中 |
+| `web/src/locales/en.ts` + `zh.ts` | + `agentV2.*` 40+ keys | 中 |
+
+#### 测试（已落地）
+
+| 文件 | 覆盖 |
+|---|---|
+| `test/agent_v2/test_base.py` | ContextVar + 截断（9 tests） |
+| `test/agent_v2/test_event.py` | 事件构造（9 tests） |
+| `test/agent_v2/test_registry.py` | 工具注册（5 tests） |
+| `test/agent_v2/test_tool_schemas.py` | schema 健全性（14 tests） |
+| `test/agent_v2/test_service.py` | CRUD（3 真 MySQL tests，需 `RAGFLOW_TEST_DB=1`） |
+| `scripts/test_agent_v2.py` | Agent 端到端 CLI |
+| `scripts/test_tools_direct.py` | 4 工具直接调用 smoke |
+| `scripts/test_agent_v2_e2e.py` | 三表持久化 E2E |
+
+### E. 本地开发资料（不入库）
+
+- `design-refs/zhiyuan/` — Claude Design 稿原始包（Linear/Vercel 风格「知源·企业知识库」）
+  - 来源：<https://api.anthropic.com/v1/design/h/gQYxR8tIy5QvB6Idf8nhWA>
+  - 改造思路：采纳设计语言（tokens / 3 列布局 / 思考块 / chip 发送器），替换右侧栏语义（引用 → 工具调用），不照搬 KB/图谱/检索测试页
+  - 已加入 `.gitignore`，不会被推到 GitHub
 
 ---
 

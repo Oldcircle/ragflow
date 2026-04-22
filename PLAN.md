@@ -100,14 +100,14 @@
 
 **里程碑**：
 
-| 里程碑 | 内容 | 预计 |
-|---|---|---|
-| M1.1 | SDK 集成验证（最小跑通：能调一个工具） | Day 3 |
-| M1.2 | 4 个核心 Tool 实现 + 单测 | Day 7 |
-| M1.3 | HTTP/SSE endpoint + Session 持久化 | Day 10 |
-| M1.4 | 前端 Agent 工作台 UI（含工具调用可视化） | Day 14 |
-| M1.5 | 保障房场景端到端跑通 | Day 17 |
-| M1.6 | 调优 + 对外 demo | Day 21 |
+| 里程碑 | 内容 | 预计 | 实际 |
+|---|---|---|---|
+| M1.1 | SDK 集成验证（最小跑通：能调一个工具） | Day 3 | ✅ 2026-04-21 |
+| M1.2 | 4 个核心 Tool 实现 + 单测 | Day 7 | ✅ 2026-04-21 |
+| M1.3 | HTTP/SSE endpoint + Session 持久化 | Day 10 | ✅ 2026-04-21 |
+| M1.4 | 前端 Agent 工作台 UI（含工具调用可视化） | Day 14 | ✅ 2026-04-22（采用 Claude Design「知源」稿） |
+| M1.5 | 保障房场景端到端跑通 + 调优 | Day 17 | — |
+| M1.6 | Langfuse 集成 + 对外 demo | Day 21 | — |
 
 **核心 Tools（Phase 1 必做）**：
 1. `rag_retrieve(query, kb_id, top_n)` — 知识库检索

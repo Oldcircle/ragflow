@@ -231,3 +231,11 @@ internal/cpp/cmake-build-debug/
 # Go server build output
 bin/*
 !bin/.gitkeep
+
+# Agent v2 local dev artifacts
+design-refs/
+logs/
+nltk_data/
+/tika-server.jar
+/tika-server.jar.md5
+
