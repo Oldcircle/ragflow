@@ -14,7 +14,7 @@ import {
 import { cn } from '@/lib/utils';
 import { TenantRole } from '@/pages/user-setting/constants';
 import { Routes } from '@/routes';
-import { LucideChevronDown, LucideCircleHelp } from 'lucide-react';
+import { Bot, LucideChevronDown, LucideCircleHelp, Plus } from 'lucide-react';
 import React, { useMemo } from 'react';
 import { Link, useLocation } from 'react-router';
 import { BellButton } from './bell-button';
@@ -53,65 +53,92 @@ export function Header({
     <header
       key="app-navbar"
       className={cn(
-        'w-full grid grid-cols-[minmax(180px,1fr)_auto_minmax(180px,1fr)] grid-rows-1 items-center gap-6 border-b border-border-button bg-bg-base/95',
+        'flex h-full min-h-0 flex-col border-r border-border-button bg-bg-component/80 px-4 py-4',
         className,
       )}
       {...props}
     >
-      <div className="inline-flex items-center">
+      <div className="mb-5 flex items-center">
         <Link
           to={Routes.Root}
           aria-current={pathname === Routes.Root ? 'page' : undefined}
-          className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary/30"
+          className="min-w-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary/30"
         >
           <ProductMark />
         </Link>
       </div>
 
+      <Button
+        asLink
+        to={Routes.AgentChat}
+        className="mb-5 w-full justify-start border-border-button bg-bg-base text-text-primary hover:bg-bg-card"
+        variant="outline"
+      >
+        <Plus className="size-4 text-accent-primary" />
+        新建 Agent 会话
+      </Button>
+
       <GlobalNavbar />
 
+      <div className="mt-6 rounded-xl border border-border-button bg-bg-base p-3">
+        <div className="mb-2 flex items-center gap-2 text-sm font-medium text-text-primary">
+          <Bot className="size-4 text-accent-primary" />
+          Agent v2
+        </div>
+        <p className="text-xs leading-5 text-text-secondary">
+          自主检索、阅读文档并展示工具调用，适合政策、法务、研报等可信问答场景。
+        </p>
+      </div>
+
+      <div className="flex-1" />
+
       <div
-        className="flex items-center justify-end gap-4 text-text-badge"
+        className="space-y-2 border-t border-border-button pt-4 text-text-badge"
         data-testid="auth-status"
       >
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button className="flex items-center gap-1" variant="ghost">
-              {currentLanguage?.displayName}
-              <LucideChevronDown className="size-[1em]" />
-            </Button>
-          </DropdownMenuTrigger>
-
-          <DropdownMenuContent>
-            {supportedLanguages.map((x) => (
-              <DropdownMenuItem
-                key={x.code}
-                onClick={() => changeLanguage(x.code)}
+        <div className="flex items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                className="min-w-0 flex-1 justify-start gap-1"
+                variant="ghost"
               >
-                {x.displayName}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+                <span className="truncate">{currentLanguage?.displayName}</span>
+                <LucideChevronDown className="size-[1em]" />
+              </Button>
+            </DropdownMenuTrigger>
 
-        <Button
-          asLink
-          variant="ghost"
-          size="icon"
-          to="https://ragflow.io/docs/dev/category/user-guides"
-          target="_blank"
-          rel="noreferrer noopener"
-        >
-          <LucideCircleHelp className="size-[1em]" />
-        </Button>
+            <DropdownMenuContent>
+              {supportedLanguages.map((x) => (
+                <DropdownMenuItem
+                  key={x.code}
+                  onClick={() => changeLanguage(x.code)}
+                >
+                  {x.displayName}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-        <ThemeButton />
+          <Button
+            asLink
+            variant="ghost"
+            size="icon"
+            to="https://ragflow.io/docs/dev/category/user-guides"
+            target="_blank"
+            rel="noreferrer noopener"
+          >
+            <LucideCircleHelp className="size-[1em]" />
+          </Button>
 
-        {hasNotification && <BellButton />}
+          <ThemeButton />
+
+          {hasNotification && <BellButton />}
+        </div>
 
         <Link
           to={Routes.UserSetting}
-          className="relative ms-3"
+          className="flex min-w-0 items-center gap-3 rounded-xl px-2 py-2 transition hover:bg-bg-card"
           data-testid="settings-entrypoint"
         >
           <RAGFlowAvatar
@@ -120,10 +147,14 @@ export function Header({
             isPerson
             className="size-8"
           />
-          {/* Temporarily hidden */}
-          {/* <Badge className="h-5 w-8 absolute font-normal p-0 justify-center -right-8 -top-2 text-bg-base bg-gradient-to-l from-[#42D7E7] to-[#478AF5]">
-            Pro
-          </Badge> */}
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-medium text-text-primary">
+              {nickname || 'User'}
+            </div>
+            <div className="truncate text-xs text-text-secondary">
+              工作区设置
+            </div>
+          </div>
         </Link>
       </div>
     </header>

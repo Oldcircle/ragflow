@@ -1,4 +1,4 @@
-import { useId, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation } from 'react-router';
 
@@ -15,7 +15,6 @@ import {
 
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
-import { supportsCssAnchor } from '@/utils/css-support';
 
 const PathMap = {
   [Routes.Datasets]: [Routes.Datasets, Routes.DatasetBase],
@@ -58,116 +57,81 @@ const menuItems = [
   { path: Routes.Files, name: 'header.fileManager', icon: FolderOpen },
 ];
 
-const GlobalNavbar = supportsCssAnchor
-  ? () => {
-      const { t } = useTranslation();
-      const { pathname } = useLocation();
-      const navbarAnchorNamePrefix = useId().replace(/:/g, '');
+const primaryItems = menuItems.slice(0, 5);
+const buildItems = menuItems.slice(5);
 
-      const activePath = useMemo(() => {
-        return (
-          Object.keys(PathMap).find((x: string) =>
-            PathMap[x as keyof typeof PathMap].some((y: string) =>
-              pathname.includes(y),
-            ),
-          ) || pathname
-        );
-      }, [pathname]);
+function NavSection({
+  title,
+  items,
+  activePath,
+}: {
+  title: string;
+  items: typeof menuItems;
+  activePath: string;
+}) {
+  const { t } = useTranslation();
 
-      const activePathAnchorName = `--${navbarAnchorNamePrefix}${activePath === Routes.Root ? '-root' : activePath.replace('/', '-')}`;
+  return (
+    <div>
+      <div className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-disabled">
+        {title}
+      </div>
+      <ul className="space-y-1">
+        {items.map(({ path, name, icon: Icon, ...props }) => {
+          const isActive = path === activePath;
 
-      const hasAnyActive = useMemo(
-        () => menuItems.some(({ path }) => path === activePath),
-        [activePath],
-      );
+          return (
+            <li key={path}>
+              <Link
+                {...props}
+                to={path}
+                className={cn(
+                  'group flex h-9 items-center gap-3 rounded-lg px-3 text-sm transition',
+                  'text-text-secondary hover:bg-bg-card hover:text-text-primary focus-visible:bg-bg-card focus-visible:text-text-primary',
+                  isActive &&
+                    'bg-accent-primary/10 text-text-primary shadow-[inset_2px_0_0_rgb(var(--accent-primary))]',
+                )}
+                aria-current={isActive ? 'page' : undefined}
+              >
+                <Icon
+                  className={cn(
+                    'size-4 stroke-[1.7] text-text-secondary transition group-hover:text-text-primary',
+                    isActive && 'text-accent-primary',
+                  )}
+                />
+                <span className="truncate">{t(name)}</span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
 
-      return (
-        <nav>
-          <ul className="relative flex items-center gap-1 rounded-xl border border-border-button bg-bg-component p-1 shadow-sm">
-            {menuItems.map(({ path, name, icon: Icon, ...props }) => {
-              const isActive = path === activePath;
-              const anchorName = `--${navbarAnchorNamePrefix}${path === Routes.Root ? '-root' : path.replace('/', '-')}`;
+const GlobalNavbar = () => {
+  const { pathname } = useLocation();
 
-              return (
-                <li key={path} className="relative" style={{ anchorName }}>
-                  <Link
-                    {...props}
-                    to={path}
-                    className={cn(
-                      'relative z-[1] h-9 px-3 text-sm inline-flex items-center justify-center gap-2',
-                      'hover:text-text-primary focus-visible:text-text-primary rounded-lg transition-all text-text-secondary',
-                      isActive && '!text-white',
-                    )}
-                    aria-current={isActive ? 'page' : undefined}
-                  >
-                    {Icon && <Icon className="size-4 stroke-[1.7]" />}
-                    <span>{t(name)}</span>
-                  </Link>
-                </li>
-              );
-            })}
+  const activePath = useMemo(() => {
+    return (
+      Object.keys(PathMap).find((x: string) =>
+        PathMap[x as keyof typeof PathMap].some((y: string) =>
+          pathname.includes(y),
+        ),
+      ) || pathname
+    );
+  }, [pathname]);
 
-            <li
-              className={cn(
-                'absolute bg-accent-primary rounded-lg opacity-0 shadow-sm',
-                'transition-all',
-                hasAnyActive && 'opacity-100',
-              )}
-              role="presentation"
-              style={{
-                top: 'anchor(top)',
-                left: 'anchor(left)',
-                width: 'anchor-size(width)',
-                height: 'anchor-size(height)',
-                positionAnchor: activePathAnchorName,
-              }}
-            />
-          </ul>
-        </nav>
-      );
-    }
-  : () => {
-      const { t } = useTranslation();
-      const { pathname } = useLocation();
-
-      const activePath = useMemo(() => {
-        return (
-          Object.keys(PathMap).find((x: string) =>
-            PathMap[x as keyof typeof PathMap].some((y: string) =>
-              pathname.includes(y),
-            ),
-          ) || pathname
-        );
-      }, [pathname]);
-
-      return (
-        <nav>
-          <ul className="flex items-center gap-1 rounded-xl border border-border-button bg-bg-component p-1 shadow-sm">
-            {menuItems.map(({ path, name, icon: Icon, ...props }) => {
-              const isActive = path === activePath;
-
-              return (
-                <li key={path}>
-                  <Link
-                    {...props}
-                    to={path}
-                    className={cn(
-                      'h-9 px-3 text-sm inline-flex items-center justify-center gap-2',
-                      'hover:text-text-primary focus-visible:text-text-primary rounded-lg transition-all text-text-secondary',
-                      isActive && '!text-white bg-accent-primary shadow-sm',
-                    )}
-                    aria-label={t(name)}
-                    aria-current={isActive ? 'page' : undefined}
-                  >
-                    {Icon && <Icon className="size-4 stroke-[1.7]" />}
-                    <span>{t(name)}</span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </nav>
-      );
-    };
+  return (
+    <nav className="space-y-6">
+      <NavSection
+        title="Workspace"
+        items={primaryItems}
+        activePath={activePath}
+      />
+      <NavSection title="Build" items={buildItems} activePath={activePath} />
+    </nav>
+  );
+};
 
 export default GlobalNavbar;

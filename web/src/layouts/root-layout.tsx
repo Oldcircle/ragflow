@@ -3,10 +3,10 @@ import { Header } from './components/header';
 
 export function RootLayoutContainer({ children }: React.PropsWithChildren) {
   return (
-    <div className="size-full grid grid-rows-[auto_1fr] grid-cols-1 grid-flow-col">
-      <Header className="px-5 py-4" />
+    <div className="grid size-full grid-cols-[248px_minmax(0,1fr)] bg-bg-base">
+      <Header className="min-h-0" />
 
-      <main className="size-full overflow-hidden">{children}</main>
+      <main className="min-h-0 min-w-0 overflow-hidden">{children}</main>
     </div>
   );
 }

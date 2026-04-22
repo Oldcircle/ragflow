@@ -57,6 +57,20 @@
 - P1.7-B：统一 `/agent-chat` 与新全局 shell 的视觉细节
 - P1.7-C：开始重构 `/datasets` 和 `/dataset/**`，这是 RAGFlow 痕迹最重的核心业务区
 
+### P1.7-A 二轮整体翻新（2026-04-22）
+
+用户反馈：暗色兼容后已经不错，但整体仍有些像 RAGFlow。参考 `design-refs/zhiyuan/project/ui.jsx` 的 Sidebar / Topbar 模式后，第二轮把全局 shell 从 RAGFlow 风格顶部胶囊导航改成「知源」参考稿的左侧企业工作台导航。
+
+**已改代码**：
+- `web/src/layouts/root-layout.tsx`：整体布局从顶部 header + main 改为左侧 sidebar + 内容区
+- `web/src/layouts/components/header.tsx`：重构为产品 sidebar，包含品牌、新建 Agent 会话、Agent v2 说明、语言/帮助/主题/通知、用户设置入口
+- `web/src/layouts/components/global-navbar.tsx`：重构为纵向导航，分为 Workspace / Build 两组，保留全部原路由
+
+**验证**：
+- targeted ESLint 通过
+- `git diff --check` 通过
+- Vite 成功转换 root layout、sidebar shell、sidebar nav、home 模块（HTTP 200）
+
 ### M1.6 完成内容（2026-04-22）
 
 | Step | 内容 | Commit |
