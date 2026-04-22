@@ -2739,6 +2739,8 @@ Important structured information may include: names, dates, locations, events, k
       notFoundSearch: 'Search app not found',
       memoryTitle: 'No memory created yet',
       notFoundMemory: 'Memory not found',
+      agentChatTitle: 'No agent session yet',
+      notFoundAgentChat: 'Agent session not found',
       addNow: 'Add Now',
     },
 

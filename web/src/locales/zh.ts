@@ -2414,6 +2414,8 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       notFoundSearch: '未查询到搜索应用',
       memoryTitle: '尚未创建记忆',
       notFoundMemory: '未查询到记忆',
+      agentChatTitle: '尚未创建 Agent 会话',
+      notFoundAgentChat: '未查询到 Agent 会话',
       addNow: '立即添加',
     },
 

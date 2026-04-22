@@ -7,6 +7,7 @@ import { Routes } from '@/routes';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
+import { AgentChatList } from './agent-chat-list';
 import { Agents } from './agent-list';
 import { SeeAllAppCard } from './application-card';
 import { ChatList } from './chat-list';
@@ -14,6 +15,7 @@ import { MemoryList } from './memory-list';
 import { SearchList } from './search-list';
 
 const IconMap = {
+  [Routes.AgentChat]: 'agents',
   [Routes.Chats]: 'chats',
   [Routes.Searches]: 'searches',
   [Routes.Agents]: 'agents',
@@ -21,6 +23,7 @@ const IconMap = {
 };
 
 const EmptyTypeMap = {
+  [Routes.AgentChat]: EmptyCardType.AgentChat,
   [Routes.Chats]: EmptyCardType.Chat,
   [Routes.Searches]: EmptyCardType.Search,
   [Routes.Agents]: EmptyCardType.Agent,
@@ -28,7 +31,7 @@ const EmptyTypeMap = {
 };
 
 export function Applications() {
-  const [val, setVal] = useState(Routes.Chats);
+  const [val, setVal] = useState<Routes>(Routes.AgentChat);
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [listLength, setListLength] = useState(0);
@@ -47,6 +50,7 @@ export function Applications() {
 
   const options = useMemo(
     () => [
+      { value: Routes.AgentChat, label: t('header.agentChat') },
       { value: Routes.Chats, label: t('header.chat') },
       { value: Routes.Searches, label: t('header.search') },
       { value: Routes.Agents, label: t('header.flow') },
@@ -85,6 +89,12 @@ export function Applications() {
 
       {/* <div className="flex flex-wrap gap-4"> */}
       <CardSineLineContainer>
+        {val === Routes.AgentChat && (
+          <AgentChatList
+            setListLength={(length: number) => setListLength(length)}
+            setLoading={(loading: boolean) => setLoading(loading)}
+          />
+        )}
         {val === Routes.Agents && (
           <Agents
             setListLength={(length: number) => setListLength(length)}

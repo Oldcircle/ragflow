@@ -11,6 +11,7 @@ export enum EmptyCardType {
   Chat = 'chat',
   Search = 'search',
   Memory = 'memory',
+  AgentChat = 'agent-chat',
 }
 
 export const EmptyCardData = {
@@ -38,5 +39,10 @@ export const EmptyCardData = {
     icon: <HomeIcon name="memory" width={'24'} />,
     titleKey: 'empty.memoryTitle',
     notFoundKey: 'empty.notFoundMemory',
+  },
+  [EmptyCardType.AgentChat]: {
+    icon: <HomeIcon name="agents" width={'24'} />,
+    titleKey: 'empty.agentChatTitle',
+    notFoundKey: 'empty.notFoundAgentChat',
   },
 };
