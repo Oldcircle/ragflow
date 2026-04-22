@@ -163,9 +163,12 @@ cd web && nohup npm run dev > ../logs/frontend.log 2>&1 &
 - `CLAUDE.md` — 项目说明书（本文件）
 - `AGENTS.md` — 软链接 → `CLAUDE.md`
 - `PLAN.md` — Agent 二改总体计划（Phase 0-3 路线图）
-- `STATUS.md` — 会话交接，当前进度快照（上次更新：2026-04-21）
-- `DESIGN.md` — Phase 1 Agent v2 架构设计
-- `FORK.md` — 与上游 infiniflow/ragflow 的差异和同步策略
+- `STATUS.md` — 会话交接，当前进度快照（上次更新：2026-04-22，Phase 1 已完成）
+- `DESIGN.md` — Phase 1 Agent v2 架构设计（M1.1-M1.3 完成后稳定）
+- `FORK.md` — 与上游 infiniflow/ragflow 的差异 + 13 个已推送 commits
+- `README-agent-v2.md` — Agent v2 最终用户/开发者使用指南
+- `test/e2e/baojian_house.md` — 保障房 10 题黄金用例规范
+- `api/agent_v2/tools/README.md` — 工具开发规范
 - `web/CLAUDE.md` — 前端开发规范（shadcn/ui、i18n、React Query、样式调试）
 - `README.md` / `docker/README.md` — 上游官方文档
 
