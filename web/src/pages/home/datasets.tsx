@@ -1,4 +1,3 @@
-import { CardSineLineContainer } from '@/components/card-singleline-container';
 import { EmptyCardType } from '@/components/empty/constant';
 import { EmptyAppCard } from '@/components/empty/empty';
 import { RenameDialog } from '@/components/rename-dialog';
@@ -24,11 +23,12 @@ export function Datasets() {
   } = useRenameDataset();
   const { navigateToDatasetList } = useNavigatePage();
 
+  const previewKbs = kbs?.slice(0, 3) ?? [];
+
   return (
     <section>
       <header>
-        <h2 className="leading-8 text-2xl font-semibold mb-2.5">
-          {/* <IconFont name="data" className="size-8"></IconFont> */}
+        <h2 className="mb-2.5 text-2xl font-semibold leading-8">
           <HomeIcon imgClass="me-2.5" name="datasets" width={24} />
           {t('header.dataset')}
         </h2>
@@ -41,30 +41,27 @@ export function Datasets() {
           </div>
         ) : (
           <>
-            {kbs?.length > 0 && (
-              <CardSineLineContainer>
-                {kbs?.slice(0, 6).map((dataset) => (
+            {previewKbs.length > 0 && (
+              <div className="grid gap-5 sm:grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                {previewKbs.map((dataset) => (
                   <DatasetCard
                     key={dataset.id}
                     dataset={dataset}
                     showDatasetRenameModal={showDatasetRenameModal}
-                  ></DatasetCard>
+                  />
                 ))}
-                {
-                  <SeeAllAppCard
-                    click={() => navigateToDatasetList({ isCreate: false })}
-                  ></SeeAllAppCard>
-                }
-              </CardSineLineContainer>
+                <SeeAllAppCard
+                  click={() => navigateToDatasetList({ isCreate: false })}
+                />
+              </div>
             )}
-            {kbs?.length <= 0 && (
+            {previewKbs.length <= 0 && (
               <EmptyAppCard
                 type={EmptyCardType.Dataset}
                 onClick={() => navigateToDatasetList({ isCreate: true })}
               />
             )}
           </>
-          // </div>
         )}
       </div>
 

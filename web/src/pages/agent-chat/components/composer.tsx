@@ -100,7 +100,9 @@ export const Composer = memo(function Composer({
                 </Badge>
                 <Badge tone="brand">
                   <I.brain size={10} />{' '}
-                  {session.model_config_json?.model ?? 'claude-sonnet-4-5'}
+                  {session.model_config_json?.llm_name ??
+                    session.model_config_json?.model ??
+                    t('agentV2.model')}
                 </Badge>
                 {session.tool_names?.length ? (
                   <Badge tone="neutral">

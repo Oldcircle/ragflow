@@ -266,7 +266,9 @@ function Topbar({ session }: { session: AgentV2Session | undefined }) {
       {session && (
         <Badge tone="brand">
           <I.brain size={10} />
-          {session.model_config_json?.model ?? '—'}
+          {session.model_config_json?.llm_name ??
+            session.model_config_json?.model ??
+            '—'}
         </Badge>
       )}
     </div>

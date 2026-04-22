@@ -16,7 +16,11 @@ export interface AgentV2Session {
   tool_names: string[] | null;
   system_prompt: string;
   model_config_json: {
-    model: string;
+    /** 新会话走 TenantLLM：llm_name + factory。 */
+    llm_name?: string;
+    factory?: string;
+    /** 老会话走内联凭据：直接给 model + 可选 base_url + auth_token。 */
+    model?: string;
     base_url?: string | null;
     auth_token?: string | null;
     [k: string]: unknown;
