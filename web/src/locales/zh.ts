@@ -290,6 +290,10 @@ export default {
       permissionTeam: '团队',
       permissionMe: '仅自己',
       ownerPrefix: '归属',
+      detailSummary: '资产概览',
+      detailNavigate: '知识库工作台',
+      backToDatasets: '返回全部知识库',
+      totalSize: '库体积',
     },
     knowledgeDetails: {
       metadata: {

@@ -4,10 +4,39 @@
 
 ---
 
-## 最近更新：2026-04-22（深夜）
+## 最近更新：2026-04-22（深夜 +1）
 
-**当前阶段**：**Phase 1.7 前端产品化重构进行中**（A/B 完成；C 首批：`/datasets` 列表完成）
-**下一步入口**：P1.7-C 继续 — `/dataset/**` 详情、侧栏、文档表格、检索测试、知识图谱
+**当前阶段**：**Phase 1.7 前端产品化重构进行中**（A/B 完成；C 三小批完成）
+**下一步入口**：P1.7-C 收尾 — `dataset-overview` / `dataset-setting` / `knowledge-graph`；之后进入 P1.7-D（searches / agents / memories / files / user-settings）
+
+### P1.7-C2：知识库详情 shell + sidebar（2026-04-22 深夜 +1）
+
+**已改代码**：
+- `web/src/pages/dataset/index.tsx`：wrapper 去掉 `pt-3`，内容区改为 `flex min-h-0 overflow-hidden`，让子页自己控制 padding 和 header
+- `web/src/pages/dataset/sidebar/index.tsx`：完全改为企业知识资产侧栏 — 返回全部知识库链接 + 头像/名称/创建日期 + 描述（可截断）+ 「资产概览」三格度量（文档/切片/库体积）+ embedding 模型 + 「知识库工作台」纵向导航，激活态复用全局 sidebar 的 `accent-primary/10` + inset shadow 样式，导航每项补 `data-testid`
+- `web/src/locales/zh.ts / en.ts`：新增 `knowledgeList.detailSummary / detailNavigate / backToDatasets / totalSize`
+
+### P1.7-C3：知识库文档表格（2026-04-22 深夜 +1）
+
+**已改代码**：
+- `web/src/pages/dataset/dataset/index.tsx`：外层 `Card` 换成 `article`，页头改为企业工作台式 topbar（标题 + 副标题 + `ListFilterBar`），批量操作条下移到 header 内、更紧凑；保留 upload、empty-doc、metadata、bulk-operate、reparse 全部逻辑
+- `web/src/pages/dataset/dataset/dataset-table.tsx`：去掉 `absolute bottom-3 right-3` 的分页浮层 BUG，改为 `article > (scroll body) + (sticky footer)` 结构，分页钉到带边框的底栏；空态高度从 `h-24` 扩到 `h-48`
+- 保留：`useReactTable` 状态、`useChangeDocumentParser` / `useRenameDocument` / `useShowLog` 弹窗、`data-testid="document-row"`、分页回调
+
+### P1.7-C4：检索测试 Lab（2026-04-22 深夜 +1）
+
+**已改代码**：
+- `web/src/pages/dataset/testing/index.tsx`：精简为单一工作台 — 顶部 title + 描述 header，底下双栏 `[420px | 1fr]`，左侧配置栏、右侧结果流，**移除了从未启用的 `count === 1 ? ... : ...` 分支死代码**（`count` 永远是 1）
+- `web/src/pages/dataset/testing/testing-form.tsx`：`footer` 加边框 + 背景；question `Textarea` 补 placeholder；新增 `data-testid="dataset-testing-form / -query / -submit"`
+- `web/src/pages/dataset/testing/testing-result.tsx`：header 显示结果总数徽标；每条 chunk 改为资产卡片（文档名 + 序号 + 相似度 chip 组 + 高亮 markdown），分页钉到底栏；`from i18next` 改为 hook 形式；过滤 label 从硬编码 `'File'` 改为 `t('knowledgeDetails.fileLogs')`；chunk card 用主题 token 不依赖 `prose` 插件
+
+**验证**：
+- 11 个文件 + 新增 locale key，ESLint 通过（仅 `useEffect` 缺 `checkValue` 是上游既有 debt）
+- repo-wide TS 错误与 refactor 前同数（全部为上游 legacy debt，本批未新增）
+- Vite dev server 上 `/`、`/login-next`、`/datasets`、`/chats`、`/agent-chat`、`/dataset/{dataset,testing,knowledge-graph,dataset-overview,dataset-setting}/{id}`、`/searches`、`/agents`、`/memories`、`/files`、`/profile-setting/profile` 全部 200
+- 所有被改 tsx/ts 文件 Vite transform 均 200；HMR 日志无新错误
+
+
 
 ### P1.7 审计与回归修复（2026-04-22 深夜）
 

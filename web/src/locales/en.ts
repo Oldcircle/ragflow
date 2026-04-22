@@ -327,6 +327,10 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       permissionTeam: 'Team',
       permissionMe: 'Private',
       ownerPrefix: 'Owner',
+      detailSummary: 'Asset summary',
+      detailNavigate: 'Dataset workbench',
+      backToDatasets: 'All datasets',
+      totalSize: 'Total size',
     },
     knowledgeDetails: {
       metadata: {

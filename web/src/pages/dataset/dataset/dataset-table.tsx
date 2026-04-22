@@ -127,66 +127,72 @@ export function DatasetTable({
   });
 
   return (
-    <div className="w-full">
-      <Table rootClassName="max-h-[calc(100vh-222px)]">
-        <TableHeader>
-          {table.getHeaderGroups().map((headerGroup) => (
-            <TableRow key={headerGroup.id}>
-              {headerGroup.headers.map((header) => {
-                return (
-                  <TableHead key={header.id}>
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext(),
-                        )}
-                  </TableHead>
-                );
-              })}
-            </TableRow>
-          ))}
-        </TableHeader>
-        <TableBody className="relative">
-          {table.getRowModel().rows?.length ? (
-            table.getRowModel().rows.map((row) => (
-              <TableRow
-                key={row.id}
-                data-testid="document-row"
-                data-doc-name={row.original.name}
-                data-state={row.getIsSelected() && 'selected'}
-                className="group"
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell
-                    key={cell.id}
-                    className={cell.column.columnDef.meta?.cellClassName}
-                  >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </TableCell>
-                ))}
+    <div className="flex min-h-0 w-full flex-1 flex-col">
+      <div className="min-h-0 flex-1 overflow-auto px-6 pb-4 pt-4">
+        <Table>
+          <TableHeader>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <TableRow key={headerGroup.id}>
+                {headerGroup.headers.map((header) => {
+                  return (
+                    <TableHead key={header.id}>
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )}
+                    </TableHead>
+                  );
+                })}
               </TableRow>
-            ))
-          ) : (
-            <TableRow>
-              <TableCell colSpan={columns.length} className="h-24 text-center">
-                <Empty type={EmptyType.Data} />
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
-      <div className="flex items-center justify-end  py-4 absolute bottom-3 right-3">
-        <div className="space-x-2">
-          <RAGFlowPagination
-            {...pick(pagination, 'current', 'pageSize')}
-            total={pagination.total}
-            onChange={(page, pageSize) => {
-              setPagination({ page, pageSize });
-            }}
-          ></RAGFlowPagination>
-        </div>
+            ))}
+          </TableHeader>
+          <TableBody className="relative">
+            {table.getRowModel().rows?.length ? (
+              table.getRowModel().rows.map((row) => (
+                <TableRow
+                  key={row.id}
+                  data-testid="document-row"
+                  data-doc-name={row.original.name}
+                  data-state={row.getIsSelected() && 'selected'}
+                  className="group"
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell
+                      key={cell.id}
+                      className={cell.column.columnDef.meta?.cellClassName}
+                    >
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext(),
+                      )}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell
+                  colSpan={columns.length}
+                  className="h-48 text-center"
+                >
+                  <Empty type={EmptyType.Data} />
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
       </div>
+      <footer className="flex items-center justify-end border-t border-border-button bg-bg-component/40 px-6 py-3">
+        <RAGFlowPagination
+          {...pick(pagination, 'current', 'pageSize')}
+          total={pagination.total}
+          onChange={(page, pageSize) => {
+            setPagination({ page, pageSize });
+          }}
+        />
+      </footer>
       {changeParserVisible && (
         <ChunkMethodDialog
           documentId={changeParserRecord.id}
