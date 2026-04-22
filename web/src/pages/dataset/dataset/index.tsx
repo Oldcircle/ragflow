@@ -6,7 +6,6 @@ import { FileUploadDialog } from '@/components/file-upload-dialog';
 import ListFilterBar from '@/components/list-filter-bar';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,7 +16,7 @@ import {
 import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
-import { LucidePlus } from 'lucide-react';
+import { FileText, LucidePlus } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MetadataType } from '../components/metedata/constant';
@@ -76,7 +75,7 @@ export default function Dataset() {
 
   useEffect(() => {
     checkValue(filters);
-  }, [filters]);
+  }, [checkValue, filters]);
 
   const { rowSelection, rowSelectionIsEmpty, setRowSelection, selectedCount } =
     useRowSelection();
@@ -132,11 +131,8 @@ export default function Dataset() {
   });
 
   return (
-    <Card
-      as="article"
-      className="mb-5 mr-5 min-w-[880px] bg-transparent shadow-none"
-    >
-      <CardHeader as="header" className="p-5 space-y-0">
+    <article className="dataset-documents-panel">
+      <header className="dataset-panel-header">
         <ListFilterBar
           onSearchChange={handleInputChange}
           searchString={searchString}
@@ -145,13 +141,17 @@ export default function Dataset() {
           onChange={handleFilterSubmit}
           onOpenChange={onOpenChange}
           filters={filters}
-          className="items-end"
+          className="dataset-panel-toolbar"
           leftPanel={
-            <div>
-              <h1 className="leading-normal font-medium">
+            <div className="min-w-0">
+              <div className="mb-1 flex items-center gap-2 text-xs font-medium text-text-disabled">
+                <FileText className="size-3.5 text-accent-primary" />
+                {knowledgeBase?.name}
+              </div>
+              <h1 className="text-xl font-semibold leading-normal text-text-primary">
                 {t('knowledgeDetails.subbarFiles')}
               </h1>
-              <p className="text-text-secondary text-sm font-normal">
+              <p className="mt-1 text-sm font-normal text-text-secondary">
                 {t('knowledgeDetails.datasetDescription')}
               </p>
             </div>
@@ -215,9 +215,9 @@ export default function Dataset() {
             count={selectedCount}
           />
         )}
-      </CardHeader>
+      </header>
 
-      <CardContent className="px-5 py-0">
+      <div className="dataset-panel-content">
         <DatasetTable
           documents={documents}
           pagination={pagination}
@@ -289,7 +289,7 @@ export default function Dataset() {
             hideModal={hideReparseDialogModal}
           ></ReparseDialog>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </article>
   );
 }

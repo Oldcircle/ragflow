@@ -127,8 +127,8 @@ export function DatasetTable({
   });
 
   return (
-    <div className="w-full">
-      <Table rootClassName="max-h-[calc(100vh-222px)]">
+    <div className="dataset-table-shell">
+      <Table rootClassName="max-h-[calc(100vh-250px)]">
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
@@ -176,7 +176,7 @@ export function DatasetTable({
           )}
         </TableBody>
       </Table>
-      <div className="flex items-center justify-end  py-4 absolute bottom-3 right-3">
+      <div className="dataset-table-pagination">
         <div className="space-x-2">
           <RAGFlowPagination
             {...pick(pagination, 'current', 'pageSize')}

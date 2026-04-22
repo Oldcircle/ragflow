@@ -4,10 +4,13 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
+  Database,
+  FileText,
   LucideFolderOpen,
   LucideLogs,
   LucideSettings,
   LucideTextSearch,
+  Scale,
 } from 'lucide-react';
 
 import { IconFontFill } from '@/components/icon-font';
@@ -69,46 +72,47 @@ export function SideBar({ dataset: data }: PropType) {
   }, [t, routerData]);
 
   return (
-    <aside className="flex flex-col w-64 relative">
-      <header
-        className="px-5 pb-4 grid grid-cols-[auto_1fr] grid-rows-[auto_auto] gap-x-3"
-        style={{
-          gridTemplateAreas: '"avatar title" "avatar stats"',
-        }}
-      >
-        <RAGFlowAvatar
-          avatar={data.avatar}
-          name={data.name}
-          className="size-16"
-          style={{ gridArea: 'avatar' }}
-        />
+    <aside className="dataset-sidebar">
+      <header className="dataset-sidebar-header">
+        <div className="mb-4 flex items-center gap-2 text-[11px] font-medium uppercase text-text-disabled">
+          <Database className="size-3.5 text-accent-primary" />
+          {t('knowledgeDetails.assetEyebrow')}
+        </div>
 
-        <h3
-          className="text-lg font-semibold line-clamp-1 text-text-primary text-ellipsis overflow-hidden"
-          style={{ gridArea: 'title' }}
-        >
-          {data.name}
-        </h3>
+        <div className="flex items-start gap-3">
+          <RAGFlowAvatar
+            avatar={data.avatar}
+            name={data.name}
+            className="size-12 rounded-lg"
+          />
 
-        <div
-          className="self-end text-text-secondary text-xs overflow-hidden"
-          style={{ gridArea: 'stats' }}
-        >
-          <div className="flex justify-between">
-            <span>
-              {data.doc_num} {t('knowledgeDetails.files')}
-            </span>
-            <span>{formatBytes(data.size)}</span>
+          <div className="min-w-0 flex-1">
+            <h3 className="line-clamp-2 text-base font-semibold leading-5 text-text-primary">
+              {data.name}
+            </h3>
+
+            <div className="mt-2 text-xs text-text-secondary">
+              {t('knowledgeDetails.created')} {formatPureDate(data.create_time)}
+            </div>
           </div>
+        </div>
 
-          <div className="mt-0.5">
-            {t('knowledgeDetails.created')} {formatPureDate(data.create_time)}
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          <div className="dataset-sidebar-stat">
+            <FileText className="size-3.5 text-accent-primary" />
+            <span>{data.doc_num}</span>
+            <small>{t('knowledgeList.doc')}</small>
+          </div>
+          <div className="dataset-sidebar-stat">
+            <Scale className="size-3.5 text-accent-primary" />
+            <span>{formatBytes(data.size)}</span>
+            <small>{t('knowledgeDetails.fileSize')}</small>
           </div>
         </div>
       </header>
 
-      <nav className="px-5 pt-1 pb-5 overflow-y-auto">
-        <ul className="space-y-5">
+      <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
+        <ul className="space-y-1.5">
           {items.map((item) => {
             const active = '/' + pathName === item.key;
 
@@ -119,8 +123,8 @@ export function SideBar({ dataset: data }: PropType) {
                   block
                   variant="ghost"
                   className={cn(
-                    'justify-start gap-2.5 px-3 relative h-10 text-base',
-                    active && 'bg-bg-card text-text-primary',
+                    'dataset-sidebar-link justify-start gap-2.5',
+                    active && 'dataset-sidebar-link-active',
                   )}
                   to={`${Routes.DatasetBase}${item.key}/${id}`}
                 >

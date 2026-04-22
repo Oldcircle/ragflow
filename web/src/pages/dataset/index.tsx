@@ -3,13 +3,14 @@ import { KnowledgeBaseProvider } from '@/pages/dataset/contexts/knowledge-base-c
 
 import { Outlet } from 'react-router';
 import { SideBar } from './sidebar';
+import './styles.css';
 
 export default function DatasetWrapper() {
   const { data, loading } = useFetchKnowledgeBaseConfiguration();
 
   return (
     <KnowledgeBaseProvider knowledgeBase={data} loading={loading}>
-      <article className="pt-3 size-full grid grid-cols-[auto_1fr] grid-rows-1">
+      <article className="dataset-workspace-root">
         <SideBar dataset={data} />
 
         <Outlet />

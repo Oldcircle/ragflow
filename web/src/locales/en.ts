@@ -270,6 +270,11 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     knowledgeList: {
       welcome: 'Welcome back',
       description: 'Which datasets will you use today?',
+      assetEyebrow: 'Enterprise knowledge assets',
+      assetDescription:
+        'Manage document assets, parsing status, and retrieval quality as trusted context for the Agent workspace.',
+      cardDescription:
+        'This knowledge asset is ready for Q&A, retrieval testing, and Agent tool calls.',
       createKnowledgeBase: 'Create dataset',
       name: 'Name',
       namePlaceholder: 'Please input name.',
@@ -369,6 +374,8 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       completed: 'Completed',
       datasetLog: 'Dataset log',
       created: 'Created',
+      assetEyebrow: 'Knowledge asset',
+      retrievalLab: 'Retrieval lab',
       learnMore: 'Built-in pipeline introduction',
       general: 'General',
       chunkMethodTab: 'Chunk method',

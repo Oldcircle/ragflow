@@ -54,6 +54,8 @@ Phase 1 已完成 Agent v2 后端、SSE 会话、工具调用可视化、模板�
 ### P1.7-C — 知识库与文档页面
 
 - 重构 `/datasets`、`/dataset/**`、文档列表、解析状态、检索测试、知识图谱页面。
+- 首批已覆盖：知识库列表、资产卡片、详情侧栏、文档列表外壳、检索测试外壳。
+- 下一批继续覆盖：Overview、Setting、Knowledge Graph、解析状态 cell、上传 / 配置弹窗。
 - 保留文档上传、解析配置、chunk 预览、知识图谱、权限等功能。
 
 ### P1.7-D — 其余功能收口
@@ -75,8 +77,8 @@ Phase 1 已完成 Agent v2 后端、SSE 会话、工具调用可视化、模板�
 
 当前继续入口：
 
-1. `web/src/pages/next-chats/chat/*` — 对话页继续向 Agent 工作台细节对齐
-2. `web/src/pages/agent-chat/*` — 与全局左侧 shell 的 spacing / token 收口
-3. `web/src/pages/datasets/*`、`web/src/pages/dataset/**` — 下一批核心业务页
-4. `web/src/locales/zh.ts` / `web/src/locales/en.ts` — 新产品文案
-5. `web/src/global.less`、`web/src/layouts/*` — 全局主题和 shell
+1. `web/src/pages/dataset/dataset-overview/*` — 知识库日志 / 解析运行概览
+2. `web/src/pages/dataset/dataset-setting/*` — 知识库配置、切片方法、权限、数据源
+3. `web/src/pages/dataset/knowledge-graph/*` — 知识图谱页面
+4. `web/src/pages/dataset/dataset/*` — 文档表格行、解析状态、上传弹窗细节
+5. `web/src/pages/agent-chat/*`、`web/src/pages/next-chats/chat/*` — 工作台体验收口

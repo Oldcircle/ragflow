@@ -5,6 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It's a full-stack application with:
+
 - Python backend (Flask-based API server)
 - React/TypeScript frontend (built with UmiJS)
 - Microservices architecture with Docker deployment
@@ -13,6 +14,7 @@ RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on d
 ## Architecture
 
 ### Backend (`/api/`)
+
 - **Main Server**: `api/ragflow_server.py` - Flask application entry point
 - **Apps**: Modular Flask blueprints in `api/apps/` for different functionalities:
   - `kb_app.py` - Knowledge base management
@@ -24,17 +26,20 @@ RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on d
 - **Models**: Database models in `api/db/db_models.py`
 
 ### Core Processing (`/rag/`)
+
 - **Document Processing**: `deepdoc/` - PDF parsing, OCR, layout analysis
 - **LLM Integration**: `rag/llm/` - Model abstractions for chat, embedding, reranking
 - **RAG Pipeline**: `rag/flow/` - Chunking, parsing, tokenization
 - **Graph RAG**: `rag/graphrag/` - Knowledge graph construction and querying
 
 ### Agent System (`/agent/`)
+
 - **Components**: Modular workflow components (LLM, retrieval, categorize, etc.)
 - **Templates**: Pre-built agent workflows in `agent/templates/`
 - **Tools**: External API integrations (Tavily, Wikipedia, SQL execution, etc.)
 
 ### Frontend (`/web/`)
+
 - React/TypeScript with UmiJS framework
 - Ant Design + shadcn/ui components
 - State management with Zustand
@@ -43,6 +48,7 @@ RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on d
 ## Common Development Commands
 
 ### Backend Development
+
 ```bash
 # Install Python dependencies
 uv sync --python 3.12 --all-extras
@@ -66,6 +72,7 @@ ruff format
 ```
 
 ### Frontend Development
+
 ```bash
 cd web
 npm install
@@ -76,6 +83,7 @@ npm run test       # Jest tests
 ```
 
 ### Docker Development
+
 ```bash
 # Full stack with Docker
 cd docker
@@ -104,6 +112,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
 ## Database Engines
 
 RAGFlow supports switching between Elasticsearch (default) and Infinity:
+
 - Set `DOC_ENGINE=infinity` in `docker/.env` to use Infinity
 - Requires container restart: `docker compose down -v && docker compose up -d`
 
@@ -128,16 +137,19 @@ RAGFlow supports switching between Elasticsearch (default) and Infinity:
 ## 端口
 
 依赖服务（docker-compose-base.yml）：
+
 - MySQL 8.0.39 → `3306`
 - Elasticsearch 8.11.3 → `1200`
 - MinIO API → `9000`，Console → `9001`
 - Redis (Valkey 8) → `6379`
 
 应用：
+
 - 后端 Flask/Quart API → `9380`（`/v1/**` 路由，未登录返 401）
 - 前端 Vite dev server → `9222`（package.json 实际端口；AGENTS.md 文档误写 8000）
 
 默认密码（本地开发）：
+
 - MySQL root / infini_rag_flow
 - ES elastic / infini_rag_flow
 - MinIO rag_flow / infini_rag_flow
@@ -163,7 +175,7 @@ cd web && nohup npm run dev > ../logs/frontend.log 2>&1 &
 - `CLAUDE.md` — 项目说明书（本文件）
 - `AGENTS.md` — 软链接 → `CLAUDE.md`
 - `PLAN.md` — Agent 二改总体计划（Phase 0-3 路线图）
-- `STATUS.md` — 会话交接，当前进度快照（上次更新：2026-04-22，Phase 1.7-B 对话页向 Agent 工作台对齐进行中）
+- `STATUS.md` — 会话交接，当前进度快照（上次更新：2026-04-22，Phase 1.7-C 知识库 / 文档页首批改造进行中）
 - `DESIGN.md` — Phase 1 Agent v2 架构设计（M1.1-M1.3 完成后稳定）
 - `PRODUCT-UI-PLAN.md` — Phase 1.7 企业知识库前端产品化重构计划（基于 `design-refs/zhiyuan`）
 - `FORK.md` — 与上游 infiniflow/ragflow 的差异 + 已推送 commits

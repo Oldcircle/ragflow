@@ -6,13 +6,13 @@
 
 ## 基本信息
 
-| 项 | 值 |
-|---|---|
-| 上游仓库 | <https://github.com/infiniflow/ragflow> |
-| 我方 fork | <https://github.com/Oldcircle/ragflow> |
-| 本地路径 | `~/Opensource/forks/ragflow` |
-| 起始基线 | `upstream/main` @ v0.24.0（2026-04-21 fork） |
-| 协议 | Apache 2.0 |
+| 项        | 值                                           |
+| --------- | -------------------------------------------- |
+| 上游仓库  | <https://github.com/infiniflow/ragflow>      |
+| 我方 fork | <https://github.com/Oldcircle/ragflow>       |
+| 本地路径  | `~/Opensource/forks/ragflow`                 |
+| 起始基线  | `upstream/main` @ v0.24.0（2026-04-21 fork） |
+| 协议      | Apache 2.0                                   |
 
 ## Git Remote 配置
 
@@ -25,11 +25,11 @@ upstream → https://github.com/infiniflow/ragflow.git (fetch + push)
 
 ### 上游追踪节奏
 
-| 场景 | 频率 |
-|---|---|
-| 主动关注 upstream release | 每 2 周看一次 |
-| 定期 merge | 每月一次（大版本则临时 merge） |
-| 紧急 CVE / 安全补丁 | 随时 |
+| 场景                      | 频率                           |
+| ------------------------- | ------------------------------ |
+| 主动关注 upstream release | 每 2 周看一次                  |
+| 定期 merge                | 每月一次（大版本则临时 merge） |
+| 紧急 CVE / 安全补丁       | 随时                           |
 
 ### Merge 流程
 
@@ -52,15 +52,15 @@ git merge upstream/main
 
 ### 冲突热点（提前心理准备）
 
-| 文件 / 目录 | 冲突概率 | 原因 |
-|---|---|---|
-| `pyproject.toml` | 高 | 依赖频繁升级；我们加了 `[tool.uv.sources]` 覆盖 |
-| `api/apps/__init__.py` | 高 | 我们注册了 `agent_v2_app` blueprint |
-| `web/src/routes.tsx` | 中 | 我们加了 `/agent-chat` 路由 |
-| `docker/.env` | 中 | 我们启用了 `MACOS=1` |
-| `CLAUDE.md` | 中 | 上游改上游的，我们补 Fork/端口/首次运行记录 |
-| `api/db/db_models.py` | 低-中 | 我们只在文件尾部加表，冲突小 |
-| `agent/component/*` | 低 | 我们不改原画布组件 |
+| 文件 / 目录            | 冲突概率 | 原因                                            |
+| ---------------------- | -------- | ----------------------------------------------- |
+| `pyproject.toml`       | 高       | 依赖频繁升级；我们加了 `[tool.uv.sources]` 覆盖 |
+| `api/apps/__init__.py` | 高       | 我们注册了 `agent_v2_app` blueprint             |
+| `web/src/routes.tsx`   | 中       | 我们加了 `/agent-chat` 路由                     |
+| `docker/.env`          | 中       | 我们启用了 `MACOS=1`                            |
+| `CLAUDE.md`            | 中       | 上游改上游的，我们补 Fork/端口/首次运行记录     |
+| `api/db/db_models.py`  | 低-中    | 我们只在文件尾部加表，冲突小                    |
+| `agent/component/*`    | 低       | 我们不改原画布组件                              |
 
 ### 冲突解决原则
 
@@ -110,6 +110,7 @@ graspologic = { git = "https://github.com/infiniflow/graspologic.git", rev = "38
 #### `CLAUDE.md`
 
 **改动**：保留上游所有段，**在文末追加**以下段：
+
 - `## Fork 信息`（本 Fork 和 upstream 的关系）
 - `## 端口`（各服务端口说明）
 - `## macOS 本地开发`（绕过 `launch_backend_service.sh` 的启动方式）
@@ -133,20 +134,21 @@ graspologic = { git = "https://github.com/infiniflow/graspologic.git", rev = "38
 
 ### C. 新增文件（零冲突）
 
-| 文件 | 用途 |
-|---|---|
-| `PLAN.md` | 二改总体计划 |
-| `STATUS.md` | 会话交接 |
-| `DESIGN.md` | Phase 1 架构设计 |
-| `FORK.md`（本文件） | Fork 差异记录 |
-| `logs/` | 本地运行日志（.gitignore 里） |
-| `nltk_data/` | NLTK 数据（.gitignore 里） |
+| 文件                | 用途                          |
+| ------------------- | ----------------------------- |
+| `PLAN.md`           | 二改总体计划                  |
+| `STATUS.md`         | 会话交接                      |
+| `DESIGN.md`         | Phase 1 架构设计              |
+| `FORK.md`（本文件） | Fork 差异记录                 |
+| `logs/`             | 本地运行日志（.gitignore 里） |
+| `nltk_data/`        | NLTK 数据（.gitignore 里）    |
 
 ---
 
 ### D. Phase 1 实际落地改动（feat/agent-v2 分支）
 
 **commits 已推送**：
+
 - `3e68fcb` chore: fork setup for macOS local development
 - `f403cdf` docs: add agent v2 project planning and fork docs
 - `e72760a` feat(agent-v2): M1.1 minimal runner with rag_retrieve tool
@@ -161,38 +163,39 @@ graspologic = { git = "https://github.com/infiniflow/graspologic.git", rev = "38
 - `824ee28` feat(agent-v2): M1.6 Step 2 — Agent template system (6 presets)
 - `ec8afc200` feat(ui): rebrand shell as enterprise knowledge base
 - `a91f546bc` feat(ui): switch product shell to sidebar workspace
+- `ecfc595a4` feat(ui): align chat page with agent workbench
 
 #### 后端（已落地）
 
-| 文件 / 目录 | 性质 | 冲突风险 |
-|---|---|---|
-| `api/agent_v2/` 整个目录（runner/event/errors/registry + tools/*） | 新增 7 文件 | 无 |
-| `api/apps/agent_v2_app.py` | 新增（自动注册到 `/v1/agent_v2`） | 无 |
-| `api/db/db_models.py` | 文末加 3 张表（AgentV2Session/Message/ToolCall） | 低 |
-| `api/db/services/agent_v2_service.py` | 新增 CRUD | 无 |
-| `pyproject.toml` | + `claude-agent-sdk>=0.1.64` + graspologic github 源 | 中 |
+| 文件 / 目录                                                         | 性质                                                 | 冲突风险 |
+| ------------------------------------------------------------------- | ---------------------------------------------------- | -------- |
+| `api/agent_v2/` 整个目录（runner/event/errors/registry + tools/\*） | 新增 7 文件                                          | 无       |
+| `api/apps/agent_v2_app.py`                                          | 新增（自动注册到 `/v1/agent_v2`）                    | 无       |
+| `api/db/db_models.py`                                               | 文末加 3 张表（AgentV2Session/Message/ToolCall）     | 低       |
+| `api/db/services/agent_v2_service.py`                               | 新增 CRUD                                            | 无       |
+| `pyproject.toml`                                                    | + `claude-agent-sdk>=0.1.64` + graspologic github 源 | 中       |
 
 #### 前端（已落地，采用 Claude Design「知源」设计语言）
 
-| 文件 / 目录 | 性质 | 冲突风险 |
-|---|---|---|
-| `web/src/pages/agent-chat/` 整个目录（theme/api/hooks/components） | 新增 15 文件 | 无 |
-| `web/src/routes.tsx` | + `Routes.AgentChat` + route entry | 中 |
-| `web/src/layouts/components/global-navbar.tsx` | + 菜单项「工作台」 | 中 |
-| `web/src/locales/en.ts` + `zh.ts` | + `agentV2.*` 40+ keys | 中 |
+| 文件 / 目录                                                        | 性质                               | 冲突风险 |
+| ------------------------------------------------------------------ | ---------------------------------- | -------- |
+| `web/src/pages/agent-chat/` 整个目录（theme/api/hooks/components） | 新增 15 文件                       | 无       |
+| `web/src/routes.tsx`                                               | + `Routes.AgentChat` + route entry | 中       |
+| `web/src/layouts/components/global-navbar.tsx`                     | + 菜单项「工作台」                 | 中       |
+| `web/src/locales/en.ts` + `zh.ts`                                  | + `agentV2.*` 40+ keys             | 中       |
 
 #### 测试（已落地）
 
-| 文件 | 覆盖 |
-|---|---|
-| `test/agent_v2/test_base.py` | ContextVar + 截断（9 tests） |
-| `test/agent_v2/test_event.py` | 事件构造（9 tests） |
-| `test/agent_v2/test_registry.py` | 工具注册（5 tests） |
-| `test/agent_v2/test_tool_schemas.py` | schema 健全性（14 tests） |
-| `test/agent_v2/test_service.py` | CRUD（3 真 MySQL tests，需 `RAGFLOW_TEST_DB=1`） |
-| `scripts/test_agent_v2.py` | Agent 端到端 CLI |
-| `scripts/test_tools_direct.py` | 4 工具直接调用 smoke |
-| `scripts/test_agent_v2_e2e.py` | 三表持久化 E2E |
+| 文件                                 | 覆盖                                             |
+| ------------------------------------ | ------------------------------------------------ |
+| `test/agent_v2/test_base.py`         | ContextVar + 截断（9 tests）                     |
+| `test/agent_v2/test_event.py`        | 事件构造（9 tests）                              |
+| `test/agent_v2/test_registry.py`     | 工具注册（5 tests）                              |
+| `test/agent_v2/test_tool_schemas.py` | schema 健全性（14 tests）                        |
+| `test/agent_v2/test_service.py`      | CRUD（3 真 MySQL tests，需 `RAGFLOW_TEST_DB=1`） |
+| `scripts/test_agent_v2.py`           | Agent 端到端 CLI                                 |
+| `scripts/test_tools_direct.py`       | 4 工具直接调用 smoke                             |
+| `scripts/test_agent_v2_e2e.py`       | 三表持久化 E2E                                   |
 
 ### E. 本地开发资料（不入库）
 
@@ -208,6 +211,7 @@ graspologic = { git = "https://github.com/infiniflow/graspologic.git", rev = "38
 参考源：`design-refs/zhiyuan/project/知源 · 企业知识库.html`。
 
 首批改造范围：
+
 - `web/src/layouts/*` — 全局品牌 shell 和导航
 - `web/src/pages/login-next/*` — 登录页品牌化
 - `web/src/pages/home/*` — 企业知识库首页概览
@@ -215,10 +219,21 @@ graspologic = { git = "https://github.com/infiniflow/graspologic.git", rev = "38
 - `web/src/global.less` — 全局视觉 tokens 和滚动条
 
 已推送：
+
 - `ec8afc200`：产品品牌、文档计划、登录页、首页、顶部导航首批改造；随后恢复暗色主题兼容
 - `a91f546bc`：全局 shell 从顶部导航切换为左侧企业工作台 sidebar
+- `ecfc595a4`：原对话详情页向 Agent 工作台布局对齐，新增对话工作台样式和文档交接更新
+
+当前首批知识库页面改造范围：
+
+- `web/src/pages/datasets/*` — 知识库列表、资产卡片、列表样式
+- `web/src/pages/dataset/index.tsx`、`sidebar/*`、`styles.css` — 单知识库详情工作台和资产侧栏
+- `web/src/pages/dataset/dataset/*` — 文档列表外壳、表格容器和分页
+- `web/src/pages/dataset/testing/index.tsx` — 检索测试工作台外壳
+- `web/src/locales/zh.ts` / `web/src/locales/en.ts` — 知识资产文案
 
 进行中（未推送）：
+
 - `web/src/pages/next-chats/chat/*`：原「对话」详情页向 `/agent-chat` 工作台风格对齐
 - `web/src/pages/next-chats/chat/styles.css`：对话工作台样式层，复用暗色主题 token
 
@@ -227,17 +242,20 @@ graspologic = { git = "https://github.com/infiniflow/graspologic.git", rev = "38
 ## 长期差异策略
 
 ### 永远不合入上游的内容
+
 - 我们的 `PLAN.md` / `STATUS.md` / `FORK.md`（属于我们的项目管理）
 - `CLAUDE.md` 中的 Fork/首次运行 专属段
 - `kb-data/` 引用（在 gitignore 里）
 - `logs/`（在 gitignore 里）
 
 ### 考虑贡献回上游的
+
 - Agent v2 的某些通用工具（若打磨到生产级）
 - macOS 启动脚本改造（若上游还没做）
 - pyproject.toml graspologic github 源（若上游也觉得 gitee 不稳）
 
 ### 永远从上游接受的
+
 - 安全补丁
 - RAG 核心改进（DeepDoc / GraphRAG）
 - 新增 LLM provider 接入
@@ -262,7 +280,7 @@ git diff --name-only --diff-filter=U
 uv sync --python 3.12 --all-extras --dry-run
 ```
 
-### 场景 2：api/apps/__init__.py 冲突（blueprint 注册）
+### 场景 2：api/apps/**init**.py 冲突（blueprint 注册）
 
 ```python
 # 典型冲突：上游加了新 blueprint，我们也加了 agent_v2
@@ -277,6 +295,7 @@ from .agent_v2_app import manager as agent_v2_manager  # 保留我们的
 **风险**：我们的 Tool 基于 RetrievalService 的 API 写，若上游改接口，Tool 会挂。
 
 **应对**：
+
 - 在 `api/agent_v2/tools/rag_retrieve.py` 顶部写清依赖的上游 API 版本和函数签名
 - 每次 merge 后跑 e2e 黄金用例
 - 若签名破坏，在工具层做 adapter
@@ -294,6 +313,6 @@ from .agent_v2_app import manager as agent_v2_manager  # 保留我们的
 
 ## 版本记录
 
-| 日期 | 版本 | 变更 |
-|---|---|---|
+| 日期       | 版本 | 变更                                         |
+| ---------- | ---- | -------------------------------------------- |
 | 2026-04-21 | v0.1 | 初始 Fork；记录环境/pyproject/macOS 适配改动 |
