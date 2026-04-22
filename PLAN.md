@@ -128,33 +128,21 @@
 
 ---
 
-### Phase 2 — 差异化（1-2 个月）
+### Phase 2 — 企业化与 Agent 能力升级（进行中）
 
-**目标**：从"一个 Agent 产品"变成"Agent 平台 + 垂直解决方案"。
+**目标**：从"前端已产品化的原型"变成"真能给企业跑起来"。聚焦三件：数据集访问控制、IM 机器人渠道、Multi-Agent。
 
-**方向**：
+**范围**：
+- **P2.1 数据集 RBAC + 审计**：新 `dataset_access` 表（owner / admin / contributor / viewer 四角色）+ 补齐 `async_ask` / `agent_v2 session create` / `rag_retrieve` 三处 KB 访问检查 + 新 `access_audit_log` 表。详见 `PLAN-rbac.md`
+- **P2.2 飞书机器人渠道**：参考 `vendor/openclaw/extensions/feishu/` 的 adapter 模式，新 `bot_channel` + `bot_conversation_map` 表，webhook 入口 + 签名验证 + 顺序队列 + 自动绑定 Agent v2 session。详见 `PLAN-bot-channels.md`
+- **P2.3 Multi-Agent**：参考 `vendor/claude-code-ref/packages/builtin-tools/src/tools/AgentTool/` 的 subagent 模式，新增 `spawn_subagent` 工具 + `agent_v2_subagent_trace` 表，父 Agent 可委派聚焦任务给子 Agent，独立 context 不污染父对话。详见 `PLAN-multi-agent.md`
 
-```
-┌────────────────┬─────────────────────────────────────────────────┐
-│      能力       │                具体内容                         │
-├────────────────┼─────────────────────────────────────────────────┤
-│ Multi-Agent     │ Supervisor + Specialist 模式                   │
-│                │ 新增 handoff 工具                               │
-│                │ Agent 可互相调用                                │
-├────────────────┼─────────────────────────────────────────────────┤
-│ 垂直模板        │ 保障房政策 / 法务 / 研报 3 个首发模板           │
-│                │ 每个模板：system prompt + 工具集 + KB 结构       │
-├────────────────┼─────────────────────────────────────────────────┤
-│ Trigger         │ Cron 定时 + Webhook 触发                       │
-│                │ 支持"每天早 9 点跑一次行业报告 Agent"            │
-├────────────────┼─────────────────────────────────────────────────┤
-│ Agent 部署      │ 二维码分享 / iframe 嵌入 / PWA                  │
-│ 渠道            │ 飞书/钉钉/企微 Bot（基于 OpenAPI 自建适配层）   │
-├────────────────┼─────────────────────────────────────────────────┤
-│ 版本 / 调试     │ Agent 版本快照 + Diff                          │
-│                │ 调用链可视化（深度 Langfuse 集成）               │
-└────────────────┴─────────────────────────────────────────────────┘
-```
+**非目标（推迟到 Phase 2.5 / 3）**：
+- 钉钉 / 企微适配器（预留扩展点，飞书先跑通）
+- Trigger（Cron + Webhook 定时任务）
+- 垂直模板（保障房 / 法务 / 研报）
+- 版本快照 + Langfuse 深度集成
+- 字段级 / 文档密级权限
 
 ---
 
@@ -227,8 +215,13 @@
 | 文档 | 定位 |
 |---|---|
 | `PLAN.md`（本文件） | 总体计划、阶段目标（不频繁改） |
+| `PLAN-phase2.md` | Phase 2 路线图总入口 |
+| `PLAN-rbac.md` | P2.1 数据集 RBAC + 审计详细设计 |
+| `PLAN-bot-channels.md` | P2.2 飞书机器人渠道详细设计 |
+| `PLAN-multi-agent.md` | P2.3 Multi-Agent subagent 详细设计 |
+| `PRODUCT-UI-PLAN.md` | Phase 1.7 前端产品化（已完成，可归档）|
 | `STATUS.md` | 会话交接文档，每次实质进展必更 |
-| `DESIGN.md` | Phase 1 Agent v2 架构设计 |
+| `DESIGN.md` | Phase 1 Agent v2 架构设计（稳定，不再改） |
 | `FORK.md` | 与上游 infiniflow/ragflow 的差异和同步策略 |
 | `CLAUDE.md` | 项目说明书（运行命令、约定、首次运行记录） |
 | `web/CLAUDE.md` | 前端开发规范（上游自带） |

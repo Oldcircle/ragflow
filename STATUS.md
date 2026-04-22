@@ -6,8 +6,38 @@
 
 ## 最近更新：2026-04-22（深夜 +1）
 
-**当前阶段**：**Phase 1.7 前端产品化重构几乎完成**（A / B / C / D1-D5 完成；仅剩品牌文案扫尾）
-**下一步入口**：Phase 2 — Multi-Agent 协作、垂直模板、Trigger、部署渠道（按 `PLAN.md` 第五节推进）
+**当前阶段**：**Phase 1.7 已完成；Phase 2 设计文档已就位，进入实施**
+**下一步入口**：按 `PLAN-phase2.md` 顺序执行 — P2.1 RBAC → P2.2 飞书机器人 → P2.3 Multi-Agent
+
+### Phase 2 设计文档（2026-04-22）
+
+已基于 4 份平行调研（`vendor/openclaw` 飞书适配、`vendor/claude-code-ref` Agent 架构、RAGFlow 自带 bot/webhook 能力、RAGFlow 现有权限模型）写完 Phase 2 设计，分 4 份文档：
+
+- `PLAN-phase2.md` — 总体路线（三件事：访问控制 / IM 机器人 / Multi-Agent）
+- `PLAN-rbac.md` — 数据集 RBAC + 审计 + 三个关键漏洞修补方案
+- `PLAN-bot-channels.md` — 飞书 webhook 适配器（参考 openclaw 架构）+ 会话映射表
+- `PLAN-multi-agent.md` — `spawn_subagent` 工具（参考 claude-code-ref AgentTool）+ depth/budget/tool 限制
+
+**调研的关键发现**：
+
+1. **RBAC**：`KnowledgebaseService.accessible(kb_id, user_id)` 存在但**未被调用**在三处关键路径：`dialog_service.async_ask`、`agent_v2_app.create_session`、`agent_v2/tools/rag_retrieve`。这是直接的越权漏洞，P2.1 首要补。
+
+2. **飞书机器人**：RAGFlow 已有 webhook 基建（鉴权/限流/IP 白名单）和 `APIToken.beta` 公共令牌，但没有 IM 特定的签名验证、URL challenge、会话映射。openclaw 的 `FeishuMessageContext` + `buildFeishuConversationId` + `createFeishuReplyDispatcher` 三块可以直接映射成 Python。
+
+3. **Multi-Agent**：claude-code-ref 的 `AgentTool` 用 `runAgent()` 在独立 context 里跑子 `query()`，最后把最终 assistant 文本作为 tool result 返回。我们用 Claude Agent SDK 可以原生支持嵌套 `query()`，不需要另起新协议。
+
+**新建表清单**（Phase 2 全部）：
+- `dataset_access` (owner/admin/contributor/viewer 四角色)
+- `access_audit_log`
+- `bot_channel`
+- `bot_conversation_map`
+- `bot_message_dedup`（可选，也可以 Redis）
+- `agent_v2_subagent_trace`
+- `agent_v2_subagent_message`（可选）
+
+全部新表，不改 `knowledgebase` / `user` / `tenant` / `agent_v2_*` 等现有 schema。
+
+
 
 ### P1.7-C2：知识库详情 shell + sidebar（2026-04-22 深夜 +1）
 
