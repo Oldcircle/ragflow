@@ -172,6 +172,10 @@ export default {
       toolsShort: 'tools',
       allTools: 'all tools',
       streamError: 'Streaming error',
+      references: 'References',
+      filesLabel: 'file(s)',
+      chunksLabel: 'snippet(s)',
+      viewChunks: 'View retrieved snippets',
     },
     memories: {
       llmTooltip:

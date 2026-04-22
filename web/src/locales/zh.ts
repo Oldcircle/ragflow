@@ -152,6 +152,10 @@ export default {
       toolsShort: '工具',
       allTools: '全部工具',
       streamError: '流式响应错误',
+      references: '引用来源',
+      filesLabel: '个文件',
+      chunksLabel: '个片段',
+      viewChunks: '查看检索到的片段',
     },
     memories: {
       llmTooltip: '分析对话内容，提取关键信息，并生成结构化的记忆摘要。',

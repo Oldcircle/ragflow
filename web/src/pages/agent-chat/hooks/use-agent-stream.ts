@@ -125,22 +125,33 @@ export function useAgentStream() {
               localTurn.thinking += ev.data?.text ?? '';
               break;
             case 'tool_call_start':
-              localTurn.toolCalls.push({
-                id: ev.data.id,
-                name: ev.data.name,
-                args: ev.data.args ?? {},
-                status: 'pending',
-                startTs: Date.now(),
-              });
+              // 不可变追加，确保 React.memo 能感知到数组变化
+              localTurn.toolCalls = [
+                ...localTurn.toolCalls,
+                {
+                  id: ev.data.id,
+                  name: ev.data.name,
+                  args: ev.data.args ?? {},
+                  status: 'pending',
+                  startTs: Date.now(),
+                },
+              ];
               break;
             case 'tool_call_end': {
-              const tc = localTurn.toolCalls.find((c) => c.id === ev.data.id);
-              if (tc) {
-                tc.result = ev.data.result;
-                tc.error = ev.data.error ?? undefined;
-                tc.durationMs = ev.data.duration_ms;
-                tc.status = ev.data.error ? 'error' : 'success';
-              }
+              // 不可变替换被更新的 tool call，引用变化 ToolCallCard 才会 re-render
+              localTurn.toolCalls = localTurn.toolCalls.map((c) =>
+                c.id === ev.data.id
+                  ? {
+                      ...c,
+                      result: ev.data.result,
+                      error: ev.data.error ?? undefined,
+                      durationMs: ev.data.duration_ms,
+                      status: ev.data.error
+                        ? ('error' as const)
+                        : ('success' as const),
+                    }
+                  : c,
+              );
               break;
             }
             case 'error':

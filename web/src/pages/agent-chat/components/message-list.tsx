@@ -1,9 +1,14 @@
 import { memo, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AgentV2Message, AgentV2ToolCall } from '../api';
-import { StreamingAssistantTurn } from '../hooks/use-agent-stream';
+import {
+  StreamingAssistantTurn,
+  StreamingToolCall,
+} from '../hooks/use-agent-stream';
 import { T } from '../theme';
 import { I } from './icons';
+import { AgentV2Markdown } from './markdown-content';
+import { ReferencesList } from './references-list';
 import { ThinkingBlock } from './thinking-block';
 
 interface Props {
@@ -78,6 +83,7 @@ export const MessageList = memo(function MessageList({
                 toolSummary={toolSummary}
                 usage={m.usage}
                 streaming={false}
+                toolCalls={mTools}
               />
             );
           }
@@ -95,6 +101,7 @@ export const MessageList = memo(function MessageList({
             toolSummary={summarizeStreamingTools(streaming)}
             usage={streaming.usage}
             streaming={isStreaming && !streaming.done}
+            toolCalls={streaming.toolCalls}
           />
         )}
 
@@ -178,8 +185,6 @@ function EmptyHint() {
   );
 }
 
-// ───────────────────────────────────── User Message ─────────────────────────────────────
-
 function UserMessage({ initials, text }: { initials: string; text: string }) {
   return (
     <div style={{ display: 'flex', gap: 12, marginBottom: 24 }}>
@@ -216,14 +221,13 @@ function UserMessage({ initials, text }: { initials: string; text: string }) {
   );
 }
 
-// ───────────────────────────────────── Assistant Message ─────────────────────────────────────
-
 interface AssistantMessageProps {
   text: string;
   thinking?: string;
   toolSummary?: string;
   usage?: Record<string, unknown>;
   streaming: boolean;
+  toolCalls?: Array<StreamingToolCall | AgentV2ToolCall>;
 }
 
 function AssistantMessage({
@@ -232,6 +236,7 @@ function AssistantMessage({
   toolSummary,
   usage,
   streaming,
+  toolCalls = [],
 }: AssistantMessageProps) {
   const costStr =
     typeof usage?.total_cost_usd === 'number'
@@ -263,29 +268,38 @@ function AssistantMessage({
           </div>
         )}
 
-        <div
-          style={{
-            fontSize: 14,
-            color: T.text,
-            lineHeight: 1.8,
-            whiteSpace: 'pre-wrap',
-          }}
-        >
-          {text || (streaming ? '…' : '')}
-          {streaming && text && (
-            <span
+        {text ? (
+          <div style={{ position: 'relative' }}>
+            <AgentV2Markdown content={text} />
+            {streaming && (
+              <span
+                style={{
+                  display: 'inline-block',
+                  width: 2,
+                  height: 14,
+                  marginLeft: 2,
+                  background: T.text,
+                  verticalAlign: 'middle',
+                  animation: 'agent-v2-blink 1s infinite',
+                }}
+              />
+            )}
+          </div>
+        ) : (
+          streaming && (
+            <div
               style={{
-                display: 'inline-block',
-                width: 2,
-                height: 14,
-                marginLeft: 2,
-                background: T.text,
-                verticalAlign: 'middle',
-                animation: 'agent-v2-blink 1s infinite',
+                fontSize: 13,
+                color: T.textDim,
+                fontStyle: 'italic',
               }}
-            />
-          )}
-        </div>
+            >
+              …
+            </div>
+          )
+        )}
+
+        {toolCalls.length > 0 && <ReferencesList toolCalls={toolCalls} />}
 
         {(costStr || toolSummary) && !streaming && (
           <div
@@ -310,8 +324,6 @@ function AssistantMessage({
     </div>
   );
 }
-
-// ───────────────────────────────────── helpers ─────────────────────────────────────
 
 function summarizeStreamingTools(
   s: StreamingAssistantTurn,
