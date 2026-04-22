@@ -76,25 +76,33 @@ export default function Files() {
 
   const breadcrumbItems = useSelectBreadcrumbItems();
 
-  const leftPanel = (
-    <div>
-      {breadcrumbItems.length > 0 ? (
-        <FileBreadcrumb></FileBreadcrumb>
-      ) : (
-        t('fileManager.files')
-      )}
-    </div>
-  );
-
   return (
-    <article className="size-full flex flex-col" data-testid="files-list">
-      <header className="px-5 pt-8 mb-4">
+    <article
+      className="flex size-full flex-col bg-bg-base"
+      data-testid="files-list"
+    >
+      <header className="border-b border-border-button bg-bg-component/60 px-8 pb-4 pt-8">
+        <div className="mb-4 min-w-0">
+          <h1 className="text-[22px] font-semibold tracking-normal text-text-primary">
+            {t('fileManager.files')}
+          </h1>
+          {breadcrumbItems.length > 0 ? (
+            <div className="mt-2">
+              <FileBreadcrumb />
+            </div>
+          ) : (
+            <p className="mt-1 text-sm text-text-secondary">
+              {total.toLocaleString()} · {t('fileManager.files')}
+            </p>
+          )}
+        </div>
+
         <ListFilterBar
-          leftPanel={leftPanel}
+          title={null}
           searchString={searchString}
           onSearchChange={handleInputChange}
           showFilter={false}
-          icon={'file'}
+          className="gap-3"
         >
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -120,7 +128,7 @@ export default function Files() {
         )}
       </header>
 
-      <div className="flex-1 px-5 flex flex-col overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-8 py-4">
         <FilesTable
           files={files}
           total={total}

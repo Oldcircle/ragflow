@@ -6,8 +6,8 @@
 
 ## 最近更新：2026-04-22（深夜 +1）
 
-**当前阶段**：**Phase 1.7 前端产品化重构进行中**（A/B 完成；C 全部小批完成）
-**下一步入口**：P1.7-D — 搜索 `/searches`、Agent 编排 `/agents`、记忆 `/memories`、文件 `/files`、用户设置 `/profile-setting/*`
+**当前阶段**：**Phase 1.7 前端产品化重构进行中**（A / B / C / D1-D4 完成）
+**下一步入口**：P1.7-D 收尾 — 用户设置 `/profile-setting/*`（含 Api / Mcp / Team / Plan / Model / Prompt / DataSource）；上下游扫尾 RAGFlow 文案碎片
 
 ### P1.7-C2：知识库详情 shell + sidebar（2026-04-22 深夜 +1）
 
@@ -47,6 +47,18 @@
 - ESLint `src/pages/dataset/{knowledge-graph,dataset-overview,dataset-setting}/index.tsx` 仅剩上游 `no-console` / `react-hooks/exhaustive-deps` 遗留 warning，本批未新增
 - 15 个核心路由 Vite dev server 全部 200（含 `/dataset/{dataset,testing,knowledge-graph,dataset-overview,dataset-setting}/{id}`）
 - 本批文件 Vite transform 均 200，HMR 日志无错误
+
+### P1.7-D1 / D2 / D3 / D4：搜索 / Agent / 记忆 / 文件列表页头统一（2026-04-22 深夜 +3）
+
+**已改代码**：
+- `web/src/pages/next-searches/index.tsx`、`web/src/pages/agents/index.tsx`、`web/src/pages/memories/index.tsx`、`web/src/pages/files/index.tsx`：列表页全部应用 `/datasets` 相同的「bordered header + title/subtitle + ListFilterBar + CardContainer + footer pagination」模式；`page-8 / py-6 / py-4` spacing 与 `bg-bg-base / bg-bg-component / bg-bg-component/40` 层级统一；分页条从 `mt-4 px-5 pb-5` 浮层改为底栏风格；空态/搜索空态分支保留
+- Files 页把 `FileBreadcrumb` 放到标题下方，未进入子目录时用与其他列表一致的「N · 文件」副标题
+- 全部改动未触及业务 hooks（`useFetchSearchList` / `useFetchAgentListByPage` / `useFetchMemoryList` / `useFetchFileList`）与各自的 create / rename / upload / move / bulk-operate 流程
+
+**验证**：
+- 16 个核心路由 Vite dev server 全部 200，包括 `/searches`、`/agents`、`/agent-templates`、`/memories`、`/files`
+- 4 个文件 ESLint 通过
+- HMR 日志无错误（中间有一次 dataset-setting 编辑中过渡态错误，保存后立即 hmr update 恢复）
 
 
 

@@ -68,19 +68,34 @@ export default function MemoryList() {
     }
   }, [isCreate, openCreateModalFun, searchUrl, setMemoryUrl]);
 
+  const memoryList = list?.data?.memory_list ?? [];
+  const total = list?.data?.total_count ?? 0;
+  const hasListContent = memoryList.length > 0 || !!searchString;
+
   return (
     <>
-      {list?.data?.memory_list?.length || searchString ? (
-        <article className="size-full flex flex-col" data-testid="memory-list">
-          <header className="px-5 pt-8 mb-4">
+      {hasListContent ? (
+        <article
+          className="flex size-full flex-col bg-bg-base"
+          data-testid="memory-list"
+        >
+          <header className="border-b border-border-button bg-bg-component/60 px-8 pb-5 pt-8">
+            <div className="mb-4 min-w-0">
+              <h1 className="text-[22px] font-semibold tracking-normal text-text-primary">
+                {t('memory')}
+              </h1>
+              <p className="mt-1 text-sm text-text-secondary">
+                {total.toLocaleString()} · {t('memory')}
+              </p>
+            </div>
             <ListFilterBar
-              icon="memory"
-              title={t('memory')}
+              title={null}
               onSearchChange={handleInputChange}
               searchString={searchString}
               filters={filters}
               onChange={handleFilterSubmit}
               value={filterValue}
+              className="gap-3"
             >
               <Button onClick={() => openCreateModalFun()}>
                 <Plus className="size-[1em]" />
@@ -89,10 +104,10 @@ export default function MemoryList() {
             </ListFilterBar>
           </header>
 
-          {list?.data?.memory_list?.length ? (
+          {memoryList.length ? (
             <>
-              <CardContainer className="flex-1 overflow-auto px-5">
-                {list?.data.memory_list.map((x) => (
+              <CardContainer className="flex-1 overflow-auto px-8 py-6">
+                {memoryList.map((x) => (
                   <MemoryCard
                     key={x.id}
                     data={x}
@@ -104,16 +119,16 @@ export default function MemoryList() {
                 ))}
               </CardContainer>
 
-              <footer className="mt-4 px-5 pb-5">
+              <footer className="border-t border-border-button bg-bg-component/40 px-8 py-4">
                 <RAGFlowPagination
                   {...pick(pagination, 'current', 'pageSize')}
-                  total={list?.data.total_count}
+                  total={total}
                   onChange={handlePageChange}
                 />
               </footer>
             </>
           ) : (
-            <div className="flex-1 flex items-center justify-center">
+            <div className="flex flex-1 items-center justify-center">
               <EmptyAppCard
                 showIcon
                 size="large"
@@ -127,7 +142,7 @@ export default function MemoryList() {
         </article>
       ) : (
         <article
-          className="size-full flex items-center justify-center"
+          className="flex size-full items-center justify-center bg-bg-base"
           data-testid="memory-list"
         >
           <EmptyAppCard

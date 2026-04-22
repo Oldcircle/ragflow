@@ -64,17 +64,32 @@ export default function SearchList() {
     }
   }, [isCreate, openCreateModalFun, searchUrl, setSearchUrl]);
 
+  const total = list?.data?.total ?? 0;
+  const apps = list?.data?.search_apps ?? [];
+  const hasListContent = apps.length > 0 || !!searchString;
+
   return (
     <>
-      {list?.data?.search_apps?.length || searchString ? (
-        <article className="size-full flex flex-col" data-testid="search-list">
-          <header className="px-5 pt-8 mb-4">
+      {hasListContent ? (
+        <article
+          className="flex size-full flex-col bg-bg-base"
+          data-testid="search-list"
+        >
+          <header className="border-b border-border-button bg-bg-component/60 px-8 pb-5 pt-8">
+            <div className="mb-4 min-w-0">
+              <h1 className="text-[22px] font-semibold tracking-normal text-text-primary">
+                {t('searchApps')}
+              </h1>
+              <p className="mt-1 text-sm text-text-secondary">
+                {total.toLocaleString()} · {t('searchApps')}
+              </p>
+            </div>
             <ListFilterBar
-              icon="searches"
-              title={t('searchApps')}
+              title={null}
               showFilter={false}
               searchString={searchString}
               onSearchChange={handleInputChange}
+              className="gap-3"
             >
               <Button
                 data-testid="create-search"
@@ -86,32 +101,30 @@ export default function SearchList() {
             </ListFilterBar>
           </header>
 
-          {list?.data?.search_apps?.length ? (
+          {apps.length ? (
             <>
-              <CardContainer className="flex-1 overflow-auto px-5">
-                {list?.data.search_apps.map((x) => {
-                  return (
-                    <SearchCard
-                      key={x.id}
-                      data={x}
-                      showSearchRenameModal={() => {
-                        showSearchRenameModal(x);
-                      }}
-                    />
-                  );
-                })}
+              <CardContainer className="flex-1 overflow-auto px-8 py-6">
+                {apps.map((x) => (
+                  <SearchCard
+                    key={x.id}
+                    data={x}
+                    showSearchRenameModal={() => {
+                      showSearchRenameModal(x);
+                    }}
+                  />
+                ))}
               </CardContainer>
 
-              <footer className="mt-4 px-5 pb-5">
+              <footer className="border-t border-border-button bg-bg-component/40 px-8 py-4">
                 <RAGFlowPagination
                   {...pick(pagination, 'current', 'pageSize')}
-                  total={list?.data.total}
+                  total={total}
                   onChange={handlePageChange}
                 />
               </footer>
             </>
           ) : (
-            <div className="flex-1 flex items-center justify-center">
+            <div className="flex flex-1 items-center justify-center">
               <EmptyAppCard
                 showIcon
                 size="large"
@@ -125,7 +138,7 @@ export default function SearchList() {
         </article>
       ) : (
         <article
-          className="size-full flex items-center justify-center"
+          className="flex size-full items-center justify-center bg-bg-base"
           data-testid="search-list"
         >
           <EmptyAppCard

@@ -83,19 +83,34 @@ export default function Agents() {
     }
   }, [isCreate, showCreatingModal, searchUrl, setSearchUrl]);
 
+  const total = pagination.total ?? 0;
+  const agentList = data ?? [];
+  const hasListContent = agentList.length > 0 || !!searchString;
+
   return (
     <>
-      {data?.length || searchString ? (
-        <article className="size-full flex flex-col" data-testid="agents-list">
-          <header className="px-5 pt-8 mb-4">
+      {hasListContent ? (
+        <article
+          className="flex size-full flex-col bg-bg-base"
+          data-testid="agents-list"
+        >
+          <header className="border-b border-border-button bg-bg-component/60 px-8 pb-5 pt-8">
+            <div className="mb-4 min-w-0">
+              <h1 className="text-[22px] font-semibold tracking-normal text-text-primary">
+                {t('flow.agents')}
+              </h1>
+              <p className="mt-1 text-sm text-text-secondary">
+                {total.toLocaleString()} · {t('flow.agents')}
+              </p>
+            </div>
             <ListFilterBar
-              title={t('flow.agents')}
+              title={null}
               searchString={searchString}
               onSearchChange={handleInputChange}
-              icon="agents"
               filters={filters}
               onChange={handleFilterSubmit}
               value={filterValue}
+              className="gap-3"
             >
               <DropdownMenu>
                 <DropdownMenuTrigger data-testid="create-agent">
@@ -132,30 +147,28 @@ export default function Agents() {
             </ListFilterBar>
           </header>
 
-          {data.length ? (
+          {agentList.length ? (
             <>
-              <CardContainer className="flex-1 overflow-auto px-5">
-                {data.map((x) => {
-                  return (
-                    <AgentCard
-                      key={x.id}
-                      data={x}
-                      showAgentRenameModal={showAgentRenameModal}
-                    />
-                  );
-                })}
+              <CardContainer className="flex-1 overflow-auto px-8 py-6">
+                {agentList.map((x) => (
+                  <AgentCard
+                    key={x.id}
+                    data={x}
+                    showAgentRenameModal={showAgentRenameModal}
+                  />
+                ))}
               </CardContainer>
 
-              <footer className="mt-4 px-5 pb-5">
+              <footer className="border-t border-border-button bg-bg-component/40 px-8 py-4">
                 <RAGFlowPagination
                   {...pick(pagination, 'current', 'pageSize')}
-                  total={pagination.total}
+                  total={total}
                   onChange={handlePageChange}
                 />
               </footer>
             </>
           ) : (
-            <div className="flex-1 flex items-center justify-center">
+            <div className="flex flex-1 items-center justify-center">
               <EmptyAppCard
                 showIcon
                 size="large"
@@ -169,7 +182,7 @@ export default function Agents() {
         </article>
       ) : (
         <article
-          className="size-full flex items-center justify-center"
+          className="flex size-full items-center justify-center bg-bg-base"
           data-testid="agents-list"
         >
           <EmptyAppCard
