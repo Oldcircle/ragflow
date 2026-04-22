@@ -10,12 +10,14 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import { Applications } from './applications';
 import { Datasets } from './datasets';
 
 const Home = () => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const { kbs, total_datasets } = useFetchNextKnowledgeListByPage();
 
   const stats = useMemo(() => {
@@ -25,48 +27,48 @@ const Home = () => {
 
     return [
       {
-        label: '知识库',
+        label: t('workspaceHome.datasets'),
         value: total_datasets || kbs.length,
-        hint: '团队可用知识空间',
+        hint: t('workspaceHome.datasetsHint'),
         icon: Database,
       },
       {
-        label: '文档',
+        label: t('workspaceHome.documents'),
         value: documents.toLocaleString(),
-        hint: '当前可见知识库',
+        hint: t('workspaceHome.documentsHint'),
         icon: FileText,
       },
       {
-        label: '切片',
+        label: t('workspaceHome.chunks'),
         value: chunks.toLocaleString(),
-        hint: '用于语义召回',
+        hint: t('workspaceHome.chunksHint'),
         icon: Search,
       },
       {
-        label: 'Token',
+        label: t('workspaceHome.tokens'),
         value: tokens > 1000 ? `${Math.round(tokens / 1000)}k` : tokens,
-        hint: '解析文本规模',
+        hint: t('workspaceHome.tokensHint'),
         icon: Sparkles,
       },
     ];
-  }, [kbs, total_datasets]);
+  }, [kbs, total_datasets, t]);
 
   const quickActions = [
     {
-      label: '新建知识库',
-      description: '上传文档并开始解析',
+      label: t('workspaceHome.newDataset'),
+      description: t('workspaceHome.newDatasetHint'),
       icon: Database,
       onClick: () => navigate(`${Routes.Datasets}?isCreate=true`),
     },
     {
-      label: '打开 Agent',
-      description: '基于知识库进行多步问答',
+      label: t('workspaceHome.openAgent'),
+      description: t('workspaceHome.openAgentHint'),
       icon: Bot,
       onClick: () => navigate(Routes.AgentChat),
     },
     {
-      label: '开始对话',
-      description: '使用现有聊天助手',
+      label: t('workspaceHome.startChat'),
+      description: t('workspaceHome.startChatHint'),
       icon: MessageSquareText,
       onClick: () => navigate(Routes.Chats),
     },
@@ -79,19 +81,19 @@ const Home = () => {
           <div>
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-border-button bg-bg-component px-3 py-1 text-xs font-medium text-text-secondary">
               <Sparkles className="size-3.5 text-accent-primary" />
-              Enterprise knowledge workspace
+              {t('workspaceHome.tagline')}
             </div>
             <h1 className="max-w-3xl text-[40px] font-semibold leading-tight tracking-normal text-text-primary">
-              管理企业知识，让 Agent 的每一次回答都有依据
+              {t('workspaceHome.heroTitle')}
             </h1>
             <p className="mt-4 max-w-2xl text-base leading-7 text-text-secondary">
-              汇聚文档、检索、对话、工具调用和引用来源，面向企业内部场景构建可信知识库。
+              {t('workspaceHome.heroDescription')}
             </p>
           </div>
 
           <div className="rounded-xl border border-border-button bg-bg-component p-4 shadow-sm">
             <div className="mb-3 text-sm font-semibold text-text-primary">
-              快速入口
+              {t('workspaceHome.quickActions')}
             </div>
             <div className="space-y-2">
               {quickActions.map(

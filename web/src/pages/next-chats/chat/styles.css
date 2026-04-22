@@ -1,6 +1,6 @@
 .chat-workbench-root {
-  background: #fafafa;
-  color: #1c1917;
+  background: var(--bg-base);
+  color: rgb(var(--text-primary));
   font-family:
     'Inter Tight',
     'Inter',
@@ -9,11 +9,6 @@
     'Segoe UI',
     system-ui,
     sans-serif;
-}
-
-.dark .chat-workbench-root {
-  background: var(--bg-base);
-  color: rgb(var(--text-primary));
 }
 
 .chat-workbench-topbar {

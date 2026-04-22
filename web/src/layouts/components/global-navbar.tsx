@@ -111,6 +111,7 @@ function NavSection({
 
 const GlobalNavbar = () => {
   const { pathname } = useLocation();
+  const { t } = useTranslation();
 
   const activePath = useMemo(() => {
     return (
@@ -125,11 +126,15 @@ const GlobalNavbar = () => {
   return (
     <nav className="space-y-6">
       <NavSection
-        title="Workspace"
+        title={t('header.workspaceGroup')}
         items={primaryItems}
         activePath={activePath}
       />
-      <NavSection title="Build" items={buildItems} activePath={activePath} />
+      <NavSection
+        title={t('header.buildGroup')}
+        items={buildItems}
+        activePath={activePath}
+      />
     </nav>
   );
 };

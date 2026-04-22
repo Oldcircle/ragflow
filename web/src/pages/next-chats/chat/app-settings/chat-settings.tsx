@@ -146,10 +146,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
                 onClick={switchSettingVisible}
                 data-testid="chat-detail-settings-close"
               >
-                <LucidePanelRightClose
-                  className="size-4 cursor-pointer"
-                  onClick={switchSettingVisible}
-                />
+                <LucidePanelRightClose className="size-4" />
               </Button>
             </div>
 

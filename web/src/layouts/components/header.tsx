@@ -16,6 +16,7 @@ import { TenantRole } from '@/pages/user-setting/constants';
 import { Routes } from '@/routes';
 import { Bot, LucideChevronDown, LucideCircleHelp, Plus } from 'lucide-react';
 import React, { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link, useLocation } from 'react-router';
 import { BellButton } from './bell-button';
 import GlobalNavbar from './global-navbar';
@@ -29,6 +30,7 @@ export function Header({
   ...props
 }: React.HTMLAttributes<HTMLElement>) {
   const { pathname } = useLocation();
+  const { t } = useTranslation();
 
   const changeLanguage = useChangeLanguage();
 
@@ -75,7 +77,7 @@ export function Header({
         variant="outline"
       >
         <Plus className="size-4 text-accent-primary" />
-        新建 Agent 会话
+        {t('header.newAgentSession')}
       </Button>
 
       <GlobalNavbar />
@@ -83,10 +85,10 @@ export function Header({
       <div className="mt-6 rounded-xl border border-border-button bg-bg-base p-3">
         <div className="mb-2 flex items-center gap-2 text-sm font-medium text-text-primary">
           <Bot className="size-4 text-accent-primary" />
-          Agent v2
+          {t('header.agentV2Title')}
         </div>
         <p className="text-xs leading-5 text-text-secondary">
-          自主检索、阅读文档并展示工具调用，适合政策、法务、研报等可信问答场景。
+          {t('header.agentV2Description')}
         </p>
       </div>
 
@@ -124,9 +126,10 @@ export function Header({
             asLink
             variant="ghost"
             size="icon"
-            to="https://ragflow.io/docs/dev/category/user-guides"
+            to={t('header.docsUrl')}
             target="_blank"
             rel="noreferrer noopener"
+            aria-label={t('header.helpCenter')}
           >
             <LucideCircleHelp className="size-[1em]" />
           </Button>
@@ -152,7 +155,7 @@ export function Header({
               {nickname || 'User'}
             </div>
             <div className="truncate text-xs text-text-secondary">
-              工作区设置
+              {t('header.workspaceSettings')}
             </div>
           </div>
         </Link>

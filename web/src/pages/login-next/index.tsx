@@ -350,7 +350,7 @@ const Login = () => {
           <div className="flex flex-1 flex-col justify-center py-10">
             <div className="max-w-[620px]">
               <div className="mb-4 inline-flex rounded-full border border-border-button bg-bg-component px-3 py-1 text-xs font-medium text-text-secondary">
-                Agent-first enterprise knowledge base
+                {t('tagline')}
               </div>
               <h1 className="text-[42px] font-semibold leading-tight tracking-normal text-text-primary lg:text-[56px]">
                 {t('title')}
@@ -363,17 +363,17 @@ const Login = () => {
             <div className="mt-10 max-w-[640px] rounded-xl border border-border-button bg-bg-component p-4 shadow-sm">
               <div className="mb-4 flex items-center justify-between border-b border-border-button pb-3">
                 <div className="text-sm font-semibold text-text-primary">
-                  政策咨询 Agent
+                  {t('policyCardTitle')}
                 </div>
                 <div className="rounded-full bg-accent-primary/10 px-2 py-1 text-xs font-medium text-accent-primary">
-                  可信引用
+                  {t('trustedBadge')}
                 </div>
               </div>
               <div className="space-y-3">
                 {[
-                  ['知识库检索', '深圳保障房政策库 · 22 份文档'],
-                  ['工具调用', 'rag_retrieve · rag_read_document'],
-                  ['回答依据', '[1] 公共租赁住房管理办法'],
+                  [t('featureKbLabel'), t('featureKbValue')],
+                  [t('featureToolLabel'), t('featureToolValue')],
+                  [t('featureCitationLabel'), t('featureCitationValue')],
                 ].map(([label, value]) => (
                   <div
                     key={label}
