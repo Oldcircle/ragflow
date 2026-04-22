@@ -235,11 +235,6 @@ export default {
     knowledgeList: {
       welcome: '欢迎回来',
       description: '今天我们要使用哪个知识库？',
-      assetEyebrow: '企业知识资产',
-      assetDescription:
-        '统一管理企业文档资产、解析状态和检索质量，为 Agent 工作台提供可信上下文。',
-      cardDescription:
-        '企业知识资产已接入，可用于问答、检索测试和 Agent 工具调用。',
       createKnowledgeBase: '创建知识库',
       name: '名称',
       namePlaceholder: '请输入名称',
@@ -326,8 +321,6 @@ export default {
       completed: '已完成',
       datasetLog: '知识库日志',
       created: '创建于',
-      assetEyebrow: '知识资产',
-      retrievalLab: '检索实验室',
       learnMore: '内置pipeline简介',
       general: '通用',
       chunkMethodTab: '切片方法',

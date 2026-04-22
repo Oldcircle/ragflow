@@ -7,57 +7,24 @@
 ## 最近更新：2026-04-22（夜）
 
 **当前阶段**：**Phase 1 已完成，进入 Phase 1.7 前端产品化重构**
-**下一步入口**：P1.7-C — 继续知识库详情页内部页面（Overview / Setting / Knowledge Graph）和文档表格细节
+**下一步入口**：P1.7-B — 对话页向 Agent 工作台继续细节对齐；随后进入 P1.7-C 知识库 / 文档页
 
 ### P1.7 当前任务（2026-04-22）
 
 用户明确目标：当前前端仍然完全是 RAGFlow 前端，需要包装成我们自己的企业知识库项目。项目内参考稿为 `design-refs/zhiyuan/`，应参考其「知源 · 企业知识库」设计语言重构整个前端，但保留全部功能，只重构前端和 UI。
 
 **已新增文档**：
-
 - `PRODUCT-UI-PLAN.md` — Phase 1.7 企业知识库前端产品化重构计划
 
 **执行策略**：
-
 - 已完成全局可见外壳：`web/src/layouts/*`、`web/src/pages/login-next/*`、`web/src/pages/home/*`
 - 当前统一高频工作台体验：`web/src/pages/agent-chat/*`、`web/src/pages/next-chats/chat/*`
 - 保留所有已有 routes 和业务 hooks
 - 后续逐批改知识库、文档、搜索、文件、设置等页面
 
-### P1.7-C 知识库 / 文档页首批改造（2026-04-22）
-
-当前开始改造 RAGFlow 痕迹最重的核心业务区：知识库列表、知识库资产卡片、单知识库详情工作台、文档列表、检索测试页。
-
-**已改代码**：
-
-- `web/src/pages/datasets/index.tsx`：知识库列表常驻企业知识资产头部，加入资产统计、统一工具栏和空状态入口
-- `web/src/pages/datasets/dataset-card.tsx`：知识库卡片改为资产卡样式，展示 embedding、文档数、chunk 数、切片方法、更新时间和共享 badge
-- `web/src/pages/datasets/styles.css`：新增知识库列表 / 卡片工作台样式
-- `web/src/pages/dataset/index.tsx`：单知识库详情页改为左侧资产侧栏 + 右侧工作台面板
-- `web/src/pages/dataset/sidebar/index.tsx`：详情侧栏改为知识资产摘要、统计卡、紧凑纵向导航
-- `web/src/pages/dataset/dataset/index.tsx`：文档列表外壳改为产品化面板，保留上传、新建空文件、批量操作、元数据、重解析等功能
-- `web/src/pages/dataset/dataset/dataset-table.tsx`：表格容器和分页层级对齐新面板
-- `web/src/pages/dataset/testing/index.tsx`：检索测试页改为检索实验室双栏工作台
-- `web/src/pages/dataset/styles.css`：新增详情工作台样式
-- `web/src/locales/zh.ts` / `en.ts`：新增知识资产相关文案
-
-**验证**：
-
-- targeted ESLint 通过
-- `git diff --check` 通过
-- Vite 成功转换 datasets、dataset card、dataset wrapper、dataset sidebar、documents、retrieval testing 模块（HTTP 200）
-
-**下一步入口**：
-
-- 继续细化 `web/src/pages/dataset/dataset-overview/*`
-- 继续细化 `web/src/pages/dataset/dataset-setting/*`
-- 继续细化 `web/src/pages/dataset/knowledge-graph/*`
-- 视效果再补文档表格行、解析状态 cell、上传弹窗的产品化样式
-
 ### P1.7-A 已完成首批改造（2026-04-22）
 
 **已改代码**：
-
 - 新增 `web/src/layouts/components/product-mark.tsx`：统一「知源 / 企业知识库」品牌标识
 - 重构 `web/src/layouts/components/header.tsx`：移除显眼 RAGFlow / Discord / GitHub 外部入口，保留语言、帮助、主题、通知、用户设置
 - 重构 `web/src/layouts/components/global-navbar.tsx`：导航改为「概览 / 知识库 / 对话 / Agent / 检索 / 编排 / 记忆 / 文件」，保留全部原路由
@@ -67,7 +34,6 @@
 - 更新 `web/src/global.less`、`page-container.tsx` 的基础视觉（后续已恢复默认暗色主题兼容）
 
 **验证**：
-
 - 本次改动文件 targeted ESLint 通过
 - `npm run type-check` 未通过，但失败来自仓库既有大量 TS 债；本次新增的唯一未使用导入已修复
 - 已启动前端 dev server：`http://127.0.0.1:9223/`
@@ -78,20 +44,17 @@
 用户反馈：切到全白背景后，原本按暗色主题设计的组件出现对比度/层级问题。
 
 **修正**：
-
 - `web/src/app.tsx` 默认主题恢复为 `ThemeEnum.Dark`
 - 移除首批改造里的硬编码白底/黑字：`bg-white`、`#fafafa`、`#1c1917` 等改为现有主题 token
 - 新增 `.zy-grid-bg`，登录页背景跟随 `--bg-base` / `--border-button`
 - Header / Nav / 首页 / 登录页统一使用 `bg-bg-base`、`bg-bg-component`、`bg-bg-card`、`text-text-primary`、`text-text-secondary`、`border-border-button`、`accent-primary`
 
 **验证**：
-
 - targeted ESLint 通过
 - `git diff --check` 通过
 - Vite 成功转换首页、登录页、Header、Nav 模块（HTTP 200）
 
 **下一步入口**：
-
 - P1.7-B：统一 `/agent-chat` 与新全局 shell 的视觉细节
 - P1.7-C：开始重构 `/datasets` 和 `/dataset/**`，这是 RAGFlow 痕迹最重的核心业务区
 
@@ -100,13 +63,11 @@
 用户反馈：暗色兼容后已经不错，但整体仍有些像 RAGFlow。参考 `design-refs/zhiyuan/project/ui.jsx` 的 Sidebar / Topbar 模式后，第二轮把全局 shell 从 RAGFlow 风格顶部胶囊导航改成「知源」参考稿的左侧企业工作台导航。
 
 **已改代码**：
-
 - `web/src/layouts/root-layout.tsx`：整体布局从顶部 header + main 改为左侧 sidebar + 内容区
 - `web/src/layouts/components/header.tsx`：重构为产品 sidebar，包含品牌、新建 Agent 会话、Agent v2 说明、语言/帮助/主题/通知、用户设置入口
 - `web/src/layouts/components/global-navbar.tsx`：重构为纵向导航，分为 Workspace / Build 两组，保留全部原路由
 
 **验证**：
-
 - targeted ESLint 通过
 - `git diff --check` 通过
 - Vite 成功转换 root layout、sidebar shell、sidebar nav、home 模块（HTTP 200）
@@ -116,7 +77,6 @@
 用户反馈：`/agent-chat` 和原「对话」页面前端风格差别太大，需要将对话页面风格向 Agent 对齐。
 
 **已改代码**：
-
 - `web/src/pages/next-chats/chat/index.tsx`：对话详情页改为 Agent 风格工作台结构：全局 shell + 左会话栏 / 中消息区 / 右设置栏
 - `web/src/pages/next-chats/chat/styles.css`：新增对话工作台样式 tokens，复用暗色主题变量
 - `web/src/pages/next-chats/chat/sessions.tsx`：会话列表边框、背景、选中态向 Agent 会话栏靠齐
@@ -125,44 +85,38 @@
 - `web/src/pages/next-chats/chat/chat-box/next-multiple-chat-box.tsx`：多模型调试页输入区宽度和工作台 spacing 对齐
 
 **验证**：
-
 - targeted ESLint 通过
 - `git diff --check` 通过
 - Vite 成功转换 chat detail、sessions、single chat box、settings 模块（HTTP 200）
 
 ### M1.6 完成内容（2026-04-22）
 
-| Step   | 内容                                                        | Commit            |
-| ------ | ----------------------------------------------------------- | ----------------- |
-| Step 1 | 去除 env var 偷懒，接回 RAGFlow 模型供应商（TenantLLM）     | 470e31e / 3418bad |
-| Step 3 | Markdown 内联 [N] 脚注 + 点击滚动高亮对应 chunk             | 4c45929           |
-| Step 2 | Agent 模板系统（6 个预置：保障房/政策/法务/研报/客服/Wiki） | 824ee28           |
+| Step | 内容 | Commit |
+|---|---|---|
+| Step 1 | 去除 env var 偷懒，接回 RAGFlow 模型供应商（TenantLLM）| 470e31e / 3418bad |
+| Step 3 | Markdown 内联 [N] 脚注 + 点击滚动高亮对应 chunk | 4c45929 |
+| Step 2 | Agent 模板系统（6 个预置：保障房/政策/法务/研报/客服/Wiki）| 824ee28 |
 
 **新增端点**：
-
 - GET `/v1/agent_v2/model` — 返回用户 TenantLLM 里的 Chat 模型列表
 - GET `/v1/agent_v2/template` — 返回 6 个预置 Agent 模板
 
 **NewSessionDialog 变化**：
-
 - 顶部新增「从模板开始」2 列卡片区
 - 模型下拉从硬编码变成"动态拉 /model 端点"（只列你配过的）
 - System Prompt 默认模板加入 [N] 引用规范
 
 **移除的 debt**：
-
 - ❌ `AGENT_V2_DEEPSEEK_KEY` / `AGENT_V2_ANTHROPIC_KEY` 环境变量依赖
   （保留作 fallback，但正常使用不再需要）
 
 ### 残留的小 debt（Phase 2 再说）
-
 - session/conversation 表和原版 Dialog 分离（Phase 2 考虑统一）
 - Langfuse 可观测性还没接（RAGFlow 有依赖但 Agent v2 没接）
 
 ### M1.5 验收结果（2026-04-22）
 
 **10 题评测均分 4.8 / 5，全部类别通过**：
-
 - 事实题 (Q1-Q3) 均分 4.67 ≥ 4.0 ✅
 - 推理题 (Q4-Q7) 均分 4.75 ≥ 3.8 ✅
 - 防幻觉题 (Q8-Q10) 均分 5.00 ≥ 4.5 ✅ ⭐ 三题全满分
@@ -173,11 +127,11 @@
 
 ### 残留小优化（暂不阻塞 Phase 1）
 
-| 优化点                              | 严重度 | 行动                                    |
-| ----------------------------------- | ------ | --------------------------------------- |
-| Q3 答复可以更明确"不得上市交易"     | 低     | System Prompt 补一句，M1.6 再调         |
-| 脚本输出截断（Q4 超过 2000 字被截） | 低     | 改 scripts/run_baojian_golden.py 不截断 |
-| Q8 调了 4 次工具才确认没首付规定    | 极低   | 可接受（宁可多查）                      |
+| 优化点 | 严重度 | 行动 |
+|---|---|---|
+| Q3 答复可以更明确"不得上市交易" | 低 | System Prompt 补一句，M1.6 再调 |
+| 脚本输出截断（Q4 超过 2000 字被截） | 低 | 改 scripts/run_baojian_golden.py 不截断 |
+| Q8 调了 4 次工具才确认没首付规定 | 极低 | 可接受（宁可多查） |
 
 这些都不影响 Phase 1 验收，M1.6 顺手改。
 
@@ -188,7 +142,6 @@
 - 引用来源缺失 → ReferencesList 从 rag_retrieve 结果抽取文件+chunks
 
 ### M1.4 验收结果
-
 - ✅ 新页面 `web/src/pages/agent-chat/`（3 列布局 + 设计系统）
 - ✅ 设计语言：Linear/Vercel 风格，teal 品牌色 #0f766e，Inter Tight 字体
 - ✅ 3 列布局：会话侧栏 260px / 消息流 / 工具调用侧栏 340px
@@ -199,11 +152,9 @@
 - ✅ TypeScript 0 errors（本模块）
 
 ### 可访问
-
 打开 http://localhost:9222/agent-chat 登录后即可用。
 
 ### 体验路径（Phase 1 M1.4 完成后即可）
-
 1. 硬刷新浏览器 `Cmd+Shift+R`
 2. 顶部菜单点「工作台」（或直接访问 /agent-chat）
 3. 左侧「新建会话」：
@@ -216,14 +167,12 @@
 5. 观察右侧工具调用侧栏：每次 rag_retrieve 的 args + 召回结果都在
 
 ### M1.5 入口（下一步）
-
 1. 建 3 道黄金用例文档 `tests/e2e/baojian_house.md`
 2. 对保障房场景跑 10 个问题，人工打分
 3. 按打分结果调 System Prompt / Tool 描述 / top_n / 阈值
 4. Langfuse 接入（RAGFlow 已内置 langfuse 依赖，需创建 tracer）
 
 ### M1.3 验收结果
-
 - ✅ 3 张 DB 表（agent_v2_session / message / tool_call）自动建表
 - ✅ Session Service 3 个 pytest 通过（真 MySQL 读写）
 - ✅ Blueprint `/v1/agent_v2/*` 自动注册（session CRUD + tool list + SSE conversation）
@@ -232,7 +181,6 @@
 - 实测：单轮 46s / 1 次 rag_retrieve / $0.12 / 答复 791 字
 
 ### M1.2 验收结果
-
 - ✅ 4 个工具全部实现：`rag_retrieve` / `rag_list_docs` / `rag_read_doc` / `rag_graph_query`
 - ✅ 直接调用 smoke test 全过（list 到 22 文件 / retrieve 相似度 0.52 / graph 无图谱 KB 返回空）
 - ✅ pytest 单元测试 **37/37 通过**（base 9 / event 9 / registry 5 / schemas 14）
@@ -240,7 +188,6 @@
 - ✅ `tools/README.md` 文档完整
 
 ### M1.1 验收结果
-
 - ✅ Claude Agent SDK 集成成功（Python SDK 0.1.64）
 - ✅ DeepSeek 通过 `https://api.deepseek.com/anthropic` 端点可用
 - ✅ 工具 `rag_retrieve` 连通 RAGFlow Dealer.retrieval()
@@ -249,7 +196,6 @@
 - 实测：114s / $0.148 / 5 次 tool call
 
 ### 可运行的命令
-
 ```bash
 cd ~/Opensource/forks/ragflow
 export AGENT_V2_PROVIDER=deepseek DEEPSEEK_API_KEY=sk-... NLTK_DATA=./nltk_data
@@ -261,41 +207,40 @@ export AGENT_V2_PROVIDER=deepseek DEEPSEEK_API_KEY=sk-... NLTK_DATA=./nltk_data
 
 ## 环境状态（验证过可用）
 
-| 服务          | 地址                         | 状态       |
-| ------------- | ---------------------------- | ---------- |
-| 前端（Vite）  | http://localhost:9222        | ✅         |
-| 后端（Flask） | http://localhost:9380        | ✅         |
-| Task Worker   | `rag/svr/task_executor.py 0` | ✅         |
-| MySQL         | 容器 `docker-mysql-1`        | ✅ healthy |
-| Elasticsearch | 容器 `docker-es01-1`         | ✅ healthy |
-| MinIO         | 容器 `docker-minio-1`        | ✅ healthy |
-| Redis         | 容器 `docker-redis-1`        | ✅ healthy |
+| 服务 | 地址 | 状态 |
+|---|---|---|
+| 前端（Vite） | http://localhost:9222 | ✅ |
+| 后端（Flask） | http://localhost:9380 | ✅ |
+| Task Worker | `rag/svr/task_executor.py 0` | ✅ |
+| MySQL | 容器 `docker-mysql-1` | ✅ healthy |
+| Elasticsearch | 容器 `docker-es01-1` | ✅ healthy |
+| MinIO | 容器 `docker-minio-1` | ✅ healthy |
+| Redis | 容器 `docker-redis-1` | ✅ healthy |
 
 **重启方法**：见 `CLAUDE.md` 「macOS 本地开发」段。
 
 ## 模型接入状态
 
-| 类型      | 提供方         | 模型            | 状态 |
-| --------- | -------------- | --------------- | ---- |
-| Chat      | DeepSeek       | `deepseek-chat` | ✅   |
-| Embedding | Ollama（本地） | `bge-m3`        | ✅   |
-| Rerank    | —              | —               | 未接 |
-| Vision    | —              | —               | 未接 |
+| 类型 | 提供方 | 模型 | 状态 |
+|---|---|---|---|
+| Chat | DeepSeek | `deepseek-chat` | ✅ |
+| Embedding | Ollama（本地） | `bge-m3` | ✅ |
+| Rerank | — | — | 未接 |
+| Vision | — | — | 未接 |
 
 DeepSeek API Key 已配（在 RAGFlow 内部 MySQL）。
 
 ## 数据状态
 
-| 知识库           | 文档数 | Chunk 数 | 用途             |
-| ---------------- | ------ | -------- | ---------------- |
-| 深圳保障房政策库 | 22     | 231      | Phase 0 验证场景 |
+| 知识库 | 文档数 | Chunk 数 | 用途 |
+|---|---|---|---|
+| 深圳保障房政策库 | 22 | 231 | Phase 0 验证场景 |
 
 **源文件**：`~/Opensource/kb-data/深圳保障房政策/`
 
 ## 已完成（按时间倒序）
 
 ### 2026-04-21
-
 - ✅ 工作区索引 + 规范更新：`kb-data/` 目录登记进 `~/Opensource/CLAUDE.md` 和 `~/Opensource/ai-dev-guide.md`
 - ✅ 政策数据归档到 `~/Opensource/kb-data/深圳保障房政策/`（22 份文件 + 1 份原始压缩包）
 - ✅ 建助手测试原版 Dialog 模式：**发现严重幻觉**（保租房"本科 45 岁/专科 35 岁"是编的，政策原文是"人才安居办法"里的 30/35/40 岁）
@@ -381,7 +326,6 @@ DeepSeek API Key 已配（在 RAGFlow 内部 MySQL）。
 ### Phase 0 退出条件
 
 3 道题的回答质量明显优于之前 Dialog 模式（特别是防幻觉题），决定：
-
 - ✅ Agent-first 路径靠谱 → 进入 Phase 1（按 PLAN.md 和 DESIGN.md 写代码）
 - ⚠️ 效果仍不理想 → 调 Prompt / 加工具 / 换 top_n 和阈值再跑一次
 - ❌ 根本不行 → 重新审视方案（回头和我讨论）
@@ -389,13 +333,11 @@ DeepSeek API Key 已配（在 RAGFlow 内部 MySQL）。
 ## 如果接下来要开 Phase 1
 
 **入口文件**：
-
 - `PLAN.md`（总体路线）
 - `DESIGN.md`（Phase 1 架构、API 设计、DB schema）
 - `FORK.md`（与上游的关系、哪些文件易冲突）
 
 **从这里开始写代码**：
-
 ```bash
 cd ~/Opensource/forks/ragflow
 git checkout -b feat/agent-v2

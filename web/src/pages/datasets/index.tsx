@@ -8,14 +8,13 @@ import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { useFetchNextKnowledgeListByPage } from '@/hooks/use-knowledge-request';
 import { useQueryClient } from '@tanstack/react-query';
 import { pick } from 'lodash';
-import { Database, FileText, Layers3, Plus, ShieldCheck } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router';
 import { DatasetCard } from './dataset-card';
 import { DatasetCreatingDialog } from './dataset-creating-dialog';
 import { useSaveKnowledge } from './hooks';
-import './styles.css';
 import { useRenameDataset } from './use-rename-dataset';
 import { useSelectOwners } from './use-select-owners';
 
@@ -41,11 +40,6 @@ export default function Datasets() {
   } = useFetchNextKnowledgeListByPage();
 
   const owners = useSelectOwners();
-  const totalDocuments =
-    kbs?.reduce((count, dataset) => count + (dataset.document_count || 0), 0) ??
-    0;
-  const totalChunks =
-    kbs?.reduce((count, dataset) => count + (dataset.chunk_count || 0), 0) ?? 0;
 
   const {
     datasetRenameLoading,
@@ -76,115 +70,75 @@ export default function Datasets() {
 
   return (
     <>
-      <article className="knowledge-list-root" data-testid="datasets-list">
-        <header className="knowledge-list-header">
-          <section className="knowledge-list-hero">
-            <div className="min-w-0">
-              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-border-button bg-bg-component px-3 py-1 text-xs font-medium text-text-secondary">
-                <ShieldCheck className="size-3.5 text-accent-primary" />
-                {t('knowledgeList.assetEyebrow')}
-              </div>
-              <h1 className="text-[32px] font-semibold leading-tight tracking-normal text-text-primary">
-                {t('header.dataset')}
-              </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-text-secondary">
-                {t('knowledgeList.assetDescription')}
-              </p>
-            </div>
-
-            <div className="knowledge-list-stats" aria-label="knowledge stats">
-              {[
-                {
-                  icon: Database,
-                  label: t('header.dataset'),
-                  value: total_datasets ?? 0,
-                },
-                {
-                  icon: FileText,
-                  label: t('knowledgeList.doc'),
-                  value: totalDocuments,
-                },
-                {
-                  icon: Layers3,
-                  label: t('knowledgeDetails.chunkNumber'),
-                  value: totalChunks,
-                },
-              ].map(({ icon: Icon, label, value }) => (
-                <div className="knowledge-list-stat" key={label}>
-                  <div className="flex items-center justify-between text-text-secondary">
-                    <span className="text-xs">{label}</span>
-                    <Icon className="size-4 text-accent-primary" />
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-text-primary">
-                    {value}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {(kbs?.length || searchString) && (
+      {kbs?.length || searchString ? (
+        <article
+          className="size-full flex flex-col"
+          data-testid="datasets-list"
+        >
+          <header className="px-5 pt-8 mb-4">
             <ListFilterBar
-              className="knowledge-list-toolbar"
+              title={t('header.dataset')}
               searchString={searchString}
               onSearchChange={handleInputChange}
               value={filterValue}
               filters={owners}
               onChange={handleFilterSubmit}
               icon={'datasets'}
-              leftPanel={
-                <span className="text-sm font-semibold text-text-primary">
-                  {t('knowledgeList.assetEyebrow')}
-                </span>
-              }
             >
               <Button onClick={showModal}>
                 <Plus className="size-[1em]" />
                 {t('knowledgeList.createKnowledgeBase')}
               </Button>
             </ListFilterBar>
-          )}
-        </header>
+          </header>
 
-        {kbs?.length ? (
-          <>
-            <CardContainer className="knowledge-list-grid">
-              {kbs.map((dataset) => (
-                <DatasetCard
-                  dataset={dataset}
-                  key={dataset.id}
-                  showDatasetRenameModal={showDatasetRenameModal}
+          {kbs?.length ? (
+            <>
+              <CardContainer className="flex-1 overflow-auto px-5">
+                {kbs.map((dataset) => (
+                  <DatasetCard
+                    dataset={dataset}
+                    key={dataset.id}
+                    showDatasetRenameModal={showDatasetRenameModal}
+                  />
+                ))}
+              </CardContainer>
+
+              <footer className="mt-4 px-5 pb-5">
+                <RAGFlowPagination
+                  {...pick(pagination, 'current', 'pageSize')}
+                  total={total_datasets}
+                  onChange={handlePageChange}
                 />
-              ))}
-            </CardContainer>
-
-            <footer className="knowledge-list-footer">
-              <RAGFlowPagination
-                {...pick(pagination, 'current', 'pageSize')}
-                total={total_datasets}
-                onChange={handlePageChange}
+              </footer>
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center">
+              <EmptyAppCard
+                showIcon
+                size="large"
+                className="w-[480px] p-14"
+                isSearch
+                type={EmptyCardType.Dataset}
+                onClick={() => showModal()}
               />
-            </footer>
-          </>
-        ) : (
-          <div className="knowledge-list-empty">
-            <EmptyAppCard
-              showIcon
-              size="large"
-              className="w-[480px] p-14"
-              isSearch={!!searchString}
-              type={EmptyCardType.Dataset}
-              onClick={() => showModal()}
-            />
-            {!searchString && (
-              <Button onClick={showModal}>
-                <Plus className="size-[1em]" />
-                {t('knowledgeList.createKnowledgeBase')}
-              </Button>
-            )}
-          </div>
-        )}
-      </article>
+            </div>
+          )}
+        </article>
+      ) : (
+        <article
+          className="size-full flex items-center justify-center"
+          data-testid="datasets-list"
+        >
+          <EmptyAppCard
+            showIcon
+            size="large"
+            className="w-[480px] p-14"
+            type={EmptyCardType.Dataset}
+            onClick={() => showModal()}
+          />
+        </article>
+      )}
       {visible && (
         <DatasetCreatingDialog
           hideModal={hideModal}
