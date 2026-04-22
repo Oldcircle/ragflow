@@ -26,12 +26,13 @@
 ### 前置条件
 
 1. RAGFlow 已跑起来（见项目 `CLAUDE.md`）
-2. 启动后端前设置至少一个模型密钥：
-   ```bash
-   export AGENT_V2_DEEPSEEK_KEY=sk-xxx   # 走 https://api.deepseek.com/anthropic
-   # 或
-   export AGENT_V2_ANTHROPIC_KEY=sk-ant-xxx   # 走 Anthropic 原生
-   ```
+2. 在 RAGFlow **模型供应商** 页面添加至少一个 Chat 模型：
+   - DeepSeek（推荐，便宜）— 会自动走 `/anthropic` 兼容端点
+   - Anthropic — 直接用 Claude 官方
+   - OpenAI-API-Compatible / VLLM / Ollama（需对方支持 Anthropic 协议）
+
+   > Agent v2 不再依赖 `AGENT_V2_DEEPSEEK_KEY` 等环境变量。
+   > 旧 env var 作为兜底保留，但你可以在「模型供应商」页改 key，Agent 立刻生效。
 3. 知识库已至少有一个解析完成的 KB（Embedding 建议 `bge-m3`）
 
 ### 打开工作台
@@ -41,17 +42,19 @@
 ### 新建一个 Agent 会话
 
 1. 左侧 **新建会话**
-2. 填写：
-   - 名称：`保障房政策顾问`
+2. **可选：顶部选一个模板**（保障房 / 政策 / 法务 / 研报 / 客服 / Wiki）
+   - 模板会自动填好 System Prompt 和默认参数
+3. 填写剩下的：
+   - 名称（可改模板自带的）
    - 知识库：勾选 ≥ 1 个（多选需共享同一 embedding 模型）
-   - 模型：DeepSeek（成本低）或 Claude（能力强）
-   - System Prompt：用默认模板，按需改
-3. **创建**
+   - 模型：从下拉选你配过的 Chat 模型
+4. **创建**
 
 ### 对话
 
 - 中间区域发消息，支持 Markdown 渲染（加粗、表格、代码块、数学公式）
-- 答复下方会出现 **「引用来源」** 卡片，列出用到的政策/文档
+- Agent 答复里带有 **`[1] [2]` 上标** 的地方表示引用对应的 chunk；点击上标自动滚动到下方引用卡片
+- 答复下方会出现 **「引用来源」** 卡片，列出用到的政策/文档 + 可展开的 chunk 列表（含相似度 + 页码）
 - 右侧 **工具调用** 面板实时展示 Agent 调用的每个工具（args / result / 耗时 / 状态）
 - 点右上角 **停止** 可中断流式响应
 
@@ -95,6 +98,8 @@
 | GET | `/v1/agent_v2/session/<id>` | 会话详情 + 消息 + 工具调用 |
 | DELETE | `/v1/agent_v2/session/<id>` | 软删 |
 | GET | `/v1/agent_v2/tool` | 列所有工具 |
+| GET | `/v1/agent_v2/model` | 列用户 TenantLLM 中的 Chat 模型 |
+| GET | `/v1/agent_v2/template` | 列 6 个预置 Agent 模板 |
 | POST | `/v1/agent_v2/conversation` | 发消息（SSE 流式） |
 
 所有端点要登录 cookie。SSE 事件类型见 `api/agent_v2/event.py`。

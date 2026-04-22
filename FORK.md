@@ -153,6 +153,12 @@ graspologic = { git = "https://github.com/infiniflow/graspologic.git", rev = "38
 - `1832b5f` feat(agent-v2): M1.2 complete tool set + unit tests + docs
 - `529b75a` feat(agent-v2): M1.3 HTTP API + DB persistence + SSE streaming
 - `ddb4b3a` feat(agent-v2): M1.4 frontend workbench with 知源 design language
+- `194be96` fix(agent-v2): tool_call live update + markdown + references
+- `4781e50` feat(agent-v2): M1.5 golden test suite — 10 questions, avg 4.8/5
+- `470e31e` refactor(agent-v2): replace env-var model keys with TenantLLM lookup (M1.6 Step 1 BE)
+- `3418bad` refactor(agent-v2): wire NewSessionDialog to /v1/agent_v2/model endpoint (M1.6 Step 1 FE)
+- `4c45929` feat(agent-v2): inline [N] citation footnotes with hover+click highlight (M1.6 Step 3)
+- `824ee28` feat(agent-v2): M1.6 Step 2 — Agent template system (6 presets)
 
 #### 后端（已落地）
 

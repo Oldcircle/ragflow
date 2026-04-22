@@ -4,11 +4,36 @@
 
 ---
 
-## 最近更新：2026-04-22（下午）
+## 最近更新：2026-04-22（晚）
 
-**当前阶段**：**Phase 1 M1.5 已完成** — 保障房 10 题黄金评测 平均 4.8/5
-**阻塞项**：无
-**下一步入口**：M1.6（Langfuse 集成 + 对外 demo + 首次小调优）
+**当前阶段**：**Phase 1 M1.6 已完成** — 模型供应商集成 + 模板系统 + [N] 脚注
+**Phase 1 全部完成（M1.1-M1.6）**
+**下一步入口**：Phase 2（Multi-Agent 协作 / Trigger / 部署渠道 / 企业功能等）
+
+### M1.6 完成内容（2026-04-22）
+
+| Step | 内容 | Commit |
+|---|---|---|
+| Step 1 | 去除 env var 偷懒，接回 RAGFlow 模型供应商（TenantLLM）| 470e31e / 3418bad |
+| Step 3 | Markdown 内联 [N] 脚注 + 点击滚动高亮对应 chunk | 4c45929 |
+| Step 2 | Agent 模板系统（6 个预置：保障房/政策/法务/研报/客服/Wiki）| 824ee28 |
+
+**新增端点**：
+- GET `/v1/agent_v2/model` — 返回用户 TenantLLM 里的 Chat 模型列表
+- GET `/v1/agent_v2/template` — 返回 6 个预置 Agent 模板
+
+**NewSessionDialog 变化**：
+- 顶部新增「从模板开始」2 列卡片区
+- 模型下拉从硬编码变成"动态拉 /model 端点"（只列你配过的）
+- System Prompt 默认模板加入 [N] 引用规范
+
+**移除的 debt**：
+- ❌ `AGENT_V2_DEEPSEEK_KEY` / `AGENT_V2_ANTHROPIC_KEY` 环境变量依赖
+  （保留作 fallback，但正常使用不再需要）
+
+### 残留的小 debt（Phase 2 再说）
+- session/conversation 表和原版 Dialog 分离（Phase 2 考虑统一）
+- Langfuse 可观测性还没接（RAGFlow 有依赖但 Agent v2 没接）
 
 ### M1.5 验收结果（2026-04-22）
 
