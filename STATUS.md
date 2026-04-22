@@ -6,8 +6,8 @@
 
 ## 最近更新：2026-04-22（深夜 +1）
 
-**当前阶段**：**Phase 1.7 前端产品化重构进行中**（A/B 完成；C 三小批完成）
-**下一步入口**：P1.7-C 收尾 — `dataset-overview` / `dataset-setting` / `knowledge-graph`；之后进入 P1.7-D（searches / agents / memories / files / user-settings）
+**当前阶段**：**Phase 1.7 前端产品化重构进行中**（A/B 完成；C 全部小批完成）
+**下一步入口**：P1.7-D — 搜索 `/searches`、Agent 编排 `/agents`、记忆 `/memories`、文件 `/files`、用户设置 `/profile-setting/*`
 
 ### P1.7-C2：知识库详情 shell + sidebar（2026-04-22 深夜 +1）
 
@@ -35,6 +35,18 @@
 - repo-wide TS 错误与 refactor 前同数（全部为上游 legacy debt，本批未新增）
 - Vite dev server 上 `/`、`/login-next`、`/datasets`、`/chats`、`/agent-chat`、`/dataset/{dataset,testing,knowledge-graph,dataset-overview,dataset-setting}/{id}`、`/searches`、`/agents`、`/memories`、`/files`、`/profile-setting/profile` 全部 200
 - 所有被改 tsx/ts 文件 Vite transform 均 200；HMR 日志无新错误
+
+### P1.7-C5：知识库图谱 / Overview / Setting 页头统一（2026-04-22 深夜 +2）
+
+**已改代码**：
+- `web/src/pages/dataset/knowledge-graph/index.tsx`：外层 `Card` → `article`；页头改为 `dataset workbench` 风格 header（标题 + 删除按钮），图谱区改为正确的 `min-h-0 overflow-hidden` 容器，不再用 `absolute right-5 top-5` 浮层
+- `web/src/pages/dataset/dataset-overview/index.tsx`：外层 `Card` → `article`，新增 topbar header；保留 `StatCard` / `DatasetFilter` / `FileLogsTable` 全部逻辑与深色图标切换
+- `web/src/pages/dataset/dataset-setting/index.tsx`：外层 `Card/CardHeader/CardContent/CardTitle/CardDescription` → 语义化 `article > header + section`，配置标题沿用 workbench 统一字号；同步移除失效的 `Card*` 导入
+
+**验证**：
+- ESLint `src/pages/dataset/{knowledge-graph,dataset-overview,dataset-setting}/index.tsx` 仅剩上游 `no-console` / `react-hooks/exhaustive-deps` 遗留 warning，本批未新增
+- 15 个核心路由 Vite dev server 全部 200（含 `/dataset/{dataset,testing,knowledge-graph,dataset-overview,dataset-setting}/{id}`）
+- 本批文件 Vite transform 均 200，HMR 日志无错误
 
 
 

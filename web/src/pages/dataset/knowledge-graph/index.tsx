@@ -1,6 +1,5 @@
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { useFetchKnowledgeGraph } from '@/hooks/use-knowledge-request';
 import { LucideTrash2 } from 'lucide-react';
 import React from 'react';
@@ -14,23 +13,32 @@ const KnowledgeGraph: React.FC = () => {
   const { handleDeleteKnowledgeGraph } = useDeleteKnowledgeGraph();
 
   return (
-    <Card
-      as="article"
-      className="relative me-5 mb-5 p-0 bg-transparent shadow-none overflow-hidden"
+    <article
+      className="flex min-h-0 flex-1 flex-col"
+      data-testid="dataset-knowledge-graph"
     >
-      <ConfirmDeleteDialog onOk={handleDeleteKnowledgeGraph}>
-        <Button
-          variant="outline"
-          size="sm"
-          className="absolute right-5 top-5 z-50"
-        >
-          <LucideTrash2 />
-          {t('common.delete')}
-        </Button>
-      </ConfirmDeleteDialog>
+      <header className="flex items-center justify-between gap-4 border-b border-border-button bg-bg-component/60 px-6 pb-4 pt-6">
+        <div>
+          <h1 className="text-[22px] font-semibold leading-tight tracking-normal text-text-primary">
+            {t('knowledgeDetails.knowledgeGraph')}
+          </h1>
+        </div>
+        <ConfirmDeleteDialog onOk={handleDeleteKnowledgeGraph}>
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="dataset-knowledge-graph-delete"
+          >
+            <LucideTrash2 />
+            {t('common.delete')}
+          </Button>
+        </ConfirmDeleteDialog>
+      </header>
 
-      <ForceGraph data={data?.graph} show />
-    </Card>
+      <section className="relative min-h-0 flex-1 overflow-hidden">
+        <ForceGraph data={data?.graph} show />
+      </section>
+    </article>
   );
 };
 

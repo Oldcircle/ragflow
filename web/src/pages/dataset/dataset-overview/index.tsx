@@ -254,94 +254,101 @@ const FileLogsPage: FC = () => {
   const isDark = useIsDarkTheme();
 
   return (
-    <Card
-      className="
-      p-5 min-w-[880px] mr-5 mb-5 bg-transparent shadow-none
-      flex flex-col overflow-y-auto scrollbar-auto"
+    <article
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto scrollbar-auto"
+      data-testid="dataset-overview"
     >
-      {/* Stats Cards */}
-      <div className="grid grid-cols-3 md:grid-cols-3 gap-7 mb-6">
-        <StatCard
-          title={t('datasetOverview.totalFiles')}
-          value={topAllData.totalFiles.value}
-          icon={
-            isDark ? (
-              <SvgIcon name="data-flow/total-files-icon" width={40} />
-            ) : (
-              <SvgIcon name="data-flow/total-files-icon-bri" width={40} />
-            )
-          }
-        >
-          <div className="text-xs">
-            <span className="text-accent-primary">
-              {topAllData.totalFiles.precent > 0 ? '+' : ''}
-              {topAllData.totalFiles.precent}%{' '}
-            </span>
-            <span className="font-normal text-text-secondary">
-              {t('knowledgeConfiguration.lastWeek')}
-            </span>
-          </div>
-        </StatCard>
-        <StatCard
-          title={t('datasetOverview.downloading')}
-          value={topAllData.downloads.value}
-          icon={
-            isDark ? (
-              <SvgIcon name="data-flow/data-icon" width={40} />
-            ) : (
-              <SvgIcon name="data-flow/data-icon-bri" width={40} />
-            )
-          }
-          tooltip={t('datasetOverview.downloadTip')}
-        >
-          <CardFooterProcess
-            success={topAllData.downloads.success}
-            successTip={t('datasetOverview.downloadSuccessTip')}
-            failed={topAllData.downloads.failed}
-            failedTip={t('datasetOverview.downloadFailedTip')}
-          />
-        </StatCard>
-        <StatCard
-          title={t('datasetOverview.processing')}
-          value={topAllData.processing.value}
-          icon={
-            isDark ? (
-              <SvgIcon name="data-flow/processing-icon" width={40} />
-            ) : (
-              <SvgIcon name="data-flow/processing-icon-bri" width={40} />
-            )
-          }
-          tooltip={t('datasetOverview.processingTip')}
-        >
-          <CardFooterProcess
-            success={topAllData.processing.success}
-            successTip={t('datasetOverview.processingSuccessTip')}
-            failed={topAllData.processing.failed}
-            failedTip={t('datasetOverview.processingFailedTip')}
-          />
-        </StatCard>
+      <header className="border-b border-border-button bg-bg-component/60 px-6 pb-4 pt-6">
+        <h1 className="text-[22px] font-semibold leading-tight tracking-normal text-text-primary">
+          {t('knowledgeDetails.overview')}
+        </h1>
+      </header>
+
+      <div className="px-6 py-5 min-w-[880px]">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-3 md:grid-cols-3 gap-7 mb-6">
+          <StatCard
+            title={t('datasetOverview.totalFiles')}
+            value={topAllData.totalFiles.value}
+            icon={
+              isDark ? (
+                <SvgIcon name="data-flow/total-files-icon" width={40} />
+              ) : (
+                <SvgIcon name="data-flow/total-files-icon-bri" width={40} />
+              )
+            }
+          >
+            <div className="text-xs">
+              <span className="text-accent-primary">
+                {topAllData.totalFiles.precent > 0 ? '+' : ''}
+                {topAllData.totalFiles.precent}%{' '}
+              </span>
+              <span className="font-normal text-text-secondary">
+                {t('knowledgeConfiguration.lastWeek')}
+              </span>
+            </div>
+          </StatCard>
+          <StatCard
+            title={t('datasetOverview.downloading')}
+            value={topAllData.downloads.value}
+            icon={
+              isDark ? (
+                <SvgIcon name="data-flow/data-icon" width={40} />
+              ) : (
+                <SvgIcon name="data-flow/data-icon-bri" width={40} />
+              )
+            }
+            tooltip={t('datasetOverview.downloadTip')}
+          >
+            <CardFooterProcess
+              success={topAllData.downloads.success}
+              successTip={t('datasetOverview.downloadSuccessTip')}
+              failed={topAllData.downloads.failed}
+              failedTip={t('datasetOverview.downloadFailedTip')}
+            />
+          </StatCard>
+          <StatCard
+            title={t('datasetOverview.processing')}
+            value={topAllData.processing.value}
+            icon={
+              isDark ? (
+                <SvgIcon name="data-flow/processing-icon" width={40} />
+              ) : (
+                <SvgIcon name="data-flow/processing-icon-bri" width={40} />
+              )
+            }
+            tooltip={t('datasetOverview.processingTip')}
+          >
+            <CardFooterProcess
+              success={topAllData.processing.success}
+              successTip={t('datasetOverview.processingSuccessTip')}
+              failed={topAllData.processing.failed}
+              failedTip={t('datasetOverview.processingFailedTip')}
+            />
+          </StatCard>
+        </div>
+
+        {/* Tabs & Search */}
+        <DatasetFilter
+          filters={filters as FilterCollection[]}
+          value={filterValue}
+          active={active}
+          setActive={changeActiveLogs}
+          searchString={searchString}
+          onSearchChange={handleInputChange}
+          onChange={handleFilterSubmit}
+        />
+
+        {/* Table */}
+        <FileLogsTable
+          data={tableList}
+          pagination={pagination}
+          setPagination={handlePaginationChange}
+          pageCount={10}
+          active={active}
+        />
       </div>
-
-      {/* Tabs & Search */}
-      <DatasetFilter
-        filters={filters as FilterCollection[]}
-        value={filterValue}
-        active={active}
-        setActive={changeActiveLogs}
-        searchString={searchString}
-        onSearchChange={handleInputChange}
-        onChange={handleFilterSubmit}
-      />
-
-      {/* Table */}
-      <FileLogsTable
-        data={tableList}
-        pagination={pagination}
-        setPagination={handlePaginationChange}
-        pageCount={10}
-        active={active}
-      />
-    </Card>
+    </article>
   );
 };
 

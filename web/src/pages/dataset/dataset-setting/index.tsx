@@ -2,13 +2,6 @@ import { DataFlowSelect } from '@/components/data-pipeline-select';
 import GraphRagItems from '@/components/parse-configuration/graph-rag-form-fields';
 import RaptorFormFields from '@/components/parse-configuration/raptor-form-fields';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import Divider from '@/components/ui/divider';
 import { Form } from '@/components/ui/form';
 import { FormLayout } from '@/constants/form';
@@ -270,118 +263,116 @@ export default function DatasetSettings() {
   };
 
   return (
-    <div className="pr-5 pb-5">
-      <Card className="p-0 h-full flex flex-col bg-transparent shadow-none">
-        <CardHeader className="p-5 border-b-0.5 border-border-button">
-          <header>
-            <CardTitle as="h1">{t('knowledgeDetails.configuration')}</CardTitle>
+    <article
+      className="flex min-h-0 flex-1 flex-col"
+      data-testid="dataset-setting"
+    >
+      <header className="border-b border-border-button bg-bg-component/60 px-6 pb-4 pt-6">
+        <h1 className="text-[22px] font-semibold leading-tight tracking-normal text-text-primary">
+          {t('knowledgeDetails.configuration')}
+        </h1>
+        <p className="mt-1 text-sm text-text-secondary">
+          {t('knowledgeConfiguration.titleDescription')}
+        </p>
+      </header>
 
-            <CardDescription>
-              {t('knowledgeConfiguration.titleDescription')}
-            </CardDescription>
+      <section className="flex min-h-0 flex-1 divide-x-0.5 overflow-hidden">
+        <DataSetContext.Provider
+          value={{
+            loading: datasetSettingLoading,
+            knowledgeDetails: knowledgeDetails,
+          }}
+        >
+          <Form {...form}>
+            <form
+              onSubmit={form.handleSubmit(onSubmit)}
+              className="flex flex-col"
+            >
+              <div className="flex-1 h-0 w-[768px] px-5 pt-5 overflow-y-auto scrollbar-auto">
+                <MainContainer className="text-text-secondary">
+                  <div className="text-base font-medium text-text-primary">
+                    {t('knowledgeConfiguration.baseInfo')}
+                  </div>
+                  <GeneralForm></GeneralForm>
 
-            {/* <Button>Save as Preset</Button> */}
-          </header>
-        </CardHeader>
+                  <Divider />
+                  <div className="text-base font-medium text-text-primary">
+                    {t('knowledgeConfiguration.dataPipeline')}
+                  </div>
+                  <ParseTypeItem line={1} name="parse_type" />
+                  {parseType === ParseType.BuiltIn && (
+                    <ChunkMethodItem
+                      line={1}
+                      name="chunk_method"
+                    ></ChunkMethodItem>
+                  )}
+                  {parseType === ParseType.Pipeline && (
+                    <DataFlowSelect
+                      isMult={false}
+                      showToDataPipeline={true}
+                      formFieldName="pipeline_id"
+                      layout={FormLayout.Horizontal}
+                    />
+                  )}
 
-        <CardContent className="p-0 flex-1 h-0 flex divide-x-0.5">
-          <DataSetContext.Provider
-            value={{
-              loading: datasetSettingLoading,
-              knowledgeDetails: knowledgeDetails,
-            }}
-          >
-            <Form {...form}>
-              <form
-                onSubmit={form.handleSubmit(onSubmit)}
-                className="flex flex-col"
-              >
-                <div className="flex-1 h-0 w-[768px] px-5 pt-5 overflow-y-auto scrollbar-auto">
-                  <MainContainer className="text-text-secondary">
-                    <div className="text-base font-medium text-text-primary">
-                      {t('knowledgeConfiguration.baseInfo')}
-                    </div>
-                    <GeneralForm></GeneralForm>
+                  {/* <Divider /> */}
+                  {parseType === ParseType.BuiltIn && <ChunkMethodForm />}
 
-                    <Divider />
-                    <div className="text-base font-medium text-text-primary">
-                      {t('knowledgeConfiguration.dataPipeline')}
-                    </div>
-                    <ParseTypeItem line={1} name="parse_type" />
-                    {parseType === ParseType.BuiltIn && (
-                      <ChunkMethodItem
-                        line={1}
-                        name="chunk_method"
-                      ></ChunkMethodItem>
-                    )}
-                    {parseType === ParseType.Pipeline && (
-                      <DataFlowSelect
-                        isMult={false}
-                        showToDataPipeline={true}
-                        formFieldName="pipeline_id"
-                        layout={FormLayout.Horizontal}
-                      />
-                    )}
-
-                    {/* <Divider /> */}
-                    {parseType === ParseType.BuiltIn && <ChunkMethodForm />}
-
-                    {/* <LinkDataPipeline
+                  {/* <LinkDataPipeline
                     data={pipelineData}
                     handleLinkOrEditSubmit={handleLinkOrEditSubmit}
                   /> */}
-                    <Divider />
-                    <LinkDataSource
-                      data={sourceData}
-                      handleLinkOrEditSubmit={handleLinkOrEditSubmit}
-                      unbindFunc={unbindFunc}
-                      handleAutoParse={handleAutoParse}
-                    />
-                    <Divider />
-                    <div className="text-base font-medium text-text-primary">
-                      {t('knowledgeConfiguration.globalIndex')}
-                    </div>
-                    <GraphRagItems
-                      className="border-none p-0"
-                      data={graphRagGenerateData as IGenerateLogButtonProps}
-                      onDelete={() =>
-                        handleDeletePipelineTask(GenerateType.KnowledgeGraph)
-                      }
-                    ></GraphRagItems>
-                    <Divider />
-                    <RaptorFormFields
-                      data={raptorGenerateData as IGenerateLogButtonProps}
-                      onDelete={() =>
-                        handleDeletePipelineTask(GenerateType.Raptor)
-                      }
-                    ></RaptorFormFields>
-                  </MainContainer>
-                </div>
+                  <Divider />
+                  <LinkDataSource
+                    data={sourceData}
+                    handleLinkOrEditSubmit={handleLinkOrEditSubmit}
+                    unbindFunc={unbindFunc}
+                    handleAutoParse={handleAutoParse}
+                  />
+                  <Divider />
+                  <div className="text-base font-medium text-text-primary">
+                    {t('knowledgeConfiguration.globalIndex')}
+                  </div>
+                  <GraphRagItems
+                    className="border-none p-0"
+                    data={graphRagGenerateData as IGenerateLogButtonProps}
+                    onDelete={() =>
+                      handleDeletePipelineTask(GenerateType.KnowledgeGraph)
+                    }
+                  ></GraphRagItems>
+                  <Divider />
+                  <RaptorFormFields
+                    data={raptorGenerateData as IGenerateLogButtonProps}
+                    onDelete={() =>
+                      handleDeletePipelineTask(GenerateType.Raptor)
+                    }
+                  ></RaptorFormFields>
+                </MainContainer>
+              </div>
 
-                <div className="p-5 text-right items-center flex justify-end gap-3 w-[768px]">
-                  <Button
-                    type="reset"
-                    variant="transparent"
-                    onClick={() => {
-                      form.reset();
-                    }}
-                  >
-                    {t('knowledgeConfiguration.cancel')}
-                  </Button>
+              <div className="p-5 text-right items-center flex justify-end gap-3 w-[768px]">
+                <Button
+                  type="reset"
+                  variant="transparent"
+                  onClick={() => {
+                    form.reset();
+                  }}
+                >
+                  {t('knowledgeConfiguration.cancel')}
+                </Button>
 
-                  <SavingButton />
-                </div>
-              </form>
-            </Form>
-          </DataSetContext.Provider>
+                <SavingButton />
+              </div>
+            </form>
+          </Form>
+        </DataSetContext.Provider>
 
-          <div className="flex-1 p-5 overflow-auto">
-            {parseType === ParseType.BuiltIn && (
-              <ChunkMethodLearnMore parserId={selectedTag} />
-            )}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+        <div className="flex-1 p-5 overflow-auto">
+          {parseType === ParseType.BuiltIn && (
+            <ChunkMethodLearnMore parserId={selectedTag} />
+          )}
+        </div>
+      </section>
+    </article>
   );
 }
