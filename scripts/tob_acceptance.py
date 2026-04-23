@@ -280,11 +280,12 @@ def S06_session_service_roundtrip(tenant_id: str, user_id: str, kb_id: str) -> s
 def S07_audit_log_write_query(tenant_id: str, user_id: str) -> str:
     from api.db.services.audit_log_service import AuditLogService
 
+    # 用 _test. 前缀把合成探针从真实业务审计里隔出来（管理员 UI 可按前缀过滤）
     probe = f"acceptance-{int(time.time())}"
     AuditLogService.allow(
         user_id=user_id,
         tenant_id=tenant_id,
-        action="acceptance.probe",
+        action="_test.acceptance_probe",
         resource_type="acceptance",
         resource_id=probe,
         reason="test",
@@ -292,14 +293,14 @@ def S07_audit_log_write_query(tenant_id: str, user_id: str) -> str:
     AuditLogService.deny(
         user_id=user_id,
         tenant_id=tenant_id,
-        action="acceptance.probe",
+        action="_test.acceptance_probe",
         resource_type="acceptance",
         resource_id=probe,
         reason="test-deny",
     )
     rows = AuditLogService.query_logs(
         tenant_id=tenant_id,
-        action="acceptance.probe",
+        action="_test.acceptance_probe",
         resource_id=probe,
         limit=10,
     )
