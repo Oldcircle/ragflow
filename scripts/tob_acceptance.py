@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import os
 import subprocess
 import sys
@@ -502,10 +501,7 @@ async def S16_live_runner(tenant_id: str, user_id: str, kb_id: str) -> str:
     """
     from api.agent_v2.model_resolver import resolve_model
     from api.agent_v2.runner import AgentRunner
-    from api.db.services.agent_v2_service import (
-        AgentV2MessageService,
-        AgentV2SessionService,
-    )
+    from api.db.services.agent_v2_service import AgentV2SessionService
 
     resolved = resolve_model(
         {"llm_name": "deepseek-chat", "factory": "DeepSeek"}, tenant_id,

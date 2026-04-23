@@ -87,13 +87,20 @@ async def main():
         print("=" * 70)
         print("STEP 3: Runner 跑一轮（会调 rag_retrieve）")
         print("=" * 70)
+        # **永不** 在源码里 hardcode auth_token；必须由调用方通过
+        # AGENT_V2_DEEPSEEK_KEY（或等价）env var 注入。
+        auth_token = os.environ.get("AGENT_V2_DEEPSEEK_KEY") or os.environ.get(
+            "DEEPSEEK_API_KEY",
+        )
+        if not auth_token:
+            raise SystemExit(
+                "AGENT_V2_DEEPSEEK_KEY / DEEPSEEK_API_KEY not set in environment — "
+                "refusing to run without a real credential."
+            )
         model_cfg = ModelConfig(
             model="deepseek-chat",
             base_url="https://api.deepseek.com/anthropic",
-            auth_token=os.environ.get(
-                "AGENT_V2_DEEPSEEK_KEY",
-                "sk-5c8fa7eb9ce84178b0bda88a58055d32",
-            ),
+            auth_token=auth_token,
         )
         runner = AgentRunner(
             tenant_id=session.tenant_id,
