@@ -13,7 +13,6 @@ import asyncio
 import contextlib
 import json
 import logging
-import os
 
 from quart import Response, request
 
@@ -33,7 +32,7 @@ from api.utils.api_utils import (
 from api.agent_v2.model_resolver import list_available_chat_models, resolve_model
 from api.agent_v2.registry import ALL_TOOLS, list_tool_names
 from api.agent_v2.runner import AgentRunner, ModelConfig
-from api.agent_v2.templates import get_template, list_templates
+from api.agent_v2.templates import list_templates
 from common.constants import RetCode
 
 logger = logging.getLogger("ragflow.agent_v2.app")

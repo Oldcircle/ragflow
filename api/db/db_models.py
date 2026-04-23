@@ -1479,8 +1479,10 @@ class BotChannel(DataBaseModel):
     """IM 机器人通道配置（飞书/钉钉/企微/...）。
 
     config_json 按 channel_type 不同结构（飞书：app_id / app_secret /
-    encrypt_key / verification_token / api_base）。v1 暂不字段加密，配置
-    数据库需要按租户级保护；进生产前应改为 KMS 加密敏感字段。
+    encrypt_key / verification_token / api_base）。app_secret / encrypt_key /
+    verification_token 由 BotChannelService 做应用层字段加密，DB 中形如
+    ``enc:v1:<base64>``；优先使用 RAGFLOW_BOT_CHANNEL_SECRET_KEY，未配置时
+    回退 settings.SECRET_KEY。
     """
 
     id = CharField(max_length=32, primary_key=True)

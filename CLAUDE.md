@@ -153,6 +153,11 @@ RAGFlow supports switching between Elasticsearch (default) and Infinity:
 - MinIO rag_flow / infini_rag_flow
 - Redis 无用户名 / infini_rag_flow
 
+安全相关环境变量：
+- `RAGFLOW_BOT_CHANNEL_SECRET_KEY` — BotChannelService 加密飞书
+  `app_secret` / `encrypt_key` / `verification_token` 的优先密钥。生产环境必须配置
+  稳定值；未配置时回退 `settings.SECRET_KEY`，仅适合本地开发/灰度环境。
+
 ## macOS 本地开发
 
 `docker/launch_backend_service.sh` 为 Linux 设计（jemalloc `.so`、`LD_PRELOAD`），在 macOS 上无法直接跑。推荐直接运行：

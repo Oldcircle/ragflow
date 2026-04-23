@@ -91,9 +91,9 @@ CREATE TABLE bot_channel (
 ```json
 {
   "app_id": "cli_abc123",
-  "app_secret_encrypted": "enc:...",   // 用 tenant 密钥加密存储，不明文
-  "encrypt_key_encrypted": "enc:...",
-  "verification_token_encrypted": "enc:...",
+  "app_secret": "enc:v1:...",          // BotChannelService 字段级加密，不明文落库
+  "encrypt_key": "enc:v1:...",
+  "verification_token": "enc:v1:...",
   "api_base": "https://open.feishu.cn"
 }
 ```
@@ -132,7 +132,8 @@ CREATE TABLE bot_message_dedup (
 );
 ```
 
-或者更轻量：Redis `SETEX bot:dedup:feishu:<mid> 600 1`（10 min TTL，飞书重试窗口一般 5 分钟）。
+或者更轻量：Redis `SET NX EX bot:dedup:<sha256(channel:mid)> 600 1`（10 min TTL，
+飞书重试窗口一般 5 分钟；key 使用摘要，避免把平台 message id 明文暴露到 Redis）。
 
 ---
 

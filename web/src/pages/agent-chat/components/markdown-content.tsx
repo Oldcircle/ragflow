@@ -62,7 +62,6 @@ export const AgentV2Markdown = memo(function AgentV2Markdown({
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex, rehypeRaw]}
         components={{
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           code(props: any) {
             const { inline, className, children } = props;
             const match = /language-(\w+)/.exec(className || '');

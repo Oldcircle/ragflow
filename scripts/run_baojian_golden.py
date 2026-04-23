@@ -277,7 +277,7 @@ def to_markdown(results: list[dict]) -> str:
         "# 保障房黄金题跑分结果",
         "",
         f"**日期**：{time.strftime('%Y-%m-%d %H:%M:%S')}  ",
-        f"**模型**：deepseek-chat via https://api.deepseek.com/anthropic  ",
+        "**模型**：deepseek-chat via https://api.deepseek.com/anthropic  ",
         f"**KB**：深圳保障房政策库（{DEFAULT_KB_ID}）",
         "",
         "## 汇总",
@@ -395,13 +395,17 @@ async def main_async(args):
     md = to_markdown(results)
     out_path = args.output
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write(md)
+    await asyncio.to_thread(_write_text, out_path, md)
     print()
     print(f"✅ 已写入 {out_path}")
     print(f"   总耗时：{sum(r['elapsed_sec'] for r in results):.1f}s")
     cost = sum(r["usage"].get("total_cost_usd", 0) for r in results if r["usage"])
     print(f"   总成本：${cost:.4f}")
+
+
+def _write_text(path: str, text: str) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
 
 
 def main():

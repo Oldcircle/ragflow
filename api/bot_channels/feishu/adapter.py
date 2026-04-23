@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from ..base import BotChannelAdapter, InboundMessage, OutboundReply
 from .client import send_text_message

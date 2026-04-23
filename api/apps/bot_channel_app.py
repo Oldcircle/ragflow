@@ -13,8 +13,6 @@ from __future__ import annotations
 
 import logging
 
-from quart import request
-
 from api.apps import current_user, login_required
 from api.db.services.bot_channel_service import BotChannelService
 from api.utils.api_utils import (
