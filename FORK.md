@@ -224,6 +224,81 @@ graspologic = { git = "https://github.com/infiniflow/graspologic.git", rev = "38
 
 ---
 
+### G. Phase 2 落地（feat/agent-v2 分支，已推送）
+
+**2026-04-23 一整天把 Phase 2 / 3.1 / 3.2 / 2.5 全部落地**：
+
+#### Phase 2 commits
+
+- `<RBAC commit>` feat(rbac): P2.1 — dataset access + audit log + 3 key path patches
+- `<bot commit>` feat(bot): P2.2 — Feishu webhook adapter + conversation map
+- `bd780f682` feat(agent-v2): P2.3 — Multi-Agent spawn_subagent tool + live trace UI
+
+#### Phase 3.1 合规 + 运维基线
+
+- `345e66c66` feat(audit): P3.1a — audit log admin UI
+- `a9b1a999e` feat(quota): P3.1b — tenant quota + daily usage metering + admin UI
+- `1e1524493` feat(rate-limit): P3.1c — APIToken rate limiting + api_requests metering
+
+#### Phase 3.2 定时触发器
+
+- `fa11f4721` feat(trigger): P3.2 — scheduled agent triggers (cron → Feishu / audit)
+
+#### Phase 2.5 Agent Runtime 成熟化（详见 `PLAN-agent-runtime-maturity.md`）
+
+- `540bfb91f` feat(agent-v2): P2.5.1 — citation validator + evidence index + UI warning
+- `86fb8e867` feat(agent-v2): P2.5.2 — multi-turn context + compact summary
+- `c921ea729` feat(agent-v2): P2.5.3 — Agent Definition manifest + named subagents
+- `c2e420a62` docs: Phase 2.5 complete — update STATUS + runtime-maturity plan
+
+#### 新增后端文件（全部零冲突）
+
+| 目录/文件 | 性质 | 来自 |
+|---|---|---|
+| `api/agent_v2/validators/{evidence_index,citation}.py` | P2.5.1 Citation Validator | `540bfb91f` |
+| `api/agent_v2/compactor.py` | P2.5.2 历史摘要压缩 | `86fb8e867` |
+| `api/agent_v2/definitions/{schema,registry}.py` | P2.5.3 Agent Definition schema + 注册表 | `c921ea729` |
+| `api/agent_v2/definitions/built_in/*.py` | P2.5.3 — 6 supervisor + 2 subagent 内置定义 | `c921ea729` |
+| `api/agent_v2/tools/spawn_subagent.py` | P2.3 新增；P2.5.3 扩展 `subagent_type` 路由 | `bd780f682` / `c921ea729` |
+| `api/bot_channels/` 整个包（feishu adapter + signature + parser + client） | P2.2 | |
+| `api/apps/bot_app.py` / `api/apps/bot_channel_app.py` | P2.2 | |
+| `api/db/services/{dataset_access,audit_log,bot_channel,bot_conversation_map,subagent_trace,tenant_quota,agent_trigger}_service.py` | Phase 2/3.1/3.2 服务层 | |
+
+#### 新增 DB 表（全部自动迁移）
+
+| 表 | Phase | 
+|---|---|
+| `dataset_access` / `access_audit_log` | P2.1 |
+| `bot_channel` / `bot_conversation_map` | P2.2 |
+| `agent_v2_subagent_trace` | P2.3 |
+| `tenant_quota` / `tenant_usage_daily` | P3.1b |
+| `agent_trigger` | P3.2 |
+
+#### 新增 `agent_v2_session` 列（全部 nullable，ALTER TABLE 就位）
+
+| 列 | Phase |
+|---|---|
+| `citation_enforce_level` / `citation_numeric_strict` | P2.5.1 |
+| `history_turn_limit` / `summary_text` / `summary_until_seq` | P2.5.2 |
+
+#### 新增 SSE 事件类型（前端 `use-agent-stream.ts` 已对接）
+
+- `subagent_start` / `subagent_end` — P2.3
+- `citation_warning` — P2.5.1
+
+#### 新增前端页面 / 组件
+
+| 路径 | Phase |
+|---|---|
+| `/dataset/dataset-member/:id` | P2.1 |
+| `/user-setting/audit-log` | P3.1a |
+| `/user-setting/usage` | P3.1b |
+| `/user-setting/bot-channels` | P2.2 |
+| `/user-setting/triggers` | P3.2 |
+| `CitationWarningPanel` 组件 + 子 Agent `SubagentInline` 内嵌卡 | P2.5.1 / P2.3 |
+
+---
+
 ## 长期差异策略
 
 ### 永远不合入上游的内容
@@ -297,3 +372,5 @@ from .agent_v2_app import manager as agent_v2_manager  # 保留我们的
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-04-21 | v0.1 | 初始 Fork；记录环境/pyproject/macOS 适配改动 |
+| 2026-04-22 | v0.2 | Phase 1 全部完成（M1.1-M1.6）；Phase 1.7 前端产品化重构 |
+| 2026-04-23 | v0.3 | Phase 2 (RBAC/bot/multi-agent) + Phase 3.1 (审计/配额/限流) + Phase 3.2 (Cron 触发器) + Phase 2.5 (citation validator / 多轮 / Agent Definition) 全数落地 |

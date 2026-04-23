@@ -9,10 +9,10 @@ Agent 通过对工具 schema 的理解，自主决定何时以及以什么参数
 用户请求
    │
    ▼
-AgentRunner.run(message)            # api/agent_v2/runner.py
-   │  set_ctx(ToolContext)          # api/agent_v2/tools/base.py
+AgentRunner.run(message, history=..., summary_text=...)  # api/agent_v2/runner.py
+   │  set_ctx(ToolContext)                                # api/agent_v2/tools/base.py
    ▼
-claude_agent_sdk.query(...)         # 子进程 Claude Code CLI
+claude_agent_sdk.query(prompt=<history + user_msg>)       # 子进程 Claude Code CLI
    │  LLM 推理 → "我要调 rag_retrieve"
    │  MCP tool call via stdio
    ▼
@@ -21,6 +21,9 @@ SdkMcpTool.handler(args)            # 本进程内 MCP In-Process Server
    │  调 RAGFlow 服务：Dealer.retrieval() / DocumentService / ...
    ▼
 返回 MCP tool-result（JSON 文本）
+   │
+   ▼
+（收尾）AgentRunner 对最终答复跑 Citation Validator，有问题发 citation_warning 事件
 ```
 
 ## 为什么用 ContextVar 而不是 env vars
@@ -30,7 +33,7 @@ SdkMcpTool.handler(args)            # 本进程内 MCP In-Process Server
 这是两个进程空间。用 `contextvars.ContextVar` 可以在同事件循环的异步任务里
 自动传播，工具可以拿到 Runner 注入的 `ToolContext`。
 
-## 工具清单
+## 工具清单（5 个）
 
 ### 1. `rag_retrieve` — 语义检索（最核心）
 
@@ -42,6 +45,9 @@ SdkMcpTool.handler(args)            # 本进程内 MCP In-Process Server
 ```
 
 Agent 调用策略：涉及知识库内容时必调；多轮换关键词也是合理策略。
+
+**Phase 2.5.1 联动**：结果会被 `EvidenceIndex.add_from_rag_retrieve()` 吸收，
+答复收尾时用于校验 [N] 脚注 + 数字断言是否有原文支撑。
 
 ### 2. `rag_list_docs` — 文档清单
 
@@ -67,6 +73,8 @@ Agent 调用策略：当用户问"有哪些文件"，或需要先掌握文档全
 Agent 调用策略：语义检索命中了某份关键文档、需要看完整条款时调。
 注意输出受 32KB 截断限制，对长文档需分段读取（调整 `chunk_offset`）。
 
+**Phase 2.5.1 联动**：结果会被 `EvidenceIndex.add_from_rag_read_doc()` 吸收。
+
 ### 4. `rag_graph_query` — GraphRAG 实体查询
 
 ```
@@ -79,6 +87,42 @@ Agent 调用策略：语义检索命中了某份关键文档、需要看完整�
 
 Agent 调用策略：跨文档链式推理场景用；普通问题先用 rag_retrieve，
 不够再升级到 graph。KB 未启用图谱时会返回空 graph_context（不报错）。
+
+**Phase 2.5.1 联动**：结果会被 `EvidenceIndex.add_from_rag_graph_query()` 吸收。
+
+### 5. `spawn_subagent` — 派独立子 Agent（P2.3 + P2.5.3）
+
+```
+用途: 派一个独立 context 的子 Agent 完成聚焦任务
+输入: {
+  description: str,          # 3-8 词任务标题
+  prompt: str,               # 自包含的子任务简报
+  allowed_tools?: list[str], # 子工具白名单（必须 ⊆ 父）
+  max_turns?: int=10,        # 子最大轮次（≤ 20）
+  subagent_type?: str,       # P2.5.3 — 命名 subagent（可选）
+}
+输出: {result: str, trace_id: str, description: str, cost_usd: float, truncated: bool}
+底层: 在本进程里再起一个 AgentRunner，独立 context
+```
+
+**命名 subagent 路由（P2.5.3）**：当 `subagent_type` 给出时，去
+`api/agent_v2/definitions/registry.py` 查 `AgentDefinition`，用定义的
+`system_prompt / tools / max_turns / max_budget_usd / citation_enforce`
+组装子 runner。
+
+目前内置 2 个命名 subagent（`api/agent_v2/definitions/built_in/`）：
+- `sub_policy_researcher` — 深入研读单一政策
+- `sub_evidence_checker` — 逐句核对答复证据（与 Citation Validator strict 联动）
+
+**Gate 链**（按顺序）：
+1. `ctx.depth >= 1` → `nested_spawn_forbidden`
+2. `ctx.subagent_count_this_turn >= 3` → `too_many_subagents`
+3. `subagent_type` 给了但 registry 找不到 → `unknown_subagent_type`
+4. `subagent_type` 找到但 kind != "subagent" → `wrong_definition_kind`
+5. `ctx.allowed_subagent_types` 非 None 且不含此 type → `subagent_type_not_allowed`
+6. definition 要求的工具不在父工具集 → `definition_tools_unavailable`
+7. 父工具白名单不含此 type 的 tools → `no_allowed_tools`
+8. 空 prompt → `empty_prompt`
 
 ## 通用约定
 
@@ -97,7 +141,7 @@ Agent 调用策略：跨文档链式推理场景用；普通问题先用 rag_ret
 
 用 `mcp_json_response(obj)` / `mcp_text_response(text)` 生成。
 
-### 上下文
+### 上下文（ToolContext）
 
 工具通过 `get_ctx()` 获取 `ToolContext`：
 
@@ -107,6 +151,9 @@ from .base import get_ctx
 async def my_tool(args: dict) -> dict:
     ctx = get_ctx()                # 默认要求 tenant_id + kb_ids
     # ctx.tenant_id / ctx.kb_ids / ctx.user_id
+    # ctx.session_id / ctx.depth / ctx.current_tool_call_id       (P2.3)
+    # ctx.event_emitter (callable → emit SSE event)                (P2.3)
+    # ctx.allowed_subagent_types (tuple | None)                    (P2.5.3)
 ```
 
 要求字段可以显式传入 `get_ctx(require=["tenant_id"])`。
@@ -134,8 +181,23 @@ Agent 上下文。对可能返回大量文本的工具（如 `rag_read_doc`）�
 4. 在 `scripts/test_tools_direct.py` 加一个 smoke 调用
 5. 在本 README 加一条工具描述
 
+## 新增 subagent 定义步骤（P2.5.3）
+
+1. 在 `api/agent_v2/definitions/built_in/` 建一个 `.py` 文件，export 一个
+   `DEFINITION = AgentDefinition(kind="subagent", ...)`
+2. 在某个 supervisor definition 的 `allowed_subagent_types` tuple 里加这个 name
+3. `api/agent_v2/definitions/registry.py` 会在下次访问时自动 pickup
+
 ## 测试
 
 - 直接 smoke：`python scripts/test_tools_direct.py`（绕过 Agent，验证纯工具逻辑）
 - Agent 端到端：`python scripts/test_agent_v2.py`（让 Agent 自主选工具）
 - 单元测试：`pytest tests/agent_v2/`（正在补齐）
+
+### Phase 2.5 smoke 验证
+
+- `/tmp/validator_smoke.py` — Citation Validator 5/5 用例（number 抽取 / EvidenceIndex 往返 / missing_chunk / number_unsupported / compound 幻觉）
+- `/tmp/history_smoke.py` — `_build_prompt_with_history` 4/4 用例
+- `/tmp/compactor_smoke.py` — `should_compact` 阈值 + `split_for_compact` 切分
+- `/tmp/p252_integration_smoke.py` — 7/7 集成：DB 播种 22 条消息 → 触发 compact → summary 持久化 → 下一轮 `since_create_time` 正确跳过
+- `/tmp/spawn_subagent_smoke.py` — subagent_type 4/4 gate（unknown / wrong_kind / not_allowed / 正常路径）

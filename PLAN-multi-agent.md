@@ -413,9 +413,49 @@ class SubagentEndEvent(Event):
 
 ---
 
+## 九-B、Phase 2.5.3 追加扩展（✅ 完成 2026-04-23）
+
+P2.3 的通用 `spawn_subagent` 落地后，Phase 2.5.3 在同一工具上叠了**命名 subagent** 的能力，without breaking the original signature：
+
+**工具新增可选参数** `subagent_type`（字符串）：
+```python
+spawn_subagent({
+    "description": "研读保障房政策第 3 条",
+    "prompt": "对比新旧版对户籍要求的差异",
+    "subagent_type": "sub_policy_researcher",  # 新，可选
+})
+```
+
+**新路由分支**（在 `tools/spawn_subagent.py`）：
+1. `subagent_type` 为空 → 走原有通用逻辑（完全向后兼容）
+2. 非空 → 从 `api/agent_v2/definitions/registry` 查 `AgentDefinition`
+   - 找不到 → `{"error": "unknown_subagent_type"}`
+   - kind 不是 `subagent` → `{"error": "wrong_definition_kind"}`
+   - 不在父 `ctx.allowed_subagent_types` 白名单 → `{"error": "subagent_type_not_allowed"}`
+   - 定义的 `tools` 不在父工具集 → `{"error": "definition_tools_unavailable"}`
+3. 通过后：用 definition 的 `system_prompt` / `tools` / `max_turns` / `max_budget_usd` / `citation_enforce` 组装子 runner（对应 `_build_child_system_prompt_from_definition`）
+
+**新增 `ToolContext.allowed_subagent_types: tuple[str,...] | None`**
+- `None` = 不做限制（老 session 行为，完全兼容）
+- `()` = 不允许任何命名 subagent（只能 spawn 通用子）
+- `("sub_a", "sub_b")` = 只允许这些名字
+
+父 Agent 的白名单来自它对应的 `AgentDefinition.allowed_subagent_types`（当 session 走 definition-backed 路径时），目前通过构造 `AgentRunner` 时传入；老 session 字段为空，保持通用 spawn 行为。
+
+**内置 2 个 subagent 定义**（`api/agent_v2/definitions/built_in/`）：
+- `sub_policy_researcher` — 深入研读单一政策文件
+- `sub_evidence_checker` — 逐句核对答复 + 对 Citation Validator strict 的重写路径
+
+**新端点** `GET /v1/agent_v2/definition?kind=subagent` — 列所有可派的命名 subagent。
+
+**验证**：4/4 gate smoke 通过（unknown / wrong_kind / not_allowed / 正常路径）。
+
+---
+
 ## 十、延伸（Phase 3）
 
 - **并行调度**：一个 turn 里派多个子时 `asyncio.gather` 并发跑
 - **子可以启动 Monitor**：长任务用 background pattern（参考 claude-code-ref `MonitorTool`）
 - **父干预子**：父能中途 abort 某个子
 - **跨 session 复用子结果**：缓存 `(prompt_hash, kb_ids)` → 命中直接返旧结果（Langfuse 帮忙）
+- **Custom subagent definitions from DB**：企业用户通过 UI 在 `agent_v2_definition` 表里自建 subagent 定义（Phase 2.5.3 已给 schema 留好位置，Phase 3 接上 UI + DB 存储即可）

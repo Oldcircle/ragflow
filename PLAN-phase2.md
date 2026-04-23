@@ -28,16 +28,21 @@
 
 ## 二、路线图
 
-| 阶段 | 目标 | 交付物 | 预计耗时 |
+| 阶段 | 目标 | 交付物 | 状态 |
 |---|---|---|---|
-| **P2.1** | 数据集 RBAC + 审计 | 新表 `dataset_access` / `access_audit_log`，新端点，前端"成员"Tab | 2 天 |
-| **P2.2** | 飞书机器人 | 新表 `bot_channel` / `bot_conversation_map`，webhook 适配器，前端"渠道"页 | 3 天 |
-| **P2.3** | Multi-Agent | 新工具 `spawn_subagent`，新表 `agent_v2_subagent_trace`，前端子 Agent 可视化 | 2 天 |
-| **P2.5** | Agent Runtime 成熟化 | Citation validator + 多轮上下文 + Agent definition manifest；参考 `vendor/claude-code-ref` | 9 天 |
+| **P2.1** | 数据集 RBAC + 审计 | 新表 `dataset_access` / `access_audit_log`，新端点，前端"成员"Tab | ✅ 完成 |
+| **P2.2** | 飞书机器人 | 新表 `bot_channel` / `bot_conversation_map`，webhook 适配器，前端"渠道"页 | ✅ 完成 |
+| **P2.3** | Multi-Agent | 新工具 `spawn_subagent`，新表 `agent_v2_subagent_trace`，前端子 Agent 可视化 | ✅ 完成 |
+| **P2.5** | Agent Runtime 成熟化 | Citation validator + 多轮上下文 + Agent definition manifest；参考 `vendor/claude-code-ref` | ✅ 完成（2026-04-23） |
 
 每一阶段都是自成闭环的，不依赖后一阶段。
 
 **Phase 2.5 为什么单列**：Phase 2.1/2.2/2.3 做完后，外部评审指出三个结构性缺口（答案可信度没有硬保障、session 模型侧实际无状态、Agent/Tool 定义硬编码），决定能否从"内部 demo"走到"付费客户能买"。详见 `PLAN-agent-runtime-maturity.md`。
+
+**Phase 2.5 落地 commits**：
+- P2.5.1 Citation Validator — `540bfb91f`
+- P2.5.2 多轮上下文 + Compact — `86fb8e867`
+- P2.5.3 Agent Definition Manifest — `c921ea729`
 
 ---
 

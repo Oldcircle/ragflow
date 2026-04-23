@@ -139,14 +139,17 @@
 
 ---
 
-### Phase 2.5 — Agent Runtime 成熟化（当前）
+### Phase 2.5 — Agent Runtime 成熟化（✅ 完成 2026-04-23）
 
 **目标**：Phase 2 做完后外部评审指出三个结构性缺口，决定能否从"内部 demo"走到"付费客户能买"。不做通用 agent runtime，做**企业 KB Agent 的成熟化**。
 
 **优先级**（**不等于**外评原文，我们把可信度摆第一）：
-- **P2.5.1 Citation Validator + 证据链约束**：决定能不能卖。`[N]` 脚注和数值型断言必须能映射到本轮实际检索到的 chunk，否则降级或拒绝
-- **P2.5.2 真正的多轮上下文**：当前 `runner.py:180` 的 `query(prompt=user_message)` 每轮丢历史；追问场景必崩。补手动拼 history + compact summary（Anthropic cache / SDK session resume 在非 Anthropic provider 不适用）
-- **P2.5.3 Agent Definition Manifest**：把硬编码的 `registry.py` + DB session 列 + 模板文件统一成声明式 manifest；`spawn_subagent` 新增 `subagent_type` 命名路径
+
+| 优先级 | 内容 | 状态 |
+|---|---|---|
+| **P2.5.1** Citation Validator + 证据链约束 | `[N]` 脚注 + 数值型断言自动校验，`citation_warning` SSE 事件 + 前端警示面板；三档模式 off/warn/strict | ✅ commit `540bfb91f` |
+| **P2.5.2** 真正的多轮上下文 | `AgentRunner.run(history=..., summary_text=...)` + `<conversation-history>` 合成 user message + 20 条消息阈值触发后台 compact summary | ✅ commit `86fb8e867` |
+| **P2.5.3** Agent Definition Manifest | `AgentDefinition` 声明式 schema + pkgutil 注册表 + 6 supervisor + 2 subagent built-in 定义；`spawn_subagent` 接受 `subagent_type` 参数 | ✅ commit `c921ea729` |
 
 **全程对标 `~/Opensource/vendor/claude-code-ref/`**（`AgentTool/loadAgentsDir.ts` / `runAgent.ts` / `forkSubagent.ts` / `resumeAgent.ts` / `built-in/*.ts`），**但只抄模式不抄代码**—— Bun/TS 代码 Agent 场景和 Python KB Agent 场景不能直搬。
 
@@ -156,6 +159,12 @@
 - 任务生命周期从 HTTP 解耦（`agent_task` 表 + worker queue）
 - 完整 transcript replay
 - 工具 policy hook / permission mode / fork agent
+
+**Phase 2.5 follow-up**（不阻塞、可在后续迭代做）：
+- 前端 `NewSessionDialog` 从 `/v1/agent_v2/definition` 端点拉模板替换硬编码 `/template`
+- 会话设置抽屉暴露 `history_turn_limit` / `citation_enforce_level` 选项
+- 保障房 10 题黄金集用 warn 模式重跑以校准 validator 命中/误报率
+- 真机跑一遍追问多轮用例（现有 smoke 只覆盖代码路径，不走 LLM）
 
 **非目标（推迟到 Phase 2.5 / 3）**：
 - 钉钉 / 企微适配器（预留扩展点，飞书先跑通）
@@ -253,3 +262,4 @@
 |---|---|---|
 | 2026-04-21 | v0.1 | 初稿；确定路径：RAGFlow + Claude Agent SDK，不用 CCB |
 | 2026-04-23 | v0.2 | 插入 Phase 2.5（Agent Runtime 成熟化）：Citation validator / 多轮上下文 / Agent definition manifest，全程参考 `vendor/claude-code-ref` |
+| 2026-04-23 | v0.3 | Phase 2.5 全部完成（commits `540bfb91f` / `86fb8e867` / `c921ea729`）；Phase 2 + 3.1 + 3.2 + 2.5 全数落地，下一批为 Phase 3.3 企业管理台或 P3.2c 钉钉/企微 |
