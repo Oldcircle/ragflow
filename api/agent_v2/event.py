@@ -15,6 +15,9 @@ EventType = Literal[
     "subagent_start",
     "subagent_end",
     "citation_warning",
+    # Phase 2.6 — interactive tools that yield to the user before Agent continues
+    "ask_user_question",
+    "plan_submitted",
     "error",
     "end",
 ]
@@ -109,6 +112,62 @@ def citation_warning(
     return Event(
         type="citation_warning",
         data={"issues": issues or [], "level": level},
+    )
+
+
+def ask_user_question(
+    *,
+    pending_id: str,
+    question: str,
+    header: str,
+    options: list[dict],
+    multi_select: bool,
+    tool_use_id: str | None,
+) -> Event:
+    """Phase 2.6 — Agent 向用户发起多选澄清。
+
+    前端渲染多选/单选卡片；用户选择后在**下一个 user turn** 里带回答复。
+    ``pending_id`` 允许前端把响应和原问题对齐。
+    """
+    return Event(
+        type="ask_user_question",
+        data={
+            "pending_id": pending_id,
+            "tool_use_id": tool_use_id,
+            "question": question,
+            "header": header,
+            "options": options,
+            "multi_select": bool(multi_select),
+        },
+    )
+
+
+def plan_submitted(
+    *,
+    pending_id: str,
+    title: str,
+    steps: list[str],
+    affected_resources: list[dict],
+    risk_level: str,
+    estimated_cost_usd: float | None,
+    reversible: bool,
+    reversible_hint: str | None,
+    tool_use_id: str | None,
+) -> Event:
+    """Phase 2.6 — Agent 提交执行计划供用户审批。"""
+    return Event(
+        type="plan_submitted",
+        data={
+            "pending_id": pending_id,
+            "tool_use_id": tool_use_id,
+            "title": title,
+            "steps": steps,
+            "affected_resources": affected_resources,
+            "risk_level": risk_level,
+            "estimated_cost_usd": estimated_cost_usd,
+            "reversible": bool(reversible),
+            "reversible_hint": reversible_hint,
+        },
     )
 
 

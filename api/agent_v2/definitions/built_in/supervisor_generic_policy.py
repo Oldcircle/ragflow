@@ -27,5 +27,9 @@ DEFINITION = AgentDefinition(
     kb_hints=("政策", "法规", "制度", "规章"),
     citation_enforce="warn",
     can_spawn_subagents=True,
-    allowed_subagent_types=("sub_policy_researcher", "sub_evidence_checker"),
+    allowed_subagent_types=(
+        "sub_policy_researcher",
+        "sub_evidence_checker",
+        "sub_archivist",
+    ),
 )

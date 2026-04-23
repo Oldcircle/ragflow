@@ -33,5 +33,9 @@ DEFINITION = AgentDefinition(
     citation_enforce="warn",
     citation_numeric_strict=True,
     can_spawn_subagents=True,
-    allowed_subagent_types=("sub_policy_researcher", "sub_evidence_checker"),
+    allowed_subagent_types=(
+        "sub_policy_researcher",
+        "sub_evidence_checker",
+        "sub_archivist",  # Phase 2.6 — 委派知识库运营工作
+    ),
 )
