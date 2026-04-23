@@ -17,6 +17,9 @@ export type AgentV2EventType =
   | 'subagent_start'
   | 'subagent_end'
   | 'citation_warning'
+  // Phase 2.6 — interactive tools
+  | 'ask_user_question'
+  | 'plan_submitted'
   | 'error'
   | 'end';
 
@@ -70,6 +73,35 @@ export interface SubagentTraceInline {
   durationMs?: number;
 }
 
+// Phase 2.6 — interactive tool payloads
+export interface PendingQuestion {
+  pendingId: string;
+  toolUseId: string | null;
+  question: string;
+  header: string;
+  options: { label: string; description?: string }[];
+  multiSelect: boolean;
+}
+
+export interface PlanAffectedResource {
+  kind: 'kb' | 'doc' | 'doc_count' | 'url' | 'tag' | string;
+  id?: string;
+  value?: string | number;
+  action?: string;
+}
+
+export interface PendingPlan {
+  pendingId: string;
+  toolUseId: string | null;
+  title: string;
+  steps: string[];
+  affectedResources: PlanAffectedResource[];
+  riskLevel: 'low' | 'medium' | 'high' | string;
+  estimatedCostUsd: number | null;
+  reversible: boolean;
+  reversibleHint: string | null;
+}
+
 export interface StreamingAssistantTurn {
   text: string;
   thinking: string;
@@ -78,6 +110,10 @@ export interface StreamingAssistantTurn {
   done: boolean;
   error?: string;
   citationWarning?: CitationWarning;
+  /** Phase 2.6 — latest ask_user_question not yet replied to */
+  pendingQuestion?: PendingQuestion;
+  /** Phase 2.6 — latest submit_plan not yet approved/rejected */
+  pendingPlan?: PendingPlan;
 }
 
 const EMPTY_TURN: StreamingAssistantTurn = {
@@ -234,6 +270,33 @@ export function useAgentStream() {
               localTurn.citationWarning = {
                 issues: (ev.data?.issues ?? []) as CitationIssue[],
                 level: ev.data?.level ?? 'warn',
+              };
+              break;
+            }
+            case 'ask_user_question': {
+              localTurn.pendingQuestion = {
+                pendingId: ev.data?.pending_id,
+                toolUseId: ev.data?.tool_use_id ?? null,
+                question: ev.data?.question ?? '',
+                header: ev.data?.header ?? '',
+                options: Array.isArray(ev.data?.options) ? ev.data.options : [],
+                multiSelect: Boolean(ev.data?.multi_select),
+              };
+              break;
+            }
+            case 'plan_submitted': {
+              localTurn.pendingPlan = {
+                pendingId: ev.data?.pending_id,
+                toolUseId: ev.data?.tool_use_id ?? null,
+                title: ev.data?.title ?? '',
+                steps: Array.isArray(ev.data?.steps) ? ev.data.steps : [],
+                affectedResources: Array.isArray(ev.data?.affected_resources)
+                  ? ev.data.affected_resources
+                  : [],
+                riskLevel: ev.data?.risk_level ?? 'medium',
+                estimatedCostUsd: ev.data?.estimated_cost_usd ?? null,
+                reversible: Boolean(ev.data?.reversible),
+                reversibleHint: ev.data?.reversible_hint ?? null,
               };
               break;
             }

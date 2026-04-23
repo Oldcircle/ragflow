@@ -188,6 +188,7 @@ export default function AgentChatPage() {
           pendingUser={pendingUser}
           isStreaming={isStreaming}
           userInitials={userInitials}
+          onSubmitAnswer={handleSend}
         />
 
         <Composer

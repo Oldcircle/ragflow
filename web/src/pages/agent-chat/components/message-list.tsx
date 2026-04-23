@@ -8,6 +8,8 @@ import {
 import { T } from '../theme';
 import { I } from './icons';
 import { AgentV2Markdown } from './markdown-content';
+import { PendingPlanCard } from './pending-plan-card';
+import { PendingQuestionCard } from './pending-question-card';
 import { ReferencesList, ReferencesListHandle } from './references-list';
 import { ThinkingBlock } from './thinking-block';
 
@@ -18,6 +20,9 @@ interface Props {
   pendingUser: string | null;
   isStreaming: boolean;
   userInitials: string;
+  /** Phase 2.6 — user picks options in the ask/plan card → parent
+   *  sends that text as the next user message. */
+  onSubmitAnswer?: (text: string) => void;
 }
 
 export const MessageList = memo(function MessageList({
@@ -27,6 +32,7 @@ export const MessageList = memo(function MessageList({
   pendingUser,
   isStreaming,
   userInitials,
+  onSubmitAnswer,
 }: Props) {
   const { t } = useTranslation();
   const endRef = useRef<HTMLDivElement>(null);
@@ -107,6 +113,32 @@ export const MessageList = memo(function MessageList({
 
         {streaming?.citationWarning && (
           <CitationWarningPanel warning={streaming.citationWarning} />
+        )}
+
+        {streaming?.pendingQuestion && onSubmitAnswer && (
+          <PendingQuestionCard
+            question={streaming.pendingQuestion}
+            disabled={isStreaming}
+            onSubmit={(text) => onSubmitAnswer(text)}
+          />
+        )}
+
+        {streaming?.pendingPlan && onSubmitAnswer && (
+          <PendingPlanCard
+            plan={streaming.pendingPlan}
+            disabled={isStreaming}
+            onDecide={(decision, note) => {
+              // 把用户决定编码成 user message 让 Agent 下一轮处理
+              const prefix =
+                decision === 'approve'
+                  ? '[plan approved]'
+                  : decision === 'reject'
+                    ? '[plan rejected]'
+                    : '[plan request changes]';
+              const text = note ? `${prefix} ${note}` : prefix;
+              onSubmitAnswer(text);
+            }}
+          />
         )}
 
         {streaming?.error && (
