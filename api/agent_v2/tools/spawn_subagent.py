@@ -81,6 +81,17 @@ MAX_DEPTH = 1  # 0 = 父；子不能再派
                 "minimum": 1,
                 "maximum": MAX_CHILD_TURNS,
             },
+            "subagent_type": {
+                "type": "string",
+                "description": (
+                    "Optional. Name of a registered subagent definition (e.g. "
+                    "'sub_policy_researcher', 'sub_evidence_checker'). When set, "
+                    "the subagent inherits the definition's system_prompt, tools, "
+                    "max_turns, and budget defaults — you still provide the "
+                    "specific 'description' and 'prompt' for this dispatch. "
+                    "Omit for the generic (anonymous) subagent."
+                ),
+            },
         },
         "required": ["description", "prompt"],
     },
@@ -107,29 +118,86 @@ async def spawn_subagent(args: dict) -> dict:
     if not prompt:
         return mcp_json_response({"error": "empty_prompt"})
 
-    max_turns = int(args.get("max_turns") or DEFAULT_CHILD_TURNS)
+    # ── 2.5) 可选：按命名 definition 派（Phase 2.5.3）──
+    subagent_type = (args.get("subagent_type") or "").strip() or None
+    definition = None
+    if subagent_type:
+        from ..definitions import get_definition
+
+        definition = get_definition(subagent_type)
+        if definition is None:
+            return mcp_json_response({
+                "error": "unknown_subagent_type",
+                "message": f"No registered subagent definition named {subagent_type!r}.",
+            })
+        if definition.kind != "subagent":
+            return mcp_json_response({
+                "error": "wrong_definition_kind",
+                "message": (
+                    f"Definition {subagent_type!r} is a {definition.kind}, "
+                    "not a subagent."
+                ),
+            })
+        if (
+            ctx.allowed_subagent_types is not None
+            and subagent_type not in ctx.allowed_subagent_types
+        ):
+            return mcp_json_response({
+                "error": "subagent_type_not_allowed",
+                "message": (
+                    f"Parent agent is not permitted to spawn {subagent_type!r}. "
+                    f"Allowed: {list(ctx.allowed_subagent_types)}."
+                ),
+            })
+
+    # ── 3) max_turns：definition 默认 > arg 提示；上限 MAX_CHILD_TURNS ──
+    if definition is not None:
+        default_turns = definition.max_turns
+    else:
+        default_turns = DEFAULT_CHILD_TURNS
+    max_turns = int(args.get("max_turns") or default_turns)
     max_turns = max(1, min(max_turns, MAX_CHILD_TURNS))
 
-    # ── 3) 工具白名单：必须 ⊆ 父 且 ≠ spawn_subagent ──
-    requested = [t for t in (args.get("allowed_tools") or []) if isinstance(t, str)]
+    # ── 4) 工具白名单：definition.tools > arg.allowed_tools > 父继承 ──
     parent_tools = list(ctx.tool_names) if ctx.tool_names else _all_registered_tool_names()
     parent_tools = [t for t in parent_tools if t != "spawn_subagent"]
-    if requested:
-        allowed = [t for t in requested if t in parent_tools]
+    if definition is not None:
+        from ..definitions import resolve_tools
+
+        defn_tools = resolve_tools(definition, parent_tools=parent_tools)
+        # definition 的 tools 必须是父工具集的子集（spawn_subagent 已经先剔除）
+        allowed = [t for t in (defn_tools or []) if t in parent_tools]
         if not allowed:
             return mcp_json_response({
-                "error": "no_allowed_tools",
-                "message": f"None of {requested} are in parent whitelist {parent_tools}.",
+                "error": "definition_tools_unavailable",
+                "message": (
+                    f"Subagent definition {subagent_type!r} requires tools "
+                    f"{definition.tools}, none of which are in parent whitelist "
+                    f"{parent_tools}."
+                ),
             })
     else:
-        allowed = list(parent_tools)
+        requested = [t for t in (args.get("allowed_tools") or []) if isinstance(t, str)]
+        if requested:
+            allowed = [t for t in requested if t in parent_tools]
+            if not allowed:
+                return mcp_json_response({
+                    "error": "no_allowed_tools",
+                    "message": f"None of {requested} are in parent whitelist {parent_tools}.",
+                })
+        else:
+            allowed = list(parent_tools)
 
-    # ── 4) 预算：子的 max_budget = min(req, parent_budget) 或默认 ──
+    # ── 5) 预算：definition 优先 > DEFAULT > 父预算的 50% ──
     parent_budget = ctx.max_budget_usd
-    if parent_budget and parent_budget > 0:
-        child_budget = min(DEFAULT_CHILD_BUDGET_USD, parent_budget * 0.5)
+    if definition is not None and definition.max_budget_usd is not None:
+        base_budget = definition.max_budget_usd
     else:
-        child_budget = DEFAULT_CHILD_BUDGET_USD
+        base_budget = DEFAULT_CHILD_BUDGET_USD
+    if parent_budget and parent_budget > 0:
+        child_budget = min(base_budget, parent_budget * 0.5)
+    else:
+        child_budget = base_budget
 
     # ── 5) 模型继承 ──
     model = ctx.model_config
@@ -189,7 +257,16 @@ async def spawn_subagent(args: dict) -> dict:
 
     # ── 8) 跑子 Agent ──
     start_ms = int(time.time() * 1000)
-    child_system_prompt = _build_child_system_prompt(ctx, description)
+    if definition is not None:
+        child_system_prompt = _build_child_system_prompt_from_definition(
+            ctx, definition, description,
+        )
+        child_enforce = definition.citation_enforce
+        child_numeric_strict = definition.citation_numeric_strict
+    else:
+        child_system_prompt = _build_child_system_prompt(ctx, description)
+        child_enforce = "warn"
+        child_numeric_strict = True
     try:
         child = AgentRunner(
             tenant_id=ctx.tenant_id,
@@ -202,6 +279,8 @@ async def spawn_subagent(args: dict) -> dict:
             max_budget_usd=child_budget,
             parent_session_id=ctx.session_id,
             depth=ctx.depth + 1,
+            citation_enforce_level=child_enforce,
+            citation_numeric_strict=child_numeric_strict,
         )
 
         text_parts: list[str] = []
@@ -280,6 +359,32 @@ async def spawn_subagent(args: dict) -> dict:
                 duration_ms=int(time.time() * 1000) - start_ms,
             ))
         return mcp_json_response({"error": str(exc), "trace_id": trace_id})
+
+
+def _build_child_system_prompt_from_definition(
+    ctx, definition, description: str,
+) -> str:
+    """Definition 模式：用 definition.system_prompt 做主体，父 prompt 仅作背景。
+
+    对比 ``_build_child_system_prompt``（通用 spawn 模式）：
+    - 通用模式下子没有自己的角色定义，只能继承父的系统提示
+    - Definition 模式下子是个「命名角色」（如 `sub_policy_researcher`），
+      它的 system_prompt 就是权威；父 prompt 只作域约束的背景参考
+    """
+    defn_sp = definition.resolve_system_prompt({"description": description}) or ""
+    parent_sp = ctx.system_prompt or ""
+    return (
+        f"{defn_sp}\n\n"
+        "--- 当前派遣上下文 ---\n"
+        f"父 Agent 派你做的事：{description or '（未指定）'}\n\n"
+        "你不能再派 subagents。输出时：\n"
+        "- 只给父需要的最终交付，不要 meta commentary\n"
+        "- 引用时用 [1][2] 标注 rag_retrieve 返回的来源\n"
+        "- 做不到就一句话说做不到并停止\n\n"
+        "--- 父 Agent 的域约束（仅供参考，不要重复父的工作）---\n"
+        f"{parent_sp}\n"
+        "--- 结束 ---\n"
+    )
 
 
 def _build_child_system_prompt(ctx, description: str) -> str:

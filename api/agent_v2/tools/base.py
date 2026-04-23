@@ -65,6 +65,14 @@ class ToolContext:
     current_tool_call_id: str | None = None
     """当前正在执行的 tool call 的 ID（SDK 提供，SubagentTrace 用作父 key）."""
 
+    # ────────── Phase 2.5.3 — Agent Definition Manifest ──────────
+    allowed_subagent_types: tuple[str, ...] | None = None
+    """父 Agent 允许派哪些命名 subagent（定义名）。
+    - ``None``：不做限制（老 session 行为）——任何注册的 subagent definition 都可用
+    - ``()``：空 tuple = 不允许任何命名 subagent（只能 spawn 通用子）
+    - ``("sub_a", "sub_b")``：只允许这些名字的 subagent
+    """
+
     extra: dict = field(default_factory=dict)
 
 

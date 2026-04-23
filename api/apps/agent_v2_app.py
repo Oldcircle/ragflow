@@ -288,6 +288,24 @@ async def list_agent_templates():
         return server_error_response(e)
 
 
+@manager.route("/definition", methods=["GET"])  # noqa: F821
+@login_required
+async def list_agent_definitions():
+    """Phase 2.5.3 — 列出所有已注册的 AgentDefinition。
+
+    query:
+      - kind: "supervisor" | "subagent" | 不传=全部
+    """
+    try:
+        from api.agent_v2.definitions import list_definitions
+
+        kind = request.args.get("kind") or None
+        defs = list_definitions(kind=kind)
+        return get_json_result(data={"definitions": [d.to_dict() for d in defs]})
+    except Exception as e:
+        return server_error_response(e)
+
+
 @manager.route("/model", methods=["GET"])  # noqa: F821
 @login_required
 async def list_available_models():
