@@ -37,11 +37,14 @@ RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on d
 ### Agent v2（本 fork 的核心差异化，`/api/agent_v2/`）
 - **Runner**: `api/agent_v2/runner.py` — Claude Agent SDK 适配层；P2.5.2 起支持 `history=` / `summary_text=` 多轮参数，P2.5.bugfix 起开 `include_partial_messages=True` 真流式
 - **Event**: `api/agent_v2/event.py` — 统一 SSE 事件；P2.3 / P2.5.1 加了 `subagent_*` / `citation_warning`；Phase 2.6 加了 `ask_user_question` / `plan_submitted`
-- **Tools**: `api/agent_v2/tools/` — 13 个 MCP 工具：4 读（rag_retrieve / rag_list_docs / rag_read_doc / rag_graph_query）+ spawn_subagent + 6 写（doc_tag / doc_rename / doc_archive / doc_reparse / doc_upload_from_url / kb_create）+ 2 交互（ask_user_question / submit_plan）
+- **Tools**: `api/agent_v2/tools/` — 17 个 MCP 工具：4 读（rag_retrieve / rag_list_docs / rag_read_doc / rag_graph_query）+ spawn_subagent + 6 写（doc_tag / doc_rename / doc_archive / doc_reparse / doc_upload_from_url / kb_create）+ 4 自省（Phase 2.6 v0.2：doc_create_note / kb_audit / kb_stats / doc_list_recent_changes）+ 2 交互（ask_user_question / submit_plan）
 - **Validators** (P2.5.1): `api/agent_v2/validators/` — EvidenceIndex + CitationValidator（三规则 missing_chunk / number_unsupported / no_citation_for_numeric）+ `rewrite.py` strict-mode 一次性重写
 - **Compactor** (P2.5.2): `api/agent_v2/compactor.py` — 历史摘要压缩；`run_compact_safely` 入口把任何异常写进 access_audit_log（action=`agent_v2.compact`），fire-and-forget 不再静默失败
-- **Definitions** (P2.5.3 + P2.6): `api/agent_v2/definitions/` — 声明式 AgentDefinition schema + 6 supervisor + 3 subagent（sub_policy_researcher / sub_evidence_checker / sub_archivist）
-- **doc_ops** (Phase 2.6): `api/agent_v2/tools/doc_ops/` — 6 个写工具共享 `@require_kb_write` 装饰器（RBAC + 审计 + idempotency）；只允许 sub_archivist 拿，supervisor 默认只读
+- **Definitions** (P2.5.3 + P2.6 v0.2): `api/agent_v2/definitions/` — 声明式 AgentDefinition schema + 6 supervisor + 4 subagent（sub_policy_researcher / sub_evidence_checker / sub_archivist / sub_librarian）。**sub_archivist = 动手改**，**sub_librarian = 看+想+写笔记**，Claude Code 风格一 subagent = 一心智模式
+- **doc_ops** (Phase 2.6 + v0.2): `api/agent_v2/tools/doc_ops/` — 10 个工具共享 `@require_kb_write` 装饰器 + `ok/err` 响应形状：
+  - 6 写（tag / rename / archive / reparse / upload_from_url / kb_create）→ `sub_archivist` 专用
+  - 4 自省 / 总结（create_note / kb_audit / kb_stats / list_recent_changes）→ `sub_librarian` 专用
+  - supervisor 默认都拿不到写或运营工具；必须通过 `spawn_subagent(subagent_type=...)` 显式派 archivist 或 librarian
 - **Bot Channels** (P2.2): `api/bot_channels/` — 飞书 webhook adapter（签名 + 会话映射）
 - **HTTP App**: `api/apps/agent_v2_app.py` — 注册 `/v1/agent_v2/*` blueprint
 

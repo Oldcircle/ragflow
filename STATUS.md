@@ -4,6 +4,73 @@
 
 ---
 
+## 最近更新：2026-04-24（Phase 2.6 v0.2：从命令式运营 → 自维护 / 自总结的 KB Agent）
+
+**当前阶段**：Phase 2.6 v0.2 完成。Agent 现在不仅能**执行**用户指令
+（tag / archive / rename / reparse / upload / kb_create），还能**自己观察 /
+发现问题 / 写笔记入库**（kb_audit / kb_stats / doc_list_recent_changes /
+doc_create_note），从"被动工具"升级到"可自我维护知识库的通用 agent"。
+
+**下一步入口**：
+1. 真机演练：让 `sub_librarian` 对保障房 KB 跑一次"健康报告"——Agent 调
+   `kb_audit` → 生成建议 → 用 `doc_create_note` 把报告写成笔记存回某个
+   元 KB；然后换 `sub_archivist` 按报告建议做一批归档
+2. Tier 2 规划：`doc_batch`（原子批量）、`ExecPresetTool` 命令白名单、
+   Agent 跨 session memory（memdir 模式）
+3. 保障房 10 题重跑 citation validator + streaming
+
+### Phase 2.6 v0.2 完成内容（2026-04-24）
+
+**用户愿景升级**：v0.1 shipped 了 6 个命令式写工具；用户指出"工具应该在
+**真实场景**有用 + 参考 claude-code-ref 设计哲学 + 终极愿景是 Agent 能
+**自己维护 KB 形态 + 自己总结笔记**"。v0.2 照这个愿景做缺口分析（详见
+`PLAN-doc-ops.md §13`）并落地 Tier 1 的 4 个新工具 + subagent 重切分。
+
+**4 个新工具**（commit `830b6b83a`，补齐 Claude Code 对应能力）：
+
+| 工具 | 解决的缺口 | 对应 Claude Code |
+|---|---|---|
+| `doc_create_note` | Agent 生成 Markdown 作为新文档 | `FileWriteTool` 的语义版 |
+| `kb_audit` | 结构化 KB 体检（陈旧/重复/未解析/top tags） | `GlobTool + GrepTool` discovery batch |
+| `kb_stats` | <1KB 快照，适合周期 ping | `BriefTool` temperature check |
+| `doc_list_recent_changes` | Agent 自省操作是否成功 | `TaskGetTool` task history |
+
+**Subagent 重切分**（Claude Code 哲学：一 subagent = 一心智模式）：
+- **`sub_archivist`**（不变）：**动手改** 的 subagent，持 6 个写工具
+- **`sub_librarian`**（新增）：**看 + 想 + 写** 的 subagent，持 4 个新工具
+  + 读工具；**hard red line**：不持任何写工具（test 硬保证）
+
+都加入 `sz-baojian-house / generic-policy / research-analyst /
+legal-contract` 四个 supervisor 的 `allowed_subagent_types`。
+
+**设计哲学对齐**（`PLAN-doc-ops.md §13`）：
+- 每个工具 description 首行强制 `【WHEN】` 前缀（不是 `【WHAT】`）
+  ——教 Agent **何时**用，不只是做什么
+- noop 检测（工具判断"这次调用不会变状态"直接返 `status=noop`）
+- `reversible_hint` 写进所有 write-op 的 audit metadata
+- idempotency key 默认打开（同参数 90s 内复用）
+- 响应统一 `status` 字段（ok / noop / duplicate / partial / error）
+
+**tool count 13 → 17**；**subagent count 3 → 4**。
+
+**测试**（commit `a999bfc45`，+21 pytest + S25/S26）：
+- `test_doc_ops_reflect.py`：4 工具入口校验 + 9 sub_librarian 结构（含
+  "不持写工具"的硬红线）+ registry 完整性
+- `test_definitions.py` / `test_registry.py` 计数 assert 升级
+- `scripts/tob_acceptance.py` +S25 reflect 工具注册 / +S26 supervisor 双配
+
+**验证**：
+- `pytest test/agent_v2/` → **198 passed**（+21 over v0.1 的 177）
+- `RAGFLOW_TEST_DB=1 pytest` → **206 passed**
+- `scripts/tob_acceptance.py --live-llm` → **PASS 24 / FAIL 0**
+- `uvx ruff check api/ test/ scripts/` → clean
+
+### Phase 2.6 v0.2 里程 commits
+- `830b6b83a` feat(agent-v2): 4 新工具 + sub_librarian + supervisor wiring
+- `a999bfc45` test(agent-v2): +21 pytest + S25/S26 acceptance
+
+---
+
 ## 最近更新：2026-04-24（Phase 2.6 文档运营工具 + 交互工具 + 前端渲染完成）
 
 **当前阶段**：**Phase 2 全部 + Phase 3.1 + Phase 3.2 + Phase 2.5 + Phase 2.6 完整实现**

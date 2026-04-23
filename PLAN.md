@@ -293,4 +293,5 @@
 | 2026-04-21 | v0.1 | 初稿；确定路径：RAGFlow + Claude Agent SDK，不用 CCB |
 | 2026-04-23 | v0.2 | 插入 Phase 2.5（Agent Runtime 成熟化）：Citation validator / 多轮上下文 / Agent definition manifest，全程参考 `vendor/claude-code-ref` |
 | 2026-04-24 | v0.3 | 插入 Phase 2.6（文档运营工具）：6 写工具 + 2 交互工具 + sub_archivist subagent + 前端卡片渲染；Agent 正式从 KB-QA 升级到可做语义级文档运营 |
+| 2026-04-24 | v0.4 | Phase 2.6 v0.2：+4 自省工具（doc_create_note / kb_audit / kb_stats / doc_list_recent_changes）+ `sub_librarian` subagent；Agent 能自体检 KB、写报告笔记入库、自省操作记录；Claude Code 设计哲学对齐（【WHEN】描述 / status 字段 / noop 检测 / reversible_hint）|
 | 2026-04-23 | v0.3 | Phase 2.5 全部完成（commits `540bfb91f` / `86fb8e867` / `c921ea729`）；Phase 2 + 3.1 + 3.2 + 2.5 全数落地，下一批为 Phase 3.3 企业管理台或 P3.2c 钉钉/企微 |
