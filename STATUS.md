@@ -4,10 +4,47 @@
 
 ---
 
-## 最近更新：2026-04-22（深夜 +1）
+## 最近更新：2026-04-23
 
-**当前阶段**：**Phase 2.1 + Phase 2.2 全部落地（后端 + 前端）；进入 P2.3 Multi-Agent**
-**下一步入口**：按 `PLAN-multi-agent.md` 实现 `spawn_subagent` 工具 + `agent_v2_subagent_trace` 表 + 事件流 + 前端可视化
+**当前阶段**：**Phase 2 全部落地（2.1 RBAC + 2.2 飞书 + 2.3 Multi-Agent）**
+**下一步入口**：Phase 2 收尾 / 商用化准备（按 `PLAN.md` 第九节 Phase 3：多租户隔离深化、审计扩展、SSO 扩展、计量计费）
+
+### P2.3 Multi-Agent 完成（2026-04-23）
+
+**新表**：`agent_v2_subagent_trace(id, parent_session_id, parent_tool_call_id, description, prompt, allowed_tools, max_turns, max_budget_usd, status, result_preview, error, token_usage_json, cost_usd, duration_ms, start_time, end_time)` — 自动迁移已生效。
+
+**核心代码**：
+- `api/agent_v2/tools/spawn_subagent.py` — `@tool` 装饰的工具。guard 链：深度 ≤1、每 turn ≤3 个、空 prompt 拒绝、工具白名单必须 ⊆ 父（且不含 `spawn_subagent`）、结果截断 32 KB；finish 后把 `result_preview` 前 4 KB + `token_usage` + `duration` 写回 trace；通过 `event_emitter` 把 `subagent_start / subagent_end` 推到父 SSE 流（前端能实时看到子任务进度）
+- `api/db/services/subagent_trace_service.py` — `start / finish / get_by_id / list_by_session`
+- `api/agent_v2/tools/base.py::ToolContext` — 扩展字段：`session_id / system_prompt / tool_names / model_config / max_budget_usd / depth / subagent_count_this_turn / event_emitter / current_tool_call_id`；新增 `emit_event` helper
+- `api/agent_v2/runner.py`：
+  - 构造函数新增 `session_id / parent_session_id / depth`
+  - `run()` 创建 `asyncio.Queue` 事件 bus + 后台 task（`_sdk_to_bus`）把 SDK 事件丢进来；`_merge_streams` 单协程 drain bus 再吐给调用方，保证事件顺序（subagent_start ↦ end）
+  - `_translate` 在 `ToolUseBlock` 出现时更新 `ctx.current_tool_call_id`，让 `spawn_subagent` 能把 trace 关联到父 tool_use id
+- `api/agent_v2/event.py` — 新事件类型 `subagent_start / subagent_end`
+- `api/agent_v2/registry.py` — `spawn_subagent` 进 `ALL_TOOLS`
+- `api/apps/agent_v2_app.py`:
+  - `conversation` 路径把 `session.id` 传给 `AgentRunner`
+  - 新端点 `GET /v1/agent_v2/session/<id>/subagent` 列出该 session 下所有子 trace
+
+**前端**：
+- `useAgentStream`：识别 `subagent_start / subagent_end` → 自动挂到对应的 `StreamingToolCall.subagent` 子状态
+- `ToolCallCard`：检测到 `call.subagent` 时渲染 `SubagentInline`（状态徽标 + 任务描述 + 耗时 + 成本；展开查看 `result_preview` 或错误）；父 tool call 的常规预览此时让位给子视图
+- `StreamingToolCall` 类型扩展：新增 `subagent?: SubagentTraceInline` 字段（traceId / description / allowedTools / maxTurns / status / resultPreview / costUsd / durationMs）
+
+**Guard 验证**（三个反面用例全部返回合规错误 JSON）：
+- depth ≥ 1 调 `spawn_subagent` → `nested_spawn_forbidden`
+- `subagent_count_this_turn >= 3` → `too_many_subagents`
+- 空 prompt → `empty_prompt`
+
+**E2E 验证**：
+- 5 个工具全注册（含 `spawn_subagent`）
+- `ToolContext` 扩展字段跨 contextvars 传递正确
+- `SubagentTraceService` start / finish / list 都工作
+- HTTP `/v1/agent_v2/session/<id>/subagent` 返 401（未登录→已登录即可用；路由已注册）
+- 7 个前端核心路由 200，TS + ESLint 新文件零错误
+
+
 
 ### P2.2 完成内容（2026-04-23）
 

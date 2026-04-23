@@ -5,7 +5,10 @@
 
 import { memo, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { StreamingToolCall } from '../hooks/use-agent-stream';
+import {
+  StreamingToolCall,
+  SubagentTraceInline,
+} from '../hooks/use-agent-stream';
 import { T } from '../theme';
 import { Badge } from './badge';
 
@@ -120,7 +123,9 @@ export const ToolCallCard = memo(function ToolCallCard({
         </Badge>
       </div>
 
-      {!expanded && call.result != null && !call.error && (
+      {call.subagent && <SubagentInline subagent={call.subagent} />}
+
+      {!expanded && call.result != null && !call.error && !call.subagent && (
         <div
           style={{
             fontSize: 11,
@@ -222,3 +227,123 @@ export const ToolCallCard = memo(function ToolCallCard({
     </div>
   );
 });
+
+function SubagentInline({ subagent }: { subagent: SubagentTraceInline }) {
+  const [open, setOpen] = useState(false);
+
+  const statusTone = (() => {
+    switch (subagent.status) {
+      case 'success':
+        return { bg: T.successBg, fg: T.success };
+      case 'error':
+      case 'cancelled':
+        return { bg: T.dangerBg, fg: T.danger };
+      case 'truncated':
+        return { bg: T.warningBg, fg: T.warning };
+      case 'running':
+      default:
+        return { bg: T.surface2, fg: T.textMuted };
+    }
+  })();
+
+  return (
+    <div
+      onClick={(e) => {
+        e.stopPropagation();
+        setOpen((v) => !v);
+      }}
+      style={{
+        marginTop: 6,
+        padding: '8px 10px',
+        border: `1px solid ${T.border}`,
+        borderRadius: 6,
+        background: T.surface,
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          fontSize: 11,
+        }}
+      >
+        <span
+          style={{
+            padding: '1px 6px',
+            borderRadius: 3,
+            background: statusTone.bg,
+            color: statusTone.fg,
+            fontSize: 9,
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: 0.4,
+          }}
+        >
+          {subagent.status}
+        </span>
+        <span
+          style={{
+            flex: 1,
+            color: T.text,
+            fontWeight: 500,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {subagent.description || 'subagent'}
+        </span>
+        {subagent.durationMs != null && (
+          <span
+            style={{
+              fontSize: 10,
+              color: T.textDim,
+              fontFamily: T.fontMono,
+            }}
+          >
+            {subagent.durationMs}ms
+          </span>
+        )}
+        {subagent.costUsd != null && subagent.costUsd > 0 && (
+          <span
+            style={{
+              fontSize: 10,
+              color: T.textDim,
+              fontFamily: T.fontMono,
+            }}
+          >
+            ${subagent.costUsd.toFixed(3)}
+          </span>
+        )}
+      </div>
+
+      {open && (
+        <div
+          style={{
+            marginTop: 6,
+            padding: 6,
+            borderRadius: 4,
+            background: T.surface2,
+            fontSize: 11,
+            color: T.textMuted,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+            maxHeight: 320,
+            overflow: 'auto',
+          }}
+        >
+          {subagent.error ? (
+            <span style={{ color: T.danger }}>{subagent.error}</span>
+          ) : subagent.resultPreview ? (
+            subagent.resultPreview
+          ) : (
+            <span style={{ color: T.textDim, fontStyle: 'italic' }}>
+              (no preview yet — subagent still running)
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

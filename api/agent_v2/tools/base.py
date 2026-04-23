@@ -10,22 +10,61 @@ Runner 在每次 ``run()`` 前用 ``set_ctx()`` 注入 RAGFlow 上下文（基�
 
 from __future__ import annotations
 
+import asyncio
 import contextvars
 import json
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 
 from claude_agent_sdk import tool  # noqa: F401 — re-export for tools
 
 from ..errors import ContextError
 
+if TYPE_CHECKING:
+    from ..runner import ModelConfig
 
-@dataclass(frozen=True)
+
+@dataclass
 class ToolContext:
-    """Runner 向所有工具透传的运行时上下文。"""
+    """Runner 向所有工具透传的运行时上下文。
+
+    Phase 2.3 扩展：加上 depth / session_id / 允许工具集 / 模型配置等，
+    以便 ``spawn_subagent`` 能派出独立的子 Runner。
+    """
 
     tenant_id: str
     kb_ids: tuple[str, ...]
     user_id: str | None = None
+
+    # ────────── Phase 2.3 — Multi-Agent ──────────
+    session_id: str | None = None
+    """父 session 的 id；用作子 trace 的外键."""
+
+    system_prompt: str = ""
+    """父 Agent 的 system prompt，传给子 Agent 做背景参考."""
+
+    tool_names: tuple[str, ...] | None = None
+    """父允许的工具白名单；None 表示全部已注册工具。子的白名单必须是这个的子集."""
+
+    model_config: "ModelConfig | None" = None
+    """父用的模型配置；子默认继承."""
+
+    max_budget_usd: float | None = None
+    """父总预算（仅用作子预算上限参考，v1 不做扣减）."""
+
+    depth: int = 0
+    """0 = 父（顶层），≥1 = 子；子不能再派孙 Agent。"""
+
+    subagent_count_this_turn: int = 0
+    """本次顶层 turn 已派出的子数；用于限流（v1 每 turn 最多 3 个）."""
+
+    event_emitter: Callable[[Any], Awaitable[None]] | None = None
+    """把事件推回父 SSE 流的回调；None 时默认丢弃."""
+
+    current_tool_call_id: str | None = None
+    """当前正在执行的 tool call 的 ID（SDK 提供，SubagentTrace 用作父 key）."""
+
     extra: dict = field(default_factory=dict)
 
 
@@ -67,6 +106,30 @@ def get_ctx(require: list[str] | None = None) -> ToolContext:
     return ctx
 
 
+def replace_ctx(**updates: Any) -> contextvars.Token:
+    """在当前 ctx 基础上派生一份新 ctx 并设进去；返回 reset token。"""
+    current = _ctx_var.get()
+    if current is None:
+        raise ContextError("replace_ctx called without parent context")
+    data = {k: getattr(current, k) for k in current.__dataclass_fields__}
+    data.update(updates)
+    new_ctx = ToolContext(**data)  # type: ignore[arg-type]
+    return _ctx_var.set(new_ctx)
+
+
+async def emit_event(event: Any) -> None:
+    """工具内发事件的便捷 helper；未设 emitter 时安静丢弃."""
+    ctx = _ctx_var.get()
+    if ctx is None or ctx.event_emitter is None:
+        return
+    try:
+        res = ctx.event_emitter(event)
+        if asyncio.iscoroutine(res):
+            await res
+    except Exception:
+        pass  # 事件推送失败绝不影响工具本身
+
+
 # 单次 tool 输出最大字节数（保护上下文不被炸）
 MAX_TOOL_OUTPUT_BYTES = 32 * 1024
 
@@ -100,6 +163,8 @@ __all__ = [
     "set_ctx",
     "reset_ctx",
     "get_ctx",
+    "replace_ctx",
+    "emit_event",
     "mcp_text_response",
     "mcp_json_response",
     "MAX_TOOL_OUTPUT_BYTES",

@@ -1501,6 +1501,45 @@ class BotChannel(DataBaseModel):
         )
 
 
+class AgentV2SubagentTrace(DataBaseModel):
+    """Multi-Agent（Phase 2.3）子 Agent 执行轨迹。
+
+    父 Agent 每次调用 ``spawn_subagent`` 工具都写一条：
+      - 派出时 status=running 并写入 description/prompt/allowed_tools
+      - 结束时更新 status / result_preview / token_usage / cost / duration
+      - 前端工具调用卡片可点开这条记录展示子任务细节
+    """
+
+    id = CharField(max_length=32, primary_key=True)
+    parent_session_id = CharField(max_length=32, null=False, index=True)
+    parent_tool_call_id = CharField(
+        max_length=64, null=False, index=True,
+        help_text="父调 spawn_subagent 的 tool_use_id (=MCP tool call ID)",
+    )
+    description = CharField(max_length=255, null=False, default="",
+                            help_text="任务短标题（UI 上显示）")
+    prompt = TextField(null=True, default="", help_text="给子 Agent 的完整 prompt")
+    allowed_tools = JSONField(null=False, default=[],
+                              help_text="子可用工具白名单；空 = 继承父（除 spawn_subagent）")
+    max_turns = IntegerField(default=10)
+    max_budget_usd = FloatField(null=True, default=0.3)
+    status = CharField(
+        max_length=16, null=False, default="running", index=True,
+        help_text="running | success | error | truncated | cancelled",
+    )
+    result_preview = LongTextField(null=True, default="",
+                                   help_text="最终 assistant 文本前 4 KB")
+    error = TextField(null=True, default="")
+    token_usage_json = JSONField(null=True, default=None)
+    cost_usd = FloatField(null=True, default=None)
+    duration_ms = IntegerField(null=True, default=None)
+    start_time = BigIntegerField(null=False, index=True)
+    end_time = BigIntegerField(null=True)
+
+    class Meta:
+        db_table = "agent_v2_subagent_trace"
+
+
 class BotConversationMap(DataBaseModel):
     """IM 端会话标识 ↔ Agent v2 session 的持久映射。
 

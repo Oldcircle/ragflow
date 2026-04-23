@@ -14,6 +14,8 @@ export type AgentV2EventType =
   | 'thinking'
   | 'tool_call_start'
   | 'tool_call_end'
+  | 'subagent_start'
+  | 'subagent_end'
   | 'error'
   | 'end';
 
@@ -31,6 +33,23 @@ export interface StreamingToolCall {
   durationMs?: number;
   status: 'pending' | 'success' | 'error';
   startTs: number;
+  /** Phase 2.3 — when `name === 'spawn_subagent'`, we enrich this with the
+   *  live trace from subagent_start / subagent_end events so the UI can
+   *  render a nested execution summary before the tool_call_end arrives. */
+  subagent?: SubagentTraceInline;
+}
+
+export interface SubagentTraceInline {
+  traceId: string;
+  description: string;
+  allowedTools: string[];
+  maxTurns: number;
+  maxBudgetUsd: number | null;
+  status: 'running' | 'success' | 'error' | 'truncated' | 'cancelled';
+  resultPreview?: string;
+  error?: string;
+  costUsd?: number;
+  durationMs?: number;
 }
 
 export interface StreamingAssistantTurn {
@@ -149,6 +168,44 @@ export function useAgentStream() {
                       status: ev.data.error
                         ? ('error' as const)
                         : ('success' as const),
+                    }
+                  : c,
+              );
+              break;
+            }
+            case 'subagent_start': {
+              // 挂到对应 parent tool call 的 subagent 子状态上
+              const parentId = ev.data?.parent_tool_call_id;
+              localTurn.toolCalls = localTurn.toolCalls.map((c) =>
+                c.id === parentId
+                  ? {
+                      ...c,
+                      subagent: {
+                        traceId: ev.data.trace_id,
+                        description: ev.data.description ?? '',
+                        allowedTools: ev.data.allowed_tools ?? [],
+                        maxTurns: ev.data.max_turns ?? 10,
+                        maxBudgetUsd: ev.data.max_budget_usd ?? null,
+                        status: 'running',
+                      },
+                    }
+                  : c,
+              );
+              break;
+            }
+            case 'subagent_end': {
+              localTurn.toolCalls = localTurn.toolCalls.map((c) =>
+                c.subagent?.traceId === ev.data?.trace_id
+                  ? {
+                      ...c,
+                      subagent: {
+                        ...c.subagent!,
+                        status: ev.data.status,
+                        resultPreview: ev.data.result_preview,
+                        error: ev.data.error ?? undefined,
+                        costUsd: ev.data.cost_usd ?? undefined,
+                        durationMs: ev.data.duration_ms ?? undefined,
+                      },
                     }
                   : c,
               );

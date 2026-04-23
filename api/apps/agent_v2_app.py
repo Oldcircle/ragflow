@@ -233,6 +233,45 @@ async def delete_session(session_id: str):
         return server_error_response(e)
 
 
+# ────────────────────────────────────── Subagent traces (P2.3) ──────────────────────────────────────
+
+
+@manager.route("/session/<session_id>/subagent", methods=["GET"])  # noqa: F821
+@login_required
+async def list_subagent_traces(session_id: str):
+    """列出一个 session 派出过的所有子 Agent 轨迹（按 start_time 升序）."""
+    try:
+        session = AgentV2SessionService.get_by_id(session_id)
+        if not session or session.tenant_id != current_user.id:
+            return get_data_error_result(message="session not found")
+        from api.db.services.subagent_trace_service import SubagentTraceService
+        rows = SubagentTraceService.list_by_session(session_id)
+        return get_json_result(data={
+            "traces": [
+                {
+                    "id": r.id,
+                    "parent_tool_call_id": r.parent_tool_call_id,
+                    "description": r.description,
+                    "prompt": r.prompt,
+                    "allowed_tools": list(r.allowed_tools or []),
+                    "max_turns": r.max_turns,
+                    "max_budget_usd": r.max_budget_usd,
+                    "status": r.status,
+                    "result_preview": r.result_preview,
+                    "error": r.error,
+                    "token_usage_json": r.token_usage_json,
+                    "cost_usd": r.cost_usd,
+                    "duration_ms": r.duration_ms,
+                    "start_time": r.start_time,
+                    "end_time": r.end_time,
+                }
+                for r in rows
+            ],
+        })
+    except Exception as e:
+        return server_error_response(e)
+
+
 # ────────────────────────────────────── Tools info ──────────────────────────────────────
 
 
@@ -323,6 +362,7 @@ async def send_message():
         user_id=session.user_id,
         max_turns=session.max_turns,
         max_budget_usd=session.max_budget_usd,
+        session_id=session.id,  # Phase 2.3: 让 spawn_subagent 能引用父 session
     )
 
     async def stream():

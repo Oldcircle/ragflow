@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import AsyncIterator
@@ -77,6 +78,9 @@ class AgentRunner:
         max_turns: int = 20,
         max_budget_usd: float | None = 1.0,
         permission_mode: str = "bypassPermissions",
+        session_id: str | None = None,
+        parent_session_id: str | None = None,
+        depth: int = 0,
     ):
         if not tenant_id:
             raise AgentError("tenant_id is required")
@@ -92,6 +96,14 @@ class AgentRunner:
         self.max_turns = max_turns
         self.max_budget_usd = max_budget_usd
         self.permission_mode = permission_mode
+
+        # Phase 2.3: track session + depth for subagent 上下文传递
+        self.session_id = session_id
+        self.parent_session_id = parent_session_id
+        self.depth = depth
+
+        # 子发事件会 emit 到这个 queue，父在 run() loop 里把它们穿插进自己的 SDK 流
+        self._event_bus: asyncio.Queue[ev.Event] | None = None
 
     def _build_options(self) -> ClaudeAgentOptions:
         mcp_server = build_mcp_server(enabled=self.tool_names)
@@ -126,25 +138,54 @@ class AgentRunner:
         """发一条用户消息，异步返回事件流。"""
         options = self._build_options()
         logger.info(
-            "AgentRunner.run: tenant=%s kb_ids=%s model=%s turn_limit=%d",
+            "AgentRunner.run: tenant=%s kb_ids=%s model=%s turn_limit=%d depth=%d",
             self.tenant_id,
             self.kb_ids,
             self.model.model,
             self.max_turns,
+            self.depth,
         )
 
         tool_call_starts: dict[str, float] = {}
+
+        # 工具（如 spawn_subagent）往 bus 里推事件，父这里穿插转发。
+        self._event_bus = asyncio.Queue()
+
+        async def emit(event: ev.Event) -> None:
+            await self._event_bus.put(event)  # type: ignore[union-attr]
+
+        # 跟踪当前正在执行的 tool call id（给 ctx.current_tool_call_id）
+        # — SDK 的 tool_use id 在 AssistantMessage 里出现、工具执行时需要读
+        tool_current_holder: dict[str, str] = {}
 
         ctx = ToolContext(
             tenant_id=self.tenant_id,
             kb_ids=tuple(self.kb_ids),
             user_id=self.user_id,
+            session_id=self.session_id,
+            system_prompt=self.system_prompt,
+            tool_names=(
+                tuple(self.tool_names) if self.tool_names is not None else None
+            ),
+            model_config=self.model,
+            max_budget_usd=self.max_budget_usd,
+            depth=self.depth,
+            subagent_count_this_turn=0,
+            event_emitter=emit,
+            current_tool_call_id=None,
         )
         token = set_ctx(ctx)
-        try:
+
+        async def sdk_iter() -> AsyncIterator[ev.Event]:
             async for msg in query(prompt=user_message, options=options):
-                async for event in self._translate(msg, tool_call_starts):
+                async for event in self._translate(
+                    msg, tool_call_starts, tool_current_holder, ctx,
+                ):
                     yield event
+
+        try:
+            async for event in _merge_streams(sdk_iter(), self._event_bus):
+                yield event
         except Exception as exc:  # noqa: BLE001 — Runner 要吞所有异常转成事件
             logger.exception("AgentRunner.run failed")
             yield ev.error(code=type(exc).__name__, message=str(exc))
@@ -153,7 +194,11 @@ class AgentRunner:
             reset_ctx(token)
 
     async def _translate(
-        self, msg, tool_call_starts: dict[str, float]
+        self,
+        msg,
+        tool_call_starts: dict[str, float],
+        tool_current_holder: dict[str, str] | None = None,
+        ctx: ToolContext | None = None,
     ) -> AsyncIterator[ev.Event]:
         """把 SDK 消息翻译成统一 Event。"""
         if isinstance(msg, AssistantMessage):
@@ -164,6 +209,11 @@ class AgentRunner:
                     yield ev.thinking(block.thinking)
                 elif isinstance(block, ToolUseBlock):
                     tool_call_starts[block.id] = time.time()
+                    # 让 spawn_subagent 等工具知道自己是哪个 tool_use
+                    if ctx is not None:
+                        ctx.current_tool_call_id = block.id
+                    if tool_current_holder is not None:
+                        tool_current_holder["id"] = block.id
                     yield ev.tool_call_start(
                         tool_id=block.id, name=block.name, args=block.input
                     )
@@ -224,3 +274,59 @@ class AgentRunner:
                     parts.append(str(p))
             return "\n".join(parts)
         return str(content)
+
+
+_SENTINEL_SDK_DONE = object()
+
+
+async def _merge_streams(
+    sdk_events: AsyncIterator[ev.Event],
+    bus: asyncio.Queue,
+) -> AsyncIterator[ev.Event]:
+    """交错 SDK 事件流 + 工具自发的事件队列（来自 spawn_subagent 等）。
+
+    Pattern：用一个后台 task 把 SDK 事件塞进 bus，主循环只 get bus。
+    SDK 结束时塞一个 sentinel；drain 完 sentinel 后退出。
+    """
+    async def _sdk_to_bus() -> None:
+        try:
+            async for event in sdk_events:
+                await bus.put(event)
+        except Exception as e:
+            await bus.put(_SdkError(e))
+        finally:
+            await bus.put(_SENTINEL_SDK_DONE)
+
+    sdk_task = asyncio.create_task(_sdk_to_bus())
+    pending_tool_events = 0  # 目前没显式追踪；SDK 结束时直接 drain bus 完成
+    try:
+        while True:
+            event = await bus.get()
+            if event is _SENTINEL_SDK_DONE:
+                # SDK 端结束；剩下都是工具尾声事件
+                while not bus.empty():
+                    nxt = bus.get_nowait()
+                    if isinstance(nxt, _SdkError):
+                        raise nxt.exc
+                    if nxt is _SENTINEL_SDK_DONE:
+                        continue
+                    yield nxt
+                return
+            if isinstance(event, _SdkError):
+                raise event.exc
+            yield event
+    finally:
+        if not sdk_task.done():
+            sdk_task.cancel()
+            try:
+                await sdk_task
+            except BaseException:
+                pass
+
+
+class _SdkError:
+    """内部包装：把 SDK 异常通过 queue 传给 merger."""
+    __slots__ = ("exc",)
+
+    def __init__(self, exc: BaseException) -> None:
+        self.exc = exc

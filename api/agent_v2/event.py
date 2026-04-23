@@ -12,6 +12,8 @@ EventType = Literal[
     "thinking",
     "tool_call_start",
     "tool_call_end",
+    "subagent_start",
+    "subagent_end",
     "error",
     "end",
 ]
@@ -66,3 +68,49 @@ def error(code: str, message: str) -> Event:
 
 def end(usage: dict | None = None) -> Event:
     return Event(type="end", data={"usage": usage or {}})
+
+
+def subagent_start(
+    *,
+    trace_id: str,
+    description: str,
+    parent_tool_call_id: str,
+    allowed_tools: list[str],
+    max_turns: int,
+    max_budget_usd: float | None,
+) -> Event:
+    return Event(
+        type="subagent_start",
+        data={
+            "trace_id": trace_id,
+            "description": description,
+            "parent_tool_call_id": parent_tool_call_id,
+            "allowed_tools": allowed_tools,
+            "max_turns": max_turns,
+            "max_budget_usd": max_budget_usd,
+        },
+    )
+
+
+def subagent_end(
+    *,
+    trace_id: str,
+    status: Literal["success", "error", "truncated", "cancelled"],
+    result_preview: str | None = None,
+    error_message: str | None = None,
+    cost_usd: float | None = None,
+    duration_ms: int | None = None,
+    token_usage: dict | None = None,
+) -> Event:
+    return Event(
+        type="subagent_end",
+        data={
+            "trace_id": trace_id,
+            "status": status,
+            "result_preview": result_preview,
+            "error": error_message,
+            "cost_usd": cost_usd,
+            "duration_ms": duration_ms,
+            "token_usage": token_usage or {},
+        },
+    )
