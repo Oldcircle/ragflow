@@ -311,8 +311,46 @@ def token_required(func):
         # First try API token (explicit API token authentication)
         objs = APIToken.query(token=token)
         if objs:
+            tenant_id = objs[0].tenant_id
+
+            # Phase 3.1c — per-token rate limit + daily api_requests metering.
+            # 失败抛 429；成功仍跑原逻辑。任何配额/限流异常都不能阻塞正常请求。
+            try:
+                from api.db.services.audit_log_service import AuditLogService
+                from api.db.services.tenant_quota_service import (
+                    TenantQuotaService,
+                    TenantUsageService,
+                )
+                from api.utils.rate_limit import RateLimited, check_rate
+
+                q = TenantQuotaService.get(tenant_id)
+                if q.api_rps_max > 0:
+                    try:
+                        check_rate(f"apitoken:{token}", float(q.api_rps_max))
+                    except RateLimited as rl:
+                        AuditLogService.deny(
+                            user_id=None,
+                            tenant_id=tenant_id,
+                            action="api.request",
+                            resource_type="api_token",
+                            resource_id=token[:12],
+                            reason="rate_limited",
+                            metadata={"rps": rl.rps},
+                            request=request,
+                        )
+                        err_rl = WerkzeugUnauthorized(
+                            description=f"rate_limited: {rl.rps}/s"
+                        )
+                        err_rl.code = RetCode.OPERATING_ERROR
+                        raise err_rl
+                TenantUsageService.increment(tenant_id, api_requests=1)
+            except WerkzeugUnauthorized:
+                raise
+            except Exception:
+                pass
+
             # On success, inject tenant_id into the route function's kwargs
-            kwargs["tenant_id"] = objs[0].tenant_id
+            kwargs["tenant_id"] = tenant_id
             result = func(*args, **kwargs)
             if inspect.iscoroutine(result):
                 return await result

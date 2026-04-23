@@ -4,10 +4,41 @@
 
 ---
 
-## 最近更新：2026-04-23
+## 最近更新：2026-04-23（P3.1 合规 + 运维基线完成）
 
-**当前阶段**：**Phase 2 全部落地（2.1 RBAC + 2.2 飞书 + 2.3 Multi-Agent）**
-**下一步入口**：Phase 2 收尾 / 商用化准备（按 `PLAN.md` 第九节 Phase 3：多租户隔离深化、审计扩展、SSO 扩展、计量计费）
+**当前阶段**：**Phase 2 全部 + Phase 3.1（合规 + 运维基线）完成**
+**下一步入口**：P3.2（Trigger/Cron + 钉钉/企微适配器）→ P3.3（文档版本管理 / PII 过滤 / 企业管理台）
+
+### P3.1 完成内容（2026-04-23）
+
+企业真正要卖出去的三件合规 + 运维基线硬需求：
+
+**P3.1a 审计日志 UI**（commit `345e66c66`）：
+- 新页面 `/user-setting/audit-log`，把 P2.1 已经在写的 `access_audit_log` 表可视化给管理员
+- 筛选：action / resource_type / resource_id / result（allow|deny）/ user_id / 时间范围 / 分页
+- 每条可展开看 reason / user-agent / metadata JSON；allow = 绿盾；deny = 红警示
+- 后端 `/v1/audit_log/list` 端点 P2.1 已做，本批只补前端
+
+**P3.1b 租户配额 + 用量计量**（commit `a9b1a999e`）：
+- 两张新表：`tenant_quota`（kb/doc/token-月/api-rps/bot-日/subagent-日 + hard_enforce 开关）+ `tenant_usage_daily`（按日 rollup 6 个指标）
+- `TenantQuotaService` / `TenantUsageService`：默认值兜底（不落库），原子 UPSERT 增量；`QuotaExceeded` + 三个 `check_*` helper
+- 三处打桩：Agent v2 `conversation` 结束时记 token / cost / subagent；bot webhook receive 记 bot_messages；`spawn_subagent` 工具记 subagent_spawns
+- 新端点 `GET /v1/tenant_quota`（当前限额 + 今日 + 本月 + KB/Doc 实时计数）+ `GET /v1/tenant_quota/range?days=30`
+- 新页面 `/user-setting/usage`：4 张带进度条的 stat card（KB / Doc / Tokens / Cost）+ 今日用量 chips + 30 天 Token 柱图（纯 CSS 自画，无第三方图表库）+ 硬执行模式徽标
+- `hard_enforce=0`（默认）只记审计不阻塞；`=1` 才直接 429/403
+
+**P3.1c APIToken 限流**（本批）：
+- 新模块 `api/utils/rate_limit.py` — 进程内 token bucket，`try_take / check_rate / RateLimited`
+- 插入 `token_required` 装饰器：命中 APIToken 后按 `tenant_quota.api_rps_max` 限流；超限写审计 `api.request deny reason=rate_limited` 并返 103；成功累加 `tenant_usage_daily.api_requests`
+- 所有限流/计量异常静默吞掉，不得阻塞正常业务
+
+### 验证
+- 7 新 DB 表全部自动迁移就位：`dataset_access`、`access_audit_log`、`bot_channel`、`bot_conversation_map`、`agent_v2_subagent_trace`、`tenant_quota`、`tenant_usage_daily`
+- 端点：`/v1/tenant_quota`、`/v1/audit_log/list`、`/v1/kb/*/member`、`/v1/bot_channel/*` 全部 401（已注册）；`/v1/bot/_supported` 200；`/v1/bot/<ch>/<acc>/events` 带签名 200 不带 109
+- 前端：`/user-setting/{usage,audit-log,bot-channels}` 3 个新管理页 + `/dataset/dataset-member/:id` 成员页 + 全部核心路由 200
+- 本地冒烟：quota service 默认值 + increment + range；rate limiter 5 rps 放 5 拒绝第 6、rps=0 无限；subagent guards（depth/count/empty）；RBAC 服务端完整 roundtrip
+
+
 
 ### P2.3 Multi-Agent 完成（2026-04-23）
 
