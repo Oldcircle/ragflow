@@ -306,6 +306,68 @@ Supervisor 侧：`supervisor_baozhang` / `supervisor_generic_policy` / `supervis
 
 ---
 
+## 十三、缺口分析：通用 KB Agent 愿景 vs 当前实现（2026-04-24 v0.2）
+
+用户在 v0.1 落地后指出：**光命令式写工具不够**，目标是"Agent 能自己维护 KB
+形态 + 自己总结笔记 + 通用 KB agent"。按这个愿景重新审视 claude-code-ref，
+找到的 7 个结构性缺口 + 对应要做的工具：
+
+### 缺口清单
+
+| # | 缺口 | 愿景对应 | Claude Code 参考模式 |
+|---|---|---|---|
+| G1 | Agent 不能**生成内容并入库** | "自己总结笔记" = Agent 写 Markdown 然后作为新 Document；现有只能 from URL | `FileWriteTool` 语义版（我们只做**文档级**，不做通用 FS） |
+| G2 | 没有**结构化体检** | "维护 KB 形态" = 知道"这个库里什么该动"；`rag_list_docs` 是分页读不是 audit | `GlobTool` + `GrepTool` + `SkillTool` 的 discovery batch |
+| G3 | 没有**快速健康快照** | 周期巡检要轻量；full audit 太重 | `BriefTool` / `ListPeersTool` 的 "temperature check" |
+| G4 | 反思自己操作的能力弱 | Agent 做完批量后要能核对；当前只能依赖用户去审计页看 | `TaskGetTool` / `TaskOutputTool` — 读自己的 task history |
+| G5 | 工具 `searchHint` 缺失 | 决定**何时**用哪个工具，不是 what；当前 description 大多只写 what | Claude Code 每个工具都有 `searchHint` 字段 |
+| G6 | 没有跨 session memory | "我上周整理过这个 KB，已经打了 archive 标签" 这种持久性知识 | Claude Code `memdir/` persistent memory |
+| G7 | `submit_plan` 审批后没有批量执行闭环 | 批准后 Agent 只是"继续做"，没有"按 plan 逐步执行 + 每步回报 + 最后总结" | `WorkflowTool` / Plan execution feedback loop |
+
+### Tier 1 — 本次要做（最小支撑愿景的 4 个新工具）
+
+| 工具 | 解决缺口 | 关键设计 |
+|---|---|---|
+| **`doc_create_note`** | G1 | Agent 传 ``title + markdown_body + target_kb_id + tags?``；我们内部把 Markdown 当 ``.md`` 文件塞进 `FileService.upload_document` 和 UI 上传完全一致的路径；解析后自动在 Chunks 里可检索；audit `kb.doc.note_create`。**关键**：`content_hash` dedup 要启用——防止 Agent 重复生成同样的笔记 |
+| **`kb_audit`** | G2 | 读 `Document` + `access_audit_log`，返回结构化报告：`{by_parse_status, stale_docs, duplicate_candidates, unparsed_docs, top_tags, totals}`。**关键**：pagination-safe（不返全量文档 ID，只返 counts + top-N 样本） |
+| **`kb_stats`** | G3 | `kb_audit` 的轻量版；只返 `{doc_count, chunk_count, token_num, size_bytes, embd_id, last_update_at, oldest_doc_at, newest_doc_at}`。**关键**：< 50ms 响应 |
+| **`doc_list_recent_changes`** | G4 | 查 `access_audit_log` where `tenant_id=X and resource_type in (knowledgebase, agent_v2_session) and action LIKE 'kb.%' and create_time > now-{window}`；返回按时间倒序的动作流。**关键**：带 page/limit，别一次返太多 |
+
+### Tier 2 — 下一轮（不在本次范围）
+
+- `doc_batch(operations=[...])` 一次提交多个 ops + 事务（G7 部分解决）
+- `ExecPresetTool` 命令白名单（pandoc / ocrmypdf）
+- Agent 跨 session memory（memdir 模式；可能需要新 `agent_memory` 表）
+- Plan execution loop：approve 后自动按步骤执行并回报
+
+### Tier 3 — 很久以后
+
+- `MonitorTool` / `PushNotificationTool`（Phase 3 任务生命周期）
+- `doc_delete` / `kb_delete` 人工审批队列
+
+### Sub-agent 重切分（本次做）
+
+用户愿景里 Agent 要**又会改又会看又会总结**。当前 `sub_archivist` 把"改"和"看/总结"混在一起——Claude Code 设计哲学是一 subagent = 一心智模式。重切：
+
+| Subagent | 职责 | 工具 |
+|---|---|---|
+| **`sub_archivist`**（保留） | **改**：打标签、重命名、跨 KB 移动、重解析、从 URL 入库、建 KB | `doc_tag`, `doc_rename`, `doc_archive`, `doc_reparse`, `doc_upload_from_url`, `kb_create` + `rag_list_docs`, `rag_read_doc` + `ask_user_question`, `submit_plan` |
+| **`sub_librarian`**（新增） | **看 + 总结 + 写笔记**：体检 KB、发现陈旧文档、找重复、总结成 Markdown 新笔记入库 | `kb_audit`, `kb_stats`, `doc_list_recent_changes`, `doc_create_note` + `rag_retrieve`, `rag_list_docs`, `rag_read_doc` + `ask_user_question`, `submit_plan` |
+
+两者都能派；supervisor 根据用户意图（整理 vs 研究 vs 混合）选。
+
+### 设计哲学对齐（抄 Claude Code 的形，不抄字面）
+
+- **`searchHint` 必加**：每个工具 MCP description 的第一句必须是"**WHEN**"，不是 what
+- **noop 识别**：工具必须检测"这次调用不会改变状态"并返 `status=noop` + reason（防 Agent 白烧 token）
+- **可逆线索**：每个写工具的 audit metadata 必带 `reversible_hint`（我已经做到了，继续坚持）
+- **幂等 key 默认打开**：写工具若 90s 内同参数重复入，返缓存而非执行（已实现，继续用）
+- **状态机反馈**：工具返回里**必须**含 `status` 字段（`ok` / `noop` / `cancelled` / `partial` / `error`），UI 可以按 status 渲染不同颜色
+
+---
+
+---
+
 ## 十三、活跃文档更新
 
 `PLAN.md`：Phase 2.6 加入路线图

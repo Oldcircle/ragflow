@@ -36,6 +36,7 @@ DEFINITION = AgentDefinition(
     allowed_subagent_types=(
         "sub_policy_researcher",
         "sub_evidence_checker",
-        "sub_archivist",  # Phase 2.6 — 委派知识库运营工作
+        "sub_archivist",  # Phase 2.6 — 委派"动手改"的 KB 运营
+        "sub_librarian",  # Phase 2.6.v2 — 委派"体检 / 写报告 / 做笔记"
     ),
 )

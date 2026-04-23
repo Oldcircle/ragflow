@@ -7,11 +7,15 @@ from claude_agent_sdk import create_sdk_mcp_server
 from .tools.ask_user_question import ask_user_question
 from .tools.doc_ops import (
     doc_archive,
+    doc_create_note,
+    doc_list_recent_changes,
     doc_rename,
     doc_reparse,
     doc_tag,
     doc_upload_from_url,
+    kb_audit,
     kb_create,
+    kb_stats,
 )
 from .tools.rag_graph_query import rag_graph_query
 from .tools.rag_list_docs import rag_list_docs
@@ -36,7 +40,12 @@ ALL_TOOLS = {
     "doc_reparse": doc_reparse,
     "doc_upload_from_url": doc_upload_from_url,
     "kb_create": kb_create,
-    # Phase 2.6 — 交互式工具
+    # Phase 2.6 v0.2 — 自我维护 / 总结笔记（sub_librarian 专用）
+    "doc_create_note": doc_create_note,
+    "kb_audit": kb_audit,
+    "kb_stats": kb_stats,
+    "doc_list_recent_changes": doc_list_recent_changes,
+    # Phase 2.6 — 交互式工具（两个 subagent 共用）
     "ask_user_question": ask_user_question,
     "submit_plan": submit_plan,
 }

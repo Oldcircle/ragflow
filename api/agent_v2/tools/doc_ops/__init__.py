@@ -12,17 +12,28 @@
 """
 
 from .doc_archive import doc_archive  # noqa: F401
+from .doc_create_note import doc_create_note  # noqa: F401
+from .doc_list_recent_changes import doc_list_recent_changes  # noqa: F401
 from .doc_rename import doc_rename  # noqa: F401
 from .doc_reparse import doc_reparse  # noqa: F401
 from .doc_tag import doc_tag  # noqa: F401
 from .doc_upload_from_url import doc_upload_from_url  # noqa: F401
+from .kb_audit import kb_audit  # noqa: F401
 from .kb_create import kb_create  # noqa: F401
+from .kb_stats import kb_stats  # noqa: F401
 
 __all__ = [
+    # 写 — sub_archivist 专用
     "doc_archive",
     "doc_rename",
     "doc_reparse",
     "doc_tag",
     "doc_upload_from_url",
     "kb_create",
+    # 写 — 但产出的是 Agent 自己生成的笔记；sub_librarian 专用
+    "doc_create_note",
+    # 读 — sub_librarian 专用（audit / snapshot / reflection）
+    "kb_audit",
+    "kb_stats",
+    "doc_list_recent_changes",
 ]

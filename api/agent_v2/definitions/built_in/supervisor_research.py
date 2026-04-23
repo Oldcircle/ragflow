@@ -36,5 +36,6 @@ DEFINITION = AgentDefinition(
         "sub_policy_researcher",
         "sub_evidence_checker",
         "sub_archivist",
+        "sub_librarian",
     ),
 )
