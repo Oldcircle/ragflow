@@ -38,6 +38,7 @@ export enum Routes {
   Profile = '/profile',
   Api = '/api',
   Mcp = '/mcp',
+  BotChannels = '/bot-channels',
   Team = '/team',
   Plan = '/plan',
   Model = '/model',
@@ -292,6 +293,10 @@ const routeConfigOptions = [
           {
             path: `${Routes.UserSetting}${Routes.Mcp}`,
             Component: () => import('@/pages/user-setting/mcp'),
+          },
+          {
+            path: `${Routes.UserSetting}${Routes.BotChannels}`,
+            Component: () => import('@/pages/user-setting/bot-channels'),
           },
 
           {

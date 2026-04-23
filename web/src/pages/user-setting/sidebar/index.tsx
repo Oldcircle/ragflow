@@ -13,6 +13,7 @@ import { Routes } from '@/routes';
 import { TFunction } from 'i18next';
 import {
   ArrowLeft,
+  Bot,
   LucideBox,
   LucideServer,
   LucideUnplug,
@@ -42,6 +43,12 @@ const menuItems = (t: TFunction) => [
     label: 'MCP',
     key: Routes.Mcp,
     testId: 'settings-nav-mcp',
+  },
+  {
+    icon: <Bot className="size-4" />,
+    label: t('setting.botChannels'),
+    key: Routes.BotChannels,
+    testId: 'settings-nav-bot',
   },
   {
     icon: <LucideUsers className="size-4" />,

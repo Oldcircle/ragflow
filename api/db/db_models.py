@@ -1446,6 +1446,87 @@ class AccessAuditLog(DataBaseModel):
         db_table = "access_audit_log"
 
 
+# ══════════════════════════════════════════════════════════════════════
+# Phase 2.2 — IM 机器人渠道（飞书/钉钉/企微）
+# ══════════════════════════════════════════════════════════════════════
+
+
+class BotChannel(DataBaseModel):
+    """IM 机器人通道配置（飞书/钉钉/企微/...）。
+
+    config_json 按 channel_type 不同结构（飞书：app_id / app_secret /
+    encrypt_key / verification_token / api_base）。v1 暂不字段加密，配置
+    数据库需要按租户级保护；进生产前应改为 KMS 加密敏感字段。
+    """
+
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    channel_type = CharField(
+        max_length=16, null=False, index=True,
+        help_text="feishu | dingtalk | wecom",
+    )
+    account_id = CharField(
+        max_length=64, null=False, index=True,
+        help_text="该平台下的机器人实例 ID（自定义、URL 路径用），同租户内唯一",
+    )
+    name = CharField(max_length=128, null=False)
+    config_json = JSONField(
+        null=False, default={},
+        help_text="平台特定凭据/参数（飞书：{app_id, app_secret, encrypt_key, verification_token, api_base}）",
+    )
+    default_kb_ids = JSONField(
+        null=False, default=[], help_text="新会话默认绑定的知识库",
+    )
+    default_agent_template_id = CharField(
+        max_length=32, null=True, help_text="agent_v2 templates.py 里的模板 id",
+    )
+    default_model_config_json = JSONField(
+        null=True, default=None,
+        help_text="模型配置（同 agent_v2_session.model_config_json shape）",
+    )
+    default_system_prompt = TextField(
+        null=True, default="",
+        help_text="bot 新会话的 system prompt；为空时用模板默认",
+    )
+    session_scope = CharField(
+        max_length=32, null=False, default="group_sender",
+        help_text="dm | group | group_sender | group_topic | group_topic_sender",
+    )
+    enabled = IntegerField(null=False, default=1, index=True, help_text="1=启用 0=停用")
+
+    class Meta:
+        db_table = "bot_channel"
+        indexes = (
+            (("channel_type", "account_id"), True),  # unique
+        )
+
+
+class BotConversationMap(DataBaseModel):
+    """IM 端会话标识 ↔ Agent v2 session 的持久映射。
+
+    保证同一 IM 会话（按 channel_type / account_id / conversation_key 唯一）
+    复用同一个 agent session，跨重启不丢上下文。
+    """
+
+    id = CharField(max_length=32, primary_key=True)
+    channel_type = CharField(max_length=16, null=False, index=True)
+    account_id = CharField(max_length=64, null=False, index=True)
+    conversation_key = CharField(
+        max_length=255, null=False, index=True,
+        help_text="平台特定的会话路由键（如飞书的 chat_id[:topic:..[:sender:..]]）",
+    )
+    agent_session_id = CharField(max_length=32, null=False, index=True)
+    im_user_id = CharField(max_length=128, null=True, help_text="open_id / userid 快照")
+    im_user_name = CharField(max_length=128, null=True, help_text="昵称快照")
+    last_activity_ms = BigIntegerField(null=False, index=True, default=0)
+
+    class Meta:
+        db_table = "bot_conversation_map"
+        indexes = (
+            (("channel_type", "account_id", "conversation_key"), True),  # unique
+        )
+
+
 def alter_db_add_column(migrator, table_name, column_name, column_type):
     try:
         migrate(migrator.add_column(table_name, column_name, column_type))

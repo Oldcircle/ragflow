@@ -6,8 +6,54 @@
 
 ## 最近更新：2026-04-22（深夜 +1）
 
-**当前阶段**：**Phase 2.1 RBAC 已落地（后端 + 前端）；进入 P2.2 飞书机器人**
-**下一步入口**：按 `PLAN-bot-channels.md` 实施飞书 inbound webhook 适配器 + 会话映射
+**当前阶段**：**Phase 2.1 + Phase 2.2 全部落地（后端 + 前端）；进入 P2.3 Multi-Agent**
+**下一步入口**：按 `PLAN-multi-agent.md` 实现 `spawn_subagent` 工具 + `agent_v2_subagent_trace` 表 + 事件流 + 前端可视化
+
+### P2.2 完成内容（2026-04-23）
+
+**新表（已自动迁移）**：
+- `bot_channel` — IM 渠道配置（tenant / channel_type / account_id / config_json / default_kb_ids / session_scope / enabled）
+- `bot_conversation_map` — IM 会话↔Agent v2 session 持久映射（同一 conversation_key 跨重启保留 session）
+
+**新 Python 包** `api/bot_channels/`：
+- `base.py` — `InboundMessage / OutboundReply / BotChannelAdapter` 协议
+- `registry.py` — 按 channel_type 分发
+- `dedup.py` — 进程内 LRU + TTL 去重（3 秒内重投保护；生产建议换 Redis）
+- `feishu/signature.py` — HMAC-SHA256 验签（`sha256(ts+nonce+encrypt_key+body)`，`hmac.compare_digest` 防 timing attack）
+- `feishu/conversation.py` — 会话路由键构造（移植 openclaw `conversation-id.ts`，支持 group / group_sender / group_topic / group_topic_sender 四种 scope）
+- `feishu/parser.py` — 事件 JSON → `InboundMessage`（text / post / image 正文提取 + `<at>` 剥离 + `mentions` 识别 + bot self-message 过滤 + DM 自动视为 @bot）
+- `feishu/client.py` — `tenant_access_token` 缓存（1.7 小时刷新，过期 code 99991663 自动失效）+ 文本消息发送（`/messages/<id>/reply` 话题保留或 `/messages` 新消息，失败兜底退化）+ bot `open_id` 拉取
+- `feishu/adapter.py` — 实现 `BotChannelAdapter`，含长文切片（UTF-8 8KB 每片）+ 引用脚注拼接
+
+**新服务**：
+- `BotChannelService` — CRUD（`list_by_tenant / find / get_by_id_for_tenant / create / update / delete`）
+- `BotConversationMapService` — 持久映射（`find / upsert / touch / list_by_account / delete`）
+
+**新 HTTP 端点**：
+- `POST   /v1/bot/<channel>/<account>/events` — 公网 webhook（**无登录**），完整管道：签名验签 → URL challenge → 去重 → 解析 → 异步 `create_task` 跑 Agent → 发回复
+- `POST   /v1/bot/<channel>/<account>/test` — 自检（拉 token + bot open_id）
+- `GET    /v1/bot/<channel>/<account>/conversation` — 活跃会话列表
+- `DELETE /v1/bot/conversation/<id>` — 归档会话映射
+- `GET    /v1/bot/_supported` — 列已注册 adapter（公开）
+- `GET/POST/PUT/DELETE /v1/bot_channel/...` — 管理员 CRUD（secret 字段脱敏返回）
+
+**处理管道**（`bot_app._handle_inbound`）：找/建 agent v2 session → 跑 `AgentRunner`（用 `bot_channel.default_*` 配置）→ 抽 rag_retrieve / rag_graph_query 引用 → 通过 adapter.send 把回复 + 脚注发回 IM；失败兜底发歉意消息；所有 receive/reply 写 `access_audit_log`。
+
+**前端**：
+- 新路由 `/user-setting/bot-channels`，用户设置侧栏新加「机器人渠道」入口
+- 空态卡片 + 列表视图（2 列网格），每卡显示：名称 + 启停徽标 + channel/account + 回调 URL（一键复制）+ App ID + 默认知识库数 + 会话粒度 + 更新时间 + 保存后指引
+- 操作按钮：测试连接（调 `/test` 拉 token/open_id）、编辑、删除
+- 添加/编辑对话框：渠道类型下拉（钉钉/企微置灰）+ 账号标识 + 名称 + App ID/Secret/Encrypt Key/Verification Token + API Base + 默认 KB 多选 + 会话粒度下拉 + System Prompt textarea + 启用开关
+- 编辑态：secret 字段留空表示保留原值（前端不回写脱敏后的假值）
+- en + zh i18n 全套（`setting.bot*`，30+ keys）
+
+**E2E 验证**：
+- 服务层单测（签名正/反、conversation key 三种 scope、parser 群/私聊/自我过滤、dedup、upsert / find / delete）全通过
+- HTTP：缺签名 → 109；带有效签名的 URL challenge → 200 回显；坏签名 → 109；未配置渠道 → 404
+- 前端：7 条核心路由 dev server 200，TS/ESLint 新文件零错误
+- 2 新 DB 表自动创建成功
+
+
 
 ### P2.1 完成内容（2026-04-23）
 
