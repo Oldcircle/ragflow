@@ -79,11 +79,15 @@ export default function AgentChatPage() {
           toast.error(result.error);
         }
         await refetchSessionDetail();
+        // refetch 完成后 `historyMessages` 已经包含刚才那轮 assistant 消息；
+        // 若不清掉 streaming turn，`hasStreamingTurn` 仍会看到 `turn.text`，
+        // 导致同一条 assistant 消息被渲染两遍。
+        reset();
       } finally {
         setPendingUser(null);
       }
     },
-    [currentSessionId, send, refetchSessionDetail],
+    [currentSessionId, send, refetchSessionDetail, reset],
   );
 
   const handleCreateSession = useCallback(

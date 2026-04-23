@@ -54,8 +54,12 @@ def resolve_model(conf: dict | None, tenant_id: str) -> ResolvedModel:
             tenant_id, full_name, LLMType.CHAT
         )
         if llm_config:
-            api_key = llm_config.get("api_key")
-            api_base = (llm_config.get("api_base") or "").rstrip("/")
+            # `TenantLLMService.get_api_key` 返回的是 peewee `TenantLLM` 模型实例
+            # （不是 dict）——直接用属性访问。历史上此处误用 ``.get(...)`` 导致
+            # peewee 以 ``"api_key"`` 为列过滤发起新查询并抛 TenantLLMDoesNotExist，
+            # 整条 TenantLLM 分支都走不通；M1.5 评测走的是 env-var fallback 因此没暴露。
+            api_key = getattr(llm_config, "api_key", None)
+            api_base = (getattr(llm_config, "api_base", None) or "").rstrip("/")
             provider_key = factory.lower()
 
             # 按 provider 路由

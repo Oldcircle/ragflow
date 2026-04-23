@@ -77,15 +77,16 @@ export const NewSessionDialog = memo(function NewSessionDialog({
   const [kbIds, setKbIds] = useState<string[]>([]);
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT);
   const [modelKey, setModelKey] = useState<string>(''); // `${factory}|${llm_name}`
-  const [maxTurns, setMaxTurns] = useState(20);
-  const [maxBudget, setMaxBudget] = useState(0.5);
+  // 用 string 存原始输入值，允许用户擦空 / 中间态编辑；提交时再 parse + 兜底。
+  const [maxTurns, setMaxTurns] = useState('20');
+  const [maxBudget, setMaxBudget] = useState('0.5');
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
 
   const applyTemplate = (tpl: AgentV2Template) => {
     setName(tpl.name);
     setSystemPrompt(tpl.system_prompt);
-    setMaxTurns(tpl.default_max_turns);
-    setMaxBudget(tpl.default_max_budget_usd);
+    setMaxTurns(String(tpl.default_max_turns));
+    setMaxBudget(String(tpl.default_max_budget_usd));
     setSelectedTemplateId(tpl.id);
     // KB 不自动填，让用户自己根据 kb_hints 挑
   };
@@ -113,6 +114,9 @@ export const NewSessionDialog = memo(function NewSessionDialog({
 
   const handleSubmit = () => {
     if (!canSubmit || !selectedModel) return;
+    // 擦空 / 非法值时回落到稳妥默认；范围夹紧由后端 create_session 再校验一次
+    const parsedTurns = Number.parseInt(maxTurns, 10);
+    const parsedBudget = Number.parseFloat(maxBudget);
     onSubmit({
       name: name.trim(),
       kb_ids: kbIds,
@@ -121,8 +125,10 @@ export const NewSessionDialog = memo(function NewSessionDialog({
         llm_name: selectedModel.llm_name,
         factory: selectedModel.factory,
       },
-      max_turns: maxTurns,
-      max_budget_usd: maxBudget,
+      max_turns:
+        Number.isFinite(parsedTurns) && parsedTurns > 0 ? parsedTurns : 20,
+      max_budget_usd:
+        Number.isFinite(parsedBudget) && parsedBudget > 0 ? parsedBudget : 0.5,
     });
   };
 
@@ -277,7 +283,7 @@ export const NewSessionDialog = memo(function NewSessionDialog({
                 min={1}
                 max={50}
                 value={maxTurns}
-                onChange={(e) => setMaxTurns(Number(e.target.value) || 20)}
+                onChange={(e) => setMaxTurns(e.target.value)}
               />
             </Field>
             <Field label={t('agentV2.maxBudget')}>
@@ -286,7 +292,7 @@ export const NewSessionDialog = memo(function NewSessionDialog({
                 step="0.1"
                 min={0.1}
                 value={maxBudget}
-                onChange={(e) => setMaxBudget(Number(e.target.value) || 0.5)}
+                onChange={(e) => setMaxBudget(e.target.value)}
               />
             </Field>
           </div>

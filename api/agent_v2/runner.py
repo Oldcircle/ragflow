@@ -18,13 +18,13 @@ from claude_agent_sdk import (
     ResultMessage,
     StreamEvent,
     SystemMessage,
-    TextBlock,
-    ThinkingBlock,
     ToolResultBlock,
     ToolUseBlock,
     UserMessage,
     query,
 )
+# TextBlock / ThinkingBlock 以前用于 AssistantMessage 路径；
+# 切到 include_partial_messages=True 后只靠 StreamEvent 流文本，本文件不再直接引用。
 
 from . import event as ev
 from .errors import AgentError
@@ -138,6 +138,11 @@ class AgentRunner:
             max_budget_usd=self.max_budget_usd,
             permission_mode=self.permission_mode,  # type: ignore[arg-type]
             env=env,
+            # 打开低级 Anthropic stream events（content_block_delta 等），
+            # 这样 _translate 能把 token-by-token 的增量通过 text_delta 发给前端，
+            # 否则前端只能在 AssistantMessage 结束一整段后才看到完整文本，
+            # 表现为"一次性出现"而不是流式。
+            include_partial_messages=True,
         )
 
     async def run(
@@ -269,14 +274,17 @@ class AgentRunner:
         tool_current_holder: dict[str, str] | None = None,
         ctx: ToolContext | None = None,
     ) -> AsyncIterator[ev.Event]:
-        """把 SDK 消息翻译成统一 Event。"""
+        """把 SDK 消息翻译成统一 Event。
+
+        使用 ``include_partial_messages=True`` 后，文本/思考靠 ``StreamEvent``
+        逐 token 流出；``AssistantMessage`` 里携带的是完整文本 **回放**，
+        如果再 yield 一次，前端就会拼到已经流出的 text 后面（= 文本翻倍）。
+        所以 AssistantMessage 路径只保留工具调用的 start（工具 id / input
+        是在 block 结束后才完整确定的）。
+        """
         if isinstance(msg, AssistantMessage):
             for block in msg.content:
-                if isinstance(block, TextBlock):
-                    yield ev.text_delta(block.text)
-                elif isinstance(block, ThinkingBlock):
-                    yield ev.thinking(block.thinking)
-                elif isinstance(block, ToolUseBlock):
+                if isinstance(block, ToolUseBlock):
                     tool_call_starts[block.id] = time.time()
                     # 让 spawn_subagent 等工具知道自己是哪个 tool_use
                     if ctx is not None:
@@ -286,6 +294,8 @@ class AgentRunner:
                     yield ev.tool_call_start(
                         tool_id=block.id, name=block.name, args=block.input
                     )
+                # TextBlock / ThinkingBlock 已由 StreamEvent 路径流式发出，
+                # 不再在此处重复 yield，避免文本翻倍。
         elif isinstance(msg, UserMessage):
             # UserMessage 里可能包含 tool_result（SDK 把工具结果以 user role 返回）
             content = msg.content
@@ -321,8 +331,22 @@ class AgentRunner:
             # 初始化/订阅等信息，M1.1 暂不往前端传
             pass
         elif isinstance(msg, StreamEvent):
-            # 低级流式事件（include_partial_messages=True 时才有），暂略
-            pass
+            # 低级 Anthropic 流事件：content_block_delta 才带文本增量。
+            # 我们只转发 text_delta / thinking_delta；tool_use 的 input 边流边改
+            # 不适合提前暴露给前端 UI，等 AssistantMessage 一次给齐更稳。
+            raw = getattr(msg, "event", None) or {}
+            etype = raw.get("type")
+            if etype == "content_block_delta":
+                delta = raw.get("delta") or {}
+                dtype = delta.get("type")
+                if dtype == "text_delta":
+                    text = delta.get("text") or ""
+                    if text:
+                        yield ev.text_delta(text)
+                elif dtype == "thinking_delta":
+                    thinking = delta.get("thinking") or ""
+                    if thinking:
+                        yield ev.thinking(thinking)
         else:
             logger.debug("AgentRunner: unhandled message type %s", type(msg).__name__)
 
@@ -551,12 +575,19 @@ def _collect_evidence_from_tool(evidence, tool_name: str, result) -> None:
 
     仅处理知识库工具：``rag_retrieve`` / ``rag_read_doc`` / ``rag_graph_query``；
     其他工具（比如 ``spawn_subagent`` 的最终文本）不算 evidence 来源。
+
+    注意：Claude Agent SDK 在工具名前加 ``mcp__<server>__`` 前缀，
+    所以这里用 ``endswith`` 匹配而非精确相等——否则 evidence 永远是空的，
+    导致 citation validator 在「明明调了 rag_retrieve」时照样报
+    ``only 0 chunks available`` 和 ``number_unsupported`` 的假阳性。
     """
     if not tool_name or result is None:
         return
-    if tool_name == "rag_retrieve":
+    # 统一剥掉 SDK prefix
+    short = tool_name.rsplit("__", 1)[-1]
+    if short == "rag_retrieve":
         evidence.add_from_rag_retrieve(result)
-    elif tool_name == "rag_read_doc":
+    elif short == "rag_read_doc":
         evidence.add_from_rag_read_doc(result)
-    elif tool_name == "rag_graph_query":
+    elif short == "rag_graph_query":
         evidence.add_from_rag_graph_query(result)

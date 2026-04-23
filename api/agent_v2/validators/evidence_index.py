@@ -216,38 +216,54 @@ class EvidenceIndex:
 # ────────────────────────────── 抽取实现 ──────────────────────────────
 
 
-# 简易中文数字 → 阿拉伯（够用即可；罕见表达不追完整正确）
-_CN_NUM_TABLE = {
-    "零": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5,
-    "六": 6, "七": 7, "八": 8, "九": 9, "十": 10, "百": 100, "千": 1000,
-    "万": 10000, "亿": 100000000,
+_CN_DIGIT = {
+    "零": 0, "〇": 0,
+    "一": 1, "壹": 1,
+    "二": 2, "两": 2, "贰": 2,
+    "三": 3, "叁": 3,
+    "四": 4, "肆": 4,
+    "五": 5, "伍": 5,
+    "六": 6, "陆": 6,
+    "七": 7, "柒": 7,
+    "八": 8, "捌": 8,
+    "九": 9, "玖": 9,
 }
+_CN_SMALL_UNIT = {"十": 10, "拾": 10, "百": 100, "佰": 100, "千": 1000, "仟": 1000}
+_CN_BIG_UNIT = {"万": 10000, "亿": 100000000}
 
 
 def _cn_to_num(s: str) -> str:
-    """把纯中文数字串简单转成阿拉伯；失败返原串."""
-    try:
-        total = 0
-        unit = 1
-        buf = 0
-        for ch in reversed(s):
-            if ch not in _CN_NUM_TABLE:
-                return s
-            v = _CN_NUM_TABLE[ch]
-            if v >= 10:
-                if v > unit:
-                    unit = v
-                else:
-                    unit = unit * v
-                if buf:
-                    total += buf * unit
-                    buf = 0
-            else:
-                buf = v
-        total += buf * unit if buf else 0
-        return str(total) if total else s
-    except Exception:
+    """中文数字 → 阿拉伯；失败返原串。
+
+    左到右正向扫描，分 section（万以内）累加。支持：
+      十 = 10 / 十八 = 18 / 二十 = 20 / 二十五 = 25 / 一百零八 = 108
+      三万五千 = 35000 / 两百三 = 230
+    不支持小数、分数、负数——那些用阿拉伯数字本来就更常见。
+    """
+    if not s:
         return s
+    total = 0        # 累计到「亿 / 万」为止的大段
+    section = 0      # 当前这一万以内的段
+    current = 0      # 当前挂起的数字（还没乘单位）
+    for ch in s:
+        if ch in _CN_DIGIT:
+            current = _CN_DIGIT[ch]
+        elif ch in _CN_SMALL_UNIT:
+            # 关键：单字开头的 "十" / "百" / "千" 要当 1，比如 "十" = 10
+            section += (current if current else 1) * _CN_SMALL_UNIT[ch]
+            current = 0
+        elif ch in _CN_BIG_UNIT:
+            total += (section + current) * _CN_BIG_UNIT[ch]
+            section = 0
+            current = 0
+        else:
+            # 碰到无法识别的字符，保守地返回原串
+            return s
+    total += section + current
+    # 特殊情况：整个输入就是 "零"，结果也是 "0"；其余 total==0 表示没解析出数字
+    if total == 0 and "零" not in s and "〇" not in s:
+        return s
+    return str(total)
 
 
 def _strip_commas(s: str) -> str:
