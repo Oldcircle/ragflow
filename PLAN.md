@@ -134,8 +134,28 @@
 
 **范围**：
 - **P2.1 数据集 RBAC + 审计**：新 `dataset_access` 表（owner / admin / contributor / viewer 四角色）+ 补齐 `async_ask` / `agent_v2 session create` / `rag_retrieve` 三处 KB 访问检查 + 新 `access_audit_log` 表。详见 `PLAN-rbac.md`
-- **P2.2 飞书机器人渠道**：参考 `vendor/openclaw/extensions/feishu/` 的 adapter 模式，新 `bot_channel` + `bot_conversation_map` 表，webhook 入口 + 签名验证 + 顺序队列 + 自动绑定 Agent v2 session。详见 `PLAN-bot-channels.md`
-- **P2.3 Multi-Agent**：参考 `vendor/claude-code-ref/packages/builtin-tools/src/tools/AgentTool/` 的 subagent 模式，新增 `spawn_subagent` 工具 + `agent_v2_subagent_trace` 表，父 Agent 可委派聚焦任务给子 Agent，独立 context 不污染父对话。详见 `PLAN-multi-agent.md`
+- **P2.2 飞书机器人渠道**：参考 `~/Opensource/vendor/openclaw/extensions/feishu/` 的 adapter 模式，新 `bot_channel` + `bot_conversation_map` 表，webhook 入口 + 签名验证 + 顺序队列 + 自动绑定 Agent v2 session。详见 `PLAN-bot-channels.md`
+- **P2.3 Multi-Agent**：参考 `~/Opensource/vendor/claude-code-ref/packages/builtin-tools/src/tools/AgentTool/` 的 subagent 模式，新增 `spawn_subagent` 工具 + `agent_v2_subagent_trace` 表，父 Agent 可委派聚焦任务给子 Agent，独立 context 不污染父对话。详见 `PLAN-multi-agent.md`
+
+---
+
+### Phase 2.5 — Agent Runtime 成熟化（当前）
+
+**目标**：Phase 2 做完后外部评审指出三个结构性缺口，决定能否从"内部 demo"走到"付费客户能买"。不做通用 agent runtime，做**企业 KB Agent 的成熟化**。
+
+**优先级**（**不等于**外评原文，我们把可信度摆第一）：
+- **P2.5.1 Citation Validator + 证据链约束**：决定能不能卖。`[N]` 脚注和数值型断言必须能映射到本轮实际检索到的 chunk，否则降级或拒绝
+- **P2.5.2 真正的多轮上下文**：当前 `runner.py:180` 的 `query(prompt=user_message)` 每轮丢历史；追问场景必崩。补手动拼 history + compact summary（Anthropic cache / SDK session resume 在非 Anthropic provider 不适用）
+- **P2.5.3 Agent Definition Manifest**：把硬编码的 `registry.py` + DB session 列 + 模板文件统一成声明式 manifest；`spawn_subagent` 新增 `subagent_type` 命名路径
+
+**全程对标 `~/Opensource/vendor/claude-code-ref/`**（`AgentTool/loadAgentsDir.ts` / `runAgent.ts` / `forkSubagent.ts` / `resumeAgent.ts` / `built-in/*.ts`），**但只抄模式不抄代码**—— Bun/TS 代码 Agent 场景和 Python KB Agent 场景不能直搬。
+
+详见 `PLAN-agent-runtime-maturity.md`。
+
+**明确不做**（延到 Phase 3）：
+- 任务生命周期从 HTTP 解耦（`agent_task` 表 + worker queue）
+- 完整 transcript replay
+- 工具 policy hook / permission mode / fork agent
 
 **非目标（推迟到 Phase 2.5 / 3）**：
 - 钉钉 / 企微适配器（预留扩展点，飞书先跑通）
@@ -219,6 +239,7 @@
 | `PLAN-rbac.md` | P2.1 数据集 RBAC + 审计详细设计 |
 | `PLAN-bot-channels.md` | P2.2 飞书机器人渠道详细设计 |
 | `PLAN-multi-agent.md` | P2.3 Multi-Agent subagent 详细设计 |
+| `PLAN-agent-runtime-maturity.md` | Phase 2.5 Agent Runtime 成熟化（Citation validator / 多轮上下文 / Agent definition，参考 `vendor/claude-code-ref`）|
 | `PRODUCT-UI-PLAN.md` | Phase 1.7 前端产品化（已完成，可归档）|
 | `STATUS.md` | 会话交接文档，每次实质进展必更 |
 | `DESIGN.md` | Phase 1 Agent v2 架构设计（稳定，不再改） |
@@ -231,3 +252,4 @@
 | 日期 | 版本 | 决策 |
 |---|---|---|
 | 2026-04-21 | v0.1 | 初稿；确定路径：RAGFlow + Claude Agent SDK，不用 CCB |
+| 2026-04-23 | v0.2 | 插入 Phase 2.5（Agent Runtime 成熟化）：Citation validator / 多轮上下文 / Agent definition manifest，全程参考 `vendor/claude-code-ref` |

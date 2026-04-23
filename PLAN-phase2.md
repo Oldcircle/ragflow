@@ -33,8 +33,11 @@
 | **P2.1** | 数据集 RBAC + 审计 | 新表 `dataset_access` / `access_audit_log`，新端点，前端"成员"Tab | 2 天 |
 | **P2.2** | 飞书机器人 | 新表 `bot_channel` / `bot_conversation_map`，webhook 适配器，前端"渠道"页 | 3 天 |
 | **P2.3** | Multi-Agent | 新工具 `spawn_subagent`，新表 `agent_v2_subagent_trace`，前端子 Agent 可视化 | 2 天 |
+| **P2.5** | Agent Runtime 成熟化 | Citation validator + 多轮上下文 + Agent definition manifest；参考 `vendor/claude-code-ref` | 9 天 |
 
 每一阶段都是自成闭环的，不依赖后一阶段。
+
+**Phase 2.5 为什么单列**：Phase 2.1/2.2/2.3 做完后，外部评审指出三个结构性缺口（答案可信度没有硬保障、session 模型侧实际无状态、Agent/Tool 定义硬编码），决定能否从"内部 demo"走到"付费客户能买"。详见 `PLAN-agent-runtime-maturity.md`。
 
 ---
 
@@ -71,6 +74,7 @@
 | `PLAN-rbac.md` | P2.1 数据集 RBAC 详细设计 |
 | `PLAN-bot-channels.md` | P2.2 IM 机器人渠道详细设计 |
 | `PLAN-multi-agent.md` | P2.3 Multi-Agent 详细设计 |
+| `PLAN-agent-runtime-maturity.md` | P2.5 Agent Runtime 成熟化详细设计 |
 | `STATUS.md` | 会话交接文档，实时进度 |
 | `DESIGN.md` | Phase 1 Agent v2 架构（稳定，不再改）|
 | `FORK.md` | 与上游的差异 |

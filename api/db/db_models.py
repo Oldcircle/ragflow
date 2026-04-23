@@ -1626,6 +1626,96 @@ class BotConversationMap(DataBaseModel):
         )
 
 
+# ══════════════════════════════════════════════════════════════════════
+# Phase 3.2 — Agent Trigger（Cron + 手动 / Webhook）
+# ══════════════════════════════════════════════════════════════════════
+
+
+class AgentTrigger(DataBaseModel):
+    """定时 / 手动触发的 Agent v2 执行配置。
+
+    支持两种触发方式（``trigger_type``）：
+      - ``cron``    : 用 ``cron_expr``（5 段标准 crontab）按计划跑
+      - ``manual``  : 只接受 UI 点「立即运行」按钮，或 API 直接调
+      （未来 Phase 3.2.2 加 ``webhook`` 类型；结构已预留）
+
+    执行结果的投递方式（``delivery_kind``）：
+      - ``audit_only``  : 只记 trigger_run 表，不往外发
+      - ``feishu_bot``  : 往 ``delivery_config.bot_channel_id`` 指向的飞书机器人的
+                          ``delivery_config.chat_id`` 发消息
+    """
+
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    name = CharField(max_length=128, null=False, help_text="UI 显示名")
+    description = TextField(null=True, default="")
+
+    trigger_type = CharField(max_length=16, null=False, index=True, default="cron",
+                             help_text="cron | manual | webhook (reserved)")
+    cron_expr = CharField(max_length=64, null=True, default=None,
+                          help_text="5-field crontab, eg '0 9 * * *'（仅 type=cron）")
+    timezone = CharField(max_length=64, null=True, default="Asia/Shanghai")
+
+    agent_session_id = CharField(
+        max_length=32, null=False, index=True,
+        help_text="运行时用哪个 Agent v2 session 的配置（kb_ids / system_prompt / model）",
+    )
+    prompt = TextField(null=False, default="",
+                       help_text="每次触发发给 Agent 的用户消息（v1 不支持变量替换）")
+    max_turns = IntegerField(null=False, default=20)
+    max_budget_usd = FloatField(null=True, default=1.0)
+
+    delivery_kind = CharField(max_length=24, null=False, default="audit_only",
+                              help_text="audit_only | feishu_bot")
+    delivery_config = JSONField(null=False, default={},
+                                help_text="投递参数（bot_channel_id / chat_id 等）")
+
+    enabled = IntegerField(null=False, default=1, index=True)
+
+    next_run_at = BigIntegerField(null=True, index=True,
+                                  help_text="下次到期毫秒时间戳；worker 就读这列决定跑谁")
+    last_run_at = BigIntegerField(null=True)
+    last_run_status = CharField(max_length=16, null=True)
+    last_run_error = TextField(null=True)
+    created_by = CharField(max_length=255, null=True)
+
+    class Meta:
+        db_table = "agent_trigger"
+
+
+class AgentTriggerRun(DataBaseModel):
+    """一次 trigger 执行的历史记录。"""
+
+    id = CharField(max_length=32, primary_key=True)
+    trigger_id = CharField(max_length=32, null=False, index=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+
+    kicked_by = CharField(
+        max_length=32, null=False, default="scheduler",
+        help_text="scheduler | manual | webhook",
+    )
+
+    status = CharField(
+        max_length=16, null=False, default="running", index=True,
+        help_text="running | success | error | timeout | cancelled",
+    )
+    started_at = BigIntegerField(null=False, index=True)
+    completed_at = BigIntegerField(null=True)
+    duration_ms = IntegerField(null=True)
+
+    result_preview = LongTextField(null=True, default="",
+                                   help_text="最终 assistant 文本前 4 KB")
+    error = TextField(null=True, default="")
+    token_usage_json = JSONField(null=True, default=None)
+    cost_usd = FloatField(null=True, default=None)
+    delivery_status = CharField(max_length=16, null=True,
+                                help_text="skipped | success | error")
+    delivery_error = TextField(null=True)
+
+    class Meta:
+        db_table = "agent_trigger_run"
+
+
 def alter_db_add_column(migrator, table_name, column_name, column_type):
     try:
         migrate(migrator.add_column(table_name, column_name, column_type))

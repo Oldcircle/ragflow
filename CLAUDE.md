@@ -167,6 +167,7 @@ cd web && nohup npm run dev > ../logs/frontend.log 2>&1 &
 - `PLAN-rbac.md` — P2.1 数据集 RBAC + 审计详细设计
 - `PLAN-bot-channels.md` — P2.2 飞书机器人渠道详细设计
 - `PLAN-multi-agent.md` — P2.3 Multi-Agent subagent 详细设计
+- `PLAN-agent-runtime-maturity.md` — Phase 2.5 Agent Runtime 成熟化（Citation validator / 多轮上下文 / Agent definition manifest，参考 `~/Opensource/vendor/claude-code-ref/`）
 - `PRODUCT-UI-PLAN.md` — Phase 1.7 企业知识库前端产品化重构计划（已完成）
 - `STATUS.md` — 会话交接，当前进度快照
 - `DESIGN.md` — Phase 1 Agent v2 架构设计（稳定，不再改）

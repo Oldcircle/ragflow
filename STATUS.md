@@ -4,10 +4,29 @@
 
 ---
 
-## 最近更新：2026-04-23（P3.1 合规 + 运维基线完成）
+## 最近更新：2026-04-23（Phase 2.5 设计完成，待实施）
 
-**当前阶段**：**Phase 2 全部 + Phase 3.1（合规 + 运维基线）完成**
-**下一步入口**：P3.2（Trigger/Cron + 钉钉/企微适配器）→ P3.3（文档版本管理 / PII 过滤 / 企业管理台）
+**当前阶段**：**Phase 2 全部 + Phase 3.1（合规 + 运维基线）完成；Phase 2.5 已写设计，待开工**
+**下一步入口**：
+1. **P2.5.1** Citation Validator + 证据链约束（优先，决定能不能卖）
+2. **P2.5.2** 真正的多轮上下文（`runner.py:180` 每轮丢历史，追问场景必崩）
+3. **P2.5.3** Agent Definition Manifest + `spawn_subagent` 命名路径
+4. 之后才是 P3.2（Trigger/Cron + 钉钉/企微）→ P3.3（版本管理 / PII / 企业管理台）
+
+**设计文档**：`PLAN-agent-runtime-maturity.md`（2026-04-23 新增）
+
+### Phase 2.5 背景（2026-04-23 外评）
+
+外评指出 Agent v2 三个结构性缺口：
+1. **答案可信度没有硬保障**：`[N]` 脚注和数值型断言未做后置校验，LLM 可以编数字随手标脚注
+2. **session 在 UI 上有、模型侧无状态**：`agent_v2_app.py:371` 每轮新开 runner 只传当前 user_message，`runner.py:180` 进 SDK 的是 `query(prompt=user_message)` 没历史；追问必崩
+3. **Agent / Tool 定义硬编码**：`registry.py` + DB session 列 + 模板文件三处分散，加不了命名 subagent
+
+我们**不完全同意外评的优先级**（外评把多轮上下文排第一），判断：对企业 KB 产品**可信度 > 可用性 > 可扩展性**，因此优先级是 Validator → 多轮 → Definition。
+
+**全程对标 `~/Opensource/vendor/claude-code-ref/`**：`AgentTool/loadAgentsDir.ts`、`runAgent.ts`、`forkSubagent.ts`、`resumeAgent.ts`、`built-in/*.ts`。只抄模式不抄代码（Bun/TS 代码 Agent 场景和 Python KB Agent 场景不能直搬）。每个模块的"抄什么 / 不抄什么"在 `PLAN-agent-runtime-maturity.md` 第三节有精确映射表。
+
+**明确不做（延 Phase 3）**：任务生命周期从 HTTP 解耦（agent_task + worker queue）、完整 transcript replay、工具 policy hook、permission mode、fork agent、prompt cache 优化。理由详见设计文档第十节。
 
 ### P3.1 完成内容（2026-04-23）
 

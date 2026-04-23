@@ -41,6 +41,7 @@ export enum Routes {
   BotChannels = '/bot-channels',
   AuditLog = '/audit-log',
   Usage = '/usage',
+  Triggers = '/triggers',
   Team = '/team',
   Plan = '/plan',
   Model = '/model',
@@ -307,6 +308,10 @@ const routeConfigOptions = [
           {
             path: `${Routes.UserSetting}${Routes.Usage}`,
             Component: () => import('@/pages/user-setting/usage'),
+          },
+          {
+            path: `${Routes.UserSetting}${Routes.Triggers}`,
+            Component: () => import('@/pages/user-setting/triggers'),
           },
 
           {

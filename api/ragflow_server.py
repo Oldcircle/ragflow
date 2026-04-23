@@ -136,11 +136,22 @@ if __name__ == '__main__':
         t = threading.Thread(target=update_progress, daemon=True)
         t.start()
 
+    def delayed_start_trigger_worker():
+        logging.info("Starting agent_trigger worker (delayed)")
+        from api.agent_v2.trigger_worker import run_worker
+        t = threading.Thread(
+            target=run_worker, args=(stop_event,), daemon=True,
+            name="agent-trigger-worker",
+        )
+        t.start()
+
     if RuntimeConfig.DEBUG:
         if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
             threading.Timer(1.0, delayed_start_update_progress).start()
+            threading.Timer(2.0, delayed_start_trigger_worker).start()
     else:
         threading.Timer(1.0, delayed_start_update_progress).start()
+        threading.Timer(2.0, delayed_start_trigger_worker).start()
 
     # start http server
     try:

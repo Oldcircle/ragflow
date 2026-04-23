@@ -16,6 +16,7 @@ import {
   Bot,
   LucideBarChart3,
   LucideBox,
+  LucideCalendarClock,
   LucideServer,
   LucideShieldCheck,
   LucideUnplug,
@@ -63,6 +64,12 @@ const menuItems = (t: TFunction) => [
     label: t('usage.navLabel'),
     key: Routes.Usage,
     testId: 'settings-nav-usage',
+  },
+  {
+    icon: <LucideCalendarClock className="size-4" />,
+    label: t('trigger.navLabel'),
+    key: Routes.Triggers,
+    testId: 'settings-nav-triggers',
   },
   {
     icon: <LucideUsers className="size-4" />,

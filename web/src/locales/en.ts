@@ -2824,6 +2824,63 @@ Important structured information may include: names, dates, locations, events, k
       addNow: 'Add Now',
     },
 
+    trigger: {
+      navLabel: 'Triggers',
+      title: 'Scheduled agent triggers',
+      description:
+        'Run agents on a cron schedule and deliver results to Feishu / audit log. Perfect for daily briefings, weekly competitor scans, hourly security patrols — turns the agent from reactive Q&A into active intelligence.',
+      addNew: 'New trigger',
+      edit: 'Edit',
+      runNow: 'Run now',
+      runSuccess: 'Run successful',
+      runFailed: 'Run failed',
+      deleteConfirm:
+        'Delete this trigger? Its run history will also be removed.',
+      lastRun: 'Last run',
+      nextRun: 'Next',
+      nextRuns: 'Next 5 fire times',
+      showHistory: 'Show run history',
+      hideHistory: 'Hide run history',
+      noRuns: 'No runs yet.',
+      noPreview: '(no output)',
+      deliveryError: 'Delivery error',
+      fieldName: 'Name',
+      fieldNamePlaceholder: 'e.g. daily housing policy brief',
+      fieldDescription: 'Description (optional)',
+      fieldDescriptionPlaceholder: 'Short note on what this trigger does',
+      fieldCron: 'Cron expression',
+      fieldCronHint:
+        '5-field format: min hour dom mon dow. Click a preset below to auto-fill.',
+      fieldSession: 'Agent session',
+      fieldSessionHint:
+        "The trigger will execute with this session's KBs, system prompt, and model config.",
+      fieldSessionPlaceholder: 'Select an existing agent session',
+      fieldPrompt: 'Prompt',
+      fieldPromptHint:
+        'Sent to the agent as a user message each time the cron fires.',
+      fieldPromptPlaceholder:
+        'e.g. Summarize the last 24h of Shenzhen housing policy updates.',
+      fieldDelivery: 'Result delivery',
+      deliveryAuditOnly: 'Audit log only',
+      deliveryFeishuBot: 'Send to Feishu',
+      fieldBotChannel: 'Feishu bot',
+      fieldBotChannelPlaceholder: 'Pick an enabled Feishu bot',
+      noBotChannel:
+        'No enabled Feishu bot. Add one in the Bot channels page first.',
+      fieldChatId: 'Feishu chat_id',
+      fieldChatIdHint:
+        'Chat ID of the group / DM the bot is in (starts with oc_).',
+      fieldEnabled: 'Enabled',
+      emptyTitle: 'No triggers yet',
+      emptyHint:
+        'Create one to let your agent produce intelligence on a schedule.',
+      errName: 'Please enter a name.',
+      errCron: 'Please enter a cron expression.',
+      errSession: 'Please select an agent session.',
+      errPrompt: 'Please enter a prompt.',
+      errDelivery: 'Pick a Feishu bot and enter a chat_id.',
+    },
+
     usage: {
       navLabel: 'Usage & quota',
       title: 'Tenant usage',
