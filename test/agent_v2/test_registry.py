@@ -19,13 +19,18 @@ def test_all_tools_registered():
         "rag_graph_query",
         # P2.3
         "spawn_subagent",
-        # Phase 2.6 写
+        # Phase 2.6 写（sub_archivist）
         "doc_tag",
         "doc_rename",
         "doc_archive",
         "doc_reparse",
         "doc_upload_from_url",
         "kb_create",
+        # Phase 2.6 v0.2 自省 / 总结 / 写笔记（sub_librarian）
+        "doc_create_note",
+        "kb_audit",
+        "kb_stats",
+        "doc_list_recent_changes",
         # Phase 2.6 交互
         "ask_user_question",
         "submit_plan",

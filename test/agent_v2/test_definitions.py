@@ -33,7 +33,7 @@ class TestRegistry:
 
     def test_all_built_in_load_without_errors(self):
         defs = list_definitions()
-        assert len(defs) >= 9  # 6 supervisor + 3 subagent (Phase 2.6 sub_archivist)
+        assert len(defs) >= 10  # 6 supervisor + 4 subagent (Phase 2.6 v0.2 sub_librarian)
 
     def test_no_duplicate_names(self):
         defs = list_definitions()
@@ -50,7 +50,7 @@ class TestRegistry:
 
     def test_kind_filter_subagent(self):
         subs = list_definitions(kind="subagent")
-        assert len(subs) >= 3  # sub_policy_researcher + sub_evidence_checker + sub_archivist
+        assert len(subs) >= 4  # + sub_librarian in Phase 2.6 v0.2
         assert all(d.kind == "subagent" for d in subs)
         # subagent 必须填 when_to_use
         for d in subs:

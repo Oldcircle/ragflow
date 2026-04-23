@@ -672,6 +672,47 @@ def S23_ssrf_defense() -> str:
     return "file:// + private-IP both blocked"
 
 
+def S25_reflect_tools_registered() -> str:
+    """Phase 2.6 v0.2 新加的 4 个自省工具 + sub_librarian 都在。"""
+    from api.agent_v2.registry import ALL_TOOLS
+    from api.agent_v2.definitions import get_definition
+    from api.agent_v2.definitions.registry import clear_cache_for_tests
+
+    need = {"doc_create_note", "kb_audit", "kb_stats", "doc_list_recent_changes"}
+    missing = need - set(ALL_TOOLS.keys())
+    assert not missing, f"registry missing: {missing}"
+
+    clear_cache_for_tests()
+    lib = get_definition("sub_librarian")
+    assert lib is not None, "sub_librarian not registered"
+    assert lib.can_spawn_subagents is False
+    assert lib.citation_enforce == "warn"
+    # 权限红线：不能有任何写工具
+    forbidden = {"doc_tag", "doc_rename", "doc_archive", "doc_reparse",
+                 "doc_upload_from_url", "kb_create"}
+    assert forbidden.isdisjoint(set(lib.tools)), (
+        f"librarian holds destructive tools: {set(lib.tools) & forbidden}"
+    )
+    return f"{len(need)} reflect tools + sub_librarian wired"
+
+
+def S26_librarian_supervisors_updated() -> str:
+    """4 个 supervisor 同时拥有 sub_archivist + sub_librarian。"""
+    from api.agent_v2.definitions import get_definition
+    from api.agent_v2.definitions.registry import clear_cache_for_tests
+
+    clear_cache_for_tests()
+    both = 0
+    for n in ("sz-baojian-house", "generic-policy", "research-analyst",
+              "legal-contract"):
+        d = get_definition(n)
+        if d and "sub_archivist" in (d.allowed_subagent_types or ()) \
+                and "sub_librarian" in (d.allowed_subagent_types or ()):
+            both += 1
+    assert both >= 3, f"only {both} supervisors have both subagents wired"
+    return f"{both} supervisors wired with both archivist + librarian"
+
+
 def S24_interactive_tools_emit_events() -> str:
     """ask_user_question / submit_plan 真 emit SSE 事件 + 正确形状。"""
     import asyncio
@@ -853,6 +894,10 @@ def main():
     run_check("S22 @require_kb_write decorator roundtrip", S22_doc_ops_common_decorator)
     run_check("S23 doc_upload_from_url SSRF defenses", S23_ssrf_defense)
     run_check("S24 ask/plan emit SSE events", S24_interactive_tools_emit_events)
+    run_check("S25 reflect tools + sub_librarian registered",
+              S25_reflect_tools_registered)
+    run_check("S26 supervisors wired with both archivist + librarian",
+              S26_librarian_supervisors_updated)
 
     # ── 外层回归 ──
     if not args.skip_pytest:
