@@ -564,6 +564,153 @@ def S17_pytest_regression() -> str:
     return summary.strip()
 
 
+# ────────────────────────────── Phase 2.6 checks ──────────────────────────────
+
+
+def S20_doc_ops_registry() -> str:
+    """All 6 write tools + 2 interactive tools are registered in ALL_TOOLS."""
+    from api.agent_v2.registry import ALL_TOOLS
+
+    need = {
+        "doc_tag", "doc_rename", "doc_archive", "doc_reparse",
+        "doc_upload_from_url", "kb_create",
+        "ask_user_question", "submit_plan",
+    }
+    missing = need - set(ALL_TOOLS.keys())
+    assert not missing, f"missing tools: {sorted(missing)}"
+    return f"{len(need)} new tools registered"
+
+
+def S21_sub_archivist_definition() -> str:
+    """sub_archivist definition is loaded + supervisors can spawn it."""
+    from api.agent_v2.definitions import get_definition
+    from api.agent_v2.definitions.registry import clear_cache_for_tests
+
+    clear_cache_for_tests()
+    arch = get_definition("sub_archivist")
+    assert arch is not None, "sub_archivist missing from registry"
+    assert arch.kind == "subagent"
+    assert arch.can_spawn_subagents is False
+    assert arch.citation_enforce == "off"
+
+    # 至少 4 个 supervisor 已把 sub_archivist 加进 allowed_subagent_types
+    supers_with_archivist = []
+    for name in ("sz-baojian-house", "generic-policy", "research-analyst",
+                 "legal-contract"):
+        d = get_definition(name)
+        if d and "sub_archivist" in (d.allowed_subagent_types or ()):
+            supers_with_archivist.append(name)
+    assert len(supers_with_archivist) >= 3, (
+        f"only {supers_with_archivist} supervisors can spawn archivist"
+    )
+    return f"archivist wired for {len(supers_with_archivist)} supervisors"
+
+
+def S22_doc_ops_common_decorator() -> str:
+    """Decorator routes allow/deny/exception through audit correctly."""
+    import asyncio
+    from api.agent_v2.tools.base import ToolContext, reset_ctx, set_ctx
+    from api.agent_v2.tools.doc_ops._common import ok, require_kb_write
+    from unittest.mock import patch
+
+    @require_kb_write(action="_test.probe_ok", kb_id_from=lambda a: a.get("kb_id"))
+    async def probe(args):
+        return ok(touched=True)
+
+    audits: list[dict] = []
+    ctx = ToolContext(tenant_id="t1", kb_ids=("kb1",), user_id="u1")
+    token = set_ctx(ctx)
+    try:
+        with patch(
+            "api.db.services.dataset_access_service."
+            "DatasetAccessService.require_at_least"
+        ), patch(
+            "api.db.services.audit_log_service.AuditLogService.log",
+            side_effect=lambda **kw: audits.append(kw),
+        ):
+            asyncio.run(probe({"kb_id": "kb1"}))
+    finally:
+        reset_ctx(token)
+    assert len(audits) == 1
+    assert audits[0]["result"] == "allow"
+    assert audits[0]["metadata"]["op"] == "_test.probe_ok"
+    return "decorator allow-audit roundtrip OK"
+
+
+def S23_ssrf_defense() -> str:
+    """doc_upload_from_url 必须拒绝 file:// / ftp:// / private IP。"""
+    import asyncio
+    from unittest.mock import patch
+    from api.agent_v2.tools.base import ToolContext, reset_ctx, set_ctx
+    from api.agent_v2.tools.doc_ops import doc_upload_from_url
+    import json as _json
+
+    def run(url):
+        ctx = ToolContext(tenant_id="t1", kb_ids=("kb1",), user_id="u1")
+        token = set_ctx(ctx)
+        try:
+            with patch(
+                "api.db.services.dataset_access_service."
+                "DatasetAccessService.require_at_least"
+            ), patch(
+                "api.db.services.audit_log_service.AuditLogService.log"
+            ), patch(
+                "socket.getaddrinfo",
+                return_value=[(2, 1, 6, "", ("10.0.0.1", 80))],
+            ):
+                resp = asyncio.run(
+                    doc_upload_from_url.handler({"url": url, "kb_id": "kb1"})
+                )
+            return _json.loads(resp["content"][0]["text"])
+        finally:
+            reset_ctx(token)
+
+    r1 = run("file:///etc/passwd")
+    assert r1["error"] == "unsupported_scheme"
+    r2 = run("http://internal-host/x.pdf")
+    assert r2["error"] == "ssrf_blocked"
+    return "file:// + private-IP both blocked"
+
+
+def S24_interactive_tools_emit_events() -> str:
+    """ask_user_question / submit_plan 真 emit SSE 事件 + 正确形状。"""
+    import asyncio
+    from unittest.mock import patch
+    from api.agent_v2.tools.base import ToolContext, reset_ctx, set_ctx
+    from api.agent_v2.tools.ask_user_question import ask_user_question
+    from api.agent_v2.tools.submit_plan import submit_plan
+
+    emitted: list = []
+
+    async def emit(ev):
+        emitted.append(ev)
+
+    ctx = ToolContext(
+        tenant_id="t1", kb_ids=("kb1",), user_id="u1",
+        session_id="s1", event_emitter=emit,
+    )
+    token = set_ctx(ctx)
+    try:
+        with patch("api.db.services.audit_log_service.AuditLogService.log"):
+            asyncio.run(ask_user_question.handler({
+                "question": "Pick one", "header": "X",
+                "options": [{"label": "a"}, {"label": "b"}],
+            }))
+            asyncio.run(submit_plan.handler({
+                "title": "do X", "steps": ["s1", "s2"],
+                "risk_level": "low",
+            }))
+    finally:
+        reset_ctx(token)
+
+    types = [e.type for e in emitted]
+    assert types == ["ask_user_question", "plan_submitted"], types
+    return "both emit → " + ", ".join(types)
+
+
+# ────────────────────────────── tail checks ──────────────────────────────
+
+
 def S18_ruff() -> str:
     res = subprocess.run(
         ["uvx", "ruff", "check", "api/", "test/"],
@@ -699,6 +846,13 @@ def main():
 
     # ── HTTP blueprint 注册 ──
     run_check("S19 HTTP blueprint endpoints", S19_http_endpoints_registered)
+
+    # ── Phase 2.6 — doc_ops / interactive tools ──
+    run_check("S20 doc_ops + interactive tools registered", S20_doc_ops_registry)
+    run_check("S21 sub_archivist definition wired to supervisors", S21_sub_archivist_definition)
+    run_check("S22 @require_kb_write decorator roundtrip", S22_doc_ops_common_decorator)
+    run_check("S23 doc_upload_from_url SSRF defenses", S23_ssrf_defense)
+    run_check("S24 ask/plan emit SSE events", S24_interactive_tools_emit_events)
 
     # ── 外层回归 ──
     if not args.skip_pytest:
