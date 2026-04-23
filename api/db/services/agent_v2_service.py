@@ -50,6 +50,7 @@ class AgentV2SessionService(CommonService):
         max_budget_usd: float | None = 1.0,
         citation_enforce_level: str = "warn",
         citation_numeric_strict: bool = True,
+        history_turn_limit: int = 10,
     ) -> AgentV2Session:
         """创建一个新会话，返回模型实例。"""
         if not tenant_id:
@@ -59,6 +60,9 @@ class AgentV2SessionService(CommonService):
 
         if citation_enforce_level not in ("off", "warn", "strict"):
             citation_enforce_level = "warn"
+
+        # history_turn_limit 限定合理范围，防止 prompt 爆
+        history_turn_limit = max(2, min(40, int(history_turn_limit or 10)))
 
         meta = _now_meta()
         session = cls.model.create(
@@ -76,6 +80,9 @@ class AgentV2SessionService(CommonService):
             status="active",
             citation_enforce_level=citation_enforce_level,
             citation_numeric_strict=1 if citation_numeric_strict else 0,
+            history_turn_limit=history_turn_limit,
+            summary_text="",
+            summary_until_seq=0,
             **meta,
         )
         return session
@@ -107,6 +114,24 @@ class AgentV2SessionService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def save_summary(
+        cls,
+        session_id: str,
+        *,
+        summary_text: str,
+        summary_until_seq: int,
+    ) -> int:
+        """把 compact 后的摘要写回 session。"""
+        q = cls.model.update(
+            summary_text=summary_text or "",
+            summary_until_seq=int(summary_until_seq or 0),
+            update_time=current_timestamp(),
+            update_date=datetime_format(datetime.now()),
+        ).where(cls.model.id == session_id)
+        return q.execute()
+
+    @classmethod
+    @DB.connection_context()
     def update_fields(cls, session_id: str, **fields) -> int:
         """只允许更新白名单字段。返回影响行数。"""
         allowed = {
@@ -118,6 +143,9 @@ class AgentV2SessionService(CommonService):
             "max_turns",
             "max_budget_usd",
             "status",
+            "history_turn_limit",
+            "citation_enforce_level",
+            "citation_numeric_strict",
         }
         to_set: dict[str, Any] = {k: v for k, v in fields.items() if k in allowed}
         if not to_set:
@@ -176,6 +204,39 @@ class AgentV2MessageService(CommonService):
             .order_by(cls.model.create_time.asc())
         )
         return list(q.dicts())
+
+    @classmethod
+    @DB.connection_context()
+    def list_for_runner(
+        cls,
+        *,
+        session_id: str,
+        limit: int = 10,
+        exclude_message_id: str | None = None,
+        since_create_time: int | None = None,
+    ) -> list[dict]:
+        """返回喂给 AgentRunner 的历史消息（按时间升序）。
+
+        - 只取 role 为 user / assistant 的消息
+        - `since_create_time` 可限定只取某个时间点之后（compact 后传
+          ``summary_until_seq`` 对应的时间戳，跳过已总结的旧消息）
+        - `exclude_message_id` 用来跳过本轮刚落库的空 assistant 占位
+        - `limit` 是"消息数"（不是轮次），UI 约定用户输入 1 条 + 助手 1 条算 1 轮
+          所以这里 limit=20 相当于约 10 轮
+        """
+        q = cls.model.select().where(
+            cls.model.session_id == session_id,
+            cls.model.role.in_(["user", "assistant"]),
+        )
+        if exclude_message_id:
+            q = q.where(cls.model.id != exclude_message_id)
+        if since_create_time:
+            q = q.where(cls.model.create_time > since_create_time)
+
+        # 先按 create_time 降序取 limit 条，再翻回升序，这样拿的是"最新的 N 条"
+        rows = list(q.order_by(cls.model.create_time.desc()).limit(limit).dicts())
+        rows.reverse()
+        return rows
 
 
 # ────────────────────────────── ToolCall ──────────────────────────────

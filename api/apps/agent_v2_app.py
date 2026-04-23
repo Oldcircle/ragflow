@@ -166,6 +166,7 @@ async def create_session():
             max_budget_usd=req.get("max_budget_usd", 1.0),
             citation_enforce_level=req.get("citation_enforce_level", "warn"),
             citation_numeric_strict=bool(req.get("citation_numeric_strict", True)),
+            history_turn_limit=int(req.get("history_turn_limit", 10)),
         )
         AuditLogService.allow(
             user_id=current_user.id,
@@ -335,10 +336,11 @@ async def send_message():
     if not session or session.tenant_id != current_user.id or session.status != "active":
         return get_data_error_result(message="session not found or inactive")
 
-    # 登记 user 消息
-    AgentV2MessageService.append(
+    # 登记 user 消息（保留 id 以便 2.5.2 拉 history 时排除本条）
+    user_msg = AgentV2MessageService.append(
         session_id=session_id, role="user", content=user_message
     )
+    user_msg_id = getattr(user_msg, "id", None)
 
     try:
         model_cfg = _build_model_config(session.model_config_json, session.tenant_id)
@@ -354,6 +356,26 @@ async def send_message():
     from common.misc_utils import get_uuid
 
     assistant_msg_id = get_uuid()
+
+    # Phase 2.5.2 — 拉历史消息 + compact summary（如果有）
+    history_turn_limit = int(getattr(session, "history_turn_limit", None) or 10)
+    summary_text = getattr(session, "summary_text", None) or ""
+    summary_until_seq = int(getattr(session, "summary_until_seq", None) or 0)
+
+    # 按 create_time 过滤掉已总结的旧消息
+    since_ct: int | None = None
+    if summary_until_seq > 0:
+        # 第 summary_until_seq 条消息的 create_time（含）之前的都已并入 summary
+        all_msgs = AgentV2MessageService.list_by_session(session.id)
+        if 0 < summary_until_seq <= len(all_msgs):
+            since_ct = int(all_msgs[summary_until_seq - 1].get("create_time") or 0)
+
+    history = AgentV2MessageService.list_for_runner(
+        session_id=session.id,
+        limit=max(2, history_turn_limit * 2),  # 每轮 user+assistant，所以 ×2
+        exclude_message_id=user_msg_id,
+        since_create_time=since_ct,
+    )
 
     runner = AgentRunner(
         tenant_id=session.tenant_id,
@@ -372,7 +394,11 @@ async def send_message():
     async def stream():
         events: list[dict] = []
         try:
-            async for ev in runner.run(user_message):
+            async for ev in runner.run(
+                user_message,
+                history=history,
+                summary_text=summary_text,
+            ):
                 d = ev.to_dict()
                 events.append(d)
                 # 给 tool_call_start 立即落库（pending 状态）便于前端看到
@@ -443,6 +469,19 @@ async def send_message():
                     token_out=int(usage.get("output_tokens") or 0),
                     cost_usd=float(usage.get("total_cost_usd") or 0.0),
                     subagent_spawns=subagent_spawns,
+                )
+
+            # Phase 2.5.2 — 触发 compact（fire-and-forget，不阻塞 SSE 收尾）
+            with contextlib.suppress(Exception):
+                from api.agent_v2.compactor import maybe_compact_session
+
+                asyncio.create_task(
+                    maybe_compact_session(
+                        session_id=session_id,
+                        model=model_cfg.model,
+                        base_url=model_cfg.base_url,
+                        auth_token=model_cfg.auth_token or "",
+                    )
                 )
 
     resp = Response(stream(), mimetype="text/event-stream")

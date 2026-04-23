@@ -1369,6 +1369,20 @@ class AgentV2Session(DataBaseModel):
         help_text="1 = 检查数字 / 金额 / 年限 / 日期必须有原文支撑；0 = 仅检查 [N] 映射",
     )
 
+    # Phase 2.5.2 — 真正的多轮上下文（nullable → 向后兼容老 session）
+    history_turn_limit = IntegerField(
+        null=True, default=10,
+        help_text="每次调 Agent 时回看多少轮历史（user+assistant 各算一条）",
+    )
+    summary_text = LongTextField(
+        null=True, default="",
+        help_text="compact 后的历史摘要；下一轮会拼进 prompt 替代旧消息",
+    )
+    summary_until_seq = IntegerField(
+        null=True, default=0,
+        help_text="摘要已覆盖到第几条消息（按 create_time 排序的 1-based 下标）",
+    )
+
     class Meta:
         db_table = "agent_v2_session"
 

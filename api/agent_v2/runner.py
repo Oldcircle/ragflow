@@ -140,8 +140,33 @@ class AgentRunner:
             env=env,
         )
 
-    async def run(self, user_message: str) -> AsyncIterator[ev.Event]:
-        """发一条用户消息，异步返回事件流。"""
+    async def run(
+        self,
+        user_message: str,
+        *,
+        history: list[dict] | None = None,
+        summary_text: str | None = None,
+    ) -> AsyncIterator[ev.Event]:
+        """发一条用户消息，异步返回事件流。
+
+        Phase 2.5.2 — multi-turn context
+        ================================
+
+        - ``history``：同一 session 的最近若干条消息，升序；每条形如
+          ``{"role": "user"|"assistant", "content": "...", "thinking": "..."}``。
+          传 ``None`` 或空 list 表示单轮 QA（与 2.5.2 之前行为一致）。
+        - ``summary_text``：可选，compact 后的历史摘要字符串。如果有，会塞到
+          <conversation-history> 前面。
+
+        注意：Claude Agent SDK ``query()`` 单次只接受一个 ``prompt`` 字符串，
+        无法像 Chat API 那样直接传 ``messages=[...]``；所以我们走**合成 user
+        message** 路径——把历史拼成 <conversation-history> 前置块，后面再跟
+        <current-user-message>。这是 claude-code-ref 的 ``forkSubagent.ts``
+        里也在用的模式。
+        """
+        prompt = self._build_prompt_with_history(
+            user_message, history=history, summary_text=summary_text
+        )
         options = self._build_options()
         logger.info(
             "AgentRunner.run: tenant=%s kb_ids=%s model=%s turn_limit=%d depth=%d",
@@ -183,7 +208,7 @@ class AgentRunner:
         token = set_ctx(ctx)
 
         async def sdk_iter() -> AsyncIterator[ev.Event]:
-            async for msg in query(prompt=user_message, options=options):
+            async for msg in query(prompt=prompt, options=options):
                 async for event in self._translate(
                     msg, tool_call_starts, tool_current_holder, ctx,
                 ):
@@ -300,6 +325,80 @@ class AgentRunner:
             pass
         else:
             logger.debug("AgentRunner: unhandled message type %s", type(msg).__name__)
+
+    def _build_prompt_with_history(
+        self,
+        user_message: str,
+        *,
+        history: list[dict] | None,
+        summary_text: str | None,
+    ) -> str:
+        """把历史 + 摘要拼成一个 SDK 能吃的 prompt 字符串。
+
+        结构：
+
+            [若有 summary_text]
+            <conversation-summary>
+            {summary_text}
+            </conversation-summary>
+
+            [若有 history]
+            <conversation-history>
+            [1] user: ...
+            [1] assistant: ...
+            ...
+            </conversation-history>
+
+            <current-user-message>
+            {user_message}
+            </current-user-message>
+
+        没有 history 也没有 summary 时，就退化为原始 ``user_message`` 字符串，
+        保证行为与 2.5.2 之前完全一致。
+        """
+        has_summary = bool(summary_text and summary_text.strip())
+        has_history = bool(history)
+
+        if not has_summary and not has_history:
+            return user_message
+
+        parts: list[str] = []
+        if has_summary:
+            parts.append(
+                "<conversation-summary>\n"
+                f"{summary_text.strip()}\n"
+                "</conversation-summary>"
+            )
+        if has_history:
+            lines: list[str] = []
+            idx = 0
+            for m in history or []:
+                role = m.get("role") or ""
+                if role not in ("user", "assistant"):
+                    continue
+                idx += 1
+                content = (m.get("content") or "").strip()
+                if not content:
+                    continue
+                # 对 assistant 消息保留但截断——太长的历史回答对追问不相关的细节
+                # 反而是噪音，压到 1200 字内够识别 topic + 引用编号
+                if role == "assistant" and len(content) > 1200:
+                    content = content[:1200] + " …（已截断）"
+                lines.append(f"[#{idx}] {role}: {content}")
+            if lines:
+                parts.append(
+                    "<conversation-history>\n"
+                    + "\n".join(lines)
+                    + "\n</conversation-history>"
+                )
+        parts.append(
+            "<current-user-message>\n"
+            f"{user_message}\n"
+            "</current-user-message>\n\n"
+            "请基于上面的对话历史理解用户的指代关系（如「刚才」「上面那条」）"
+            "再回答 <current-user-message>。当需要事实依据时，仍然调用工具检索。"
+        )
+        return "\n\n".join(parts)
 
     @staticmethod
     def _extract_tool_result_text(block: ToolResultBlock) -> str | dict | None:
