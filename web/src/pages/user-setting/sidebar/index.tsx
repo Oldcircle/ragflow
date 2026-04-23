@@ -16,6 +16,7 @@ import {
   Bot,
   LucideBox,
   LucideServer,
+  LucideShieldCheck,
   LucideUnplug,
   LucideUser,
   LucideUsers,
@@ -49,6 +50,12 @@ const menuItems = (t: TFunction) => [
     label: t('setting.botChannels'),
     key: Routes.BotChannels,
     testId: 'settings-nav-bot',
+  },
+  {
+    icon: <LucideShieldCheck className="size-4" />,
+    label: t('audit.navLabel'),
+    key: Routes.AuditLog,
+    testId: 'settings-nav-audit',
   },
   {
     icon: <LucideUsers className="size-4" />,
