@@ -149,7 +149,11 @@ export default {
     },
     agentV2: {
       title: 'Agent 工作台',
+      sessions: '会话',
       newSession: '新建会话',
+      collapseSessions: '隐藏会话列表',
+      expandSessions: '展开会话列表',
+      sessionsCollapsed: '会话列表（已折叠）',
       newSessionDialogTitle: '新建 Agent 会话',
       sessionName: '会话名称',
       sessionNamePlaceholder: '如：保障房政策顾问',

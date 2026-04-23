@@ -166,7 +166,11 @@ export default {
     },
     agentV2: {
       title: 'Agent workbench',
+      sessions: 'Sessions',
       newSession: 'New session',
+      collapseSessions: 'Hide sessions panel',
+      expandSessions: 'Show sessions panel',
+      sessionsCollapsed: 'Sessions (collapsed)',
       newSessionDialogTitle: 'Create a new agent session',
       sessionName: 'Session name',
       sessionNamePlaceholder: 'e.g. Policy advisor',

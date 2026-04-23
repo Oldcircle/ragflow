@@ -35,6 +35,25 @@ export default function AgentChatPage() {
   const [currentSessionId, setCurrentSessionId] = useState<string>();
   const [pendingUser, setPendingUser] = useState<string | null>(null);
   const [newDialogOpen, setNewDialogOpen] = useState(false);
+  // 会话侧栏折叠；本地持久化，避免每次刷新弹回默认态
+  const [sessionsCollapsed, setSessionsCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('agent-v2:sessionsCollapsed') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggleSessionsCollapsed = useCallback(() => {
+    setSessionsCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('agent-v2:sessionsCollapsed', next ? '1' : '0');
+      } catch {
+        // 忽略 localStorage 写入失败（隐私模式等）
+      }
+      return next;
+    });
+  }, []);
 
   const { data: sessions = [], isLoading: sessionsLoading } = useSessions();
   const { data: sessionDetail, refetch: refetchSessionDetail } =
@@ -139,7 +158,7 @@ export default function AgentChatPage() {
         fontFamily: T.font,
       }}
     >
-      {/* 左：会话列表 */}
+      {/* 左：会话列表（可折叠，本地持久化） */}
       <SessionSidebar
         sessions={sessions}
         loading={sessionsLoading}
@@ -147,6 +166,8 @@ export default function AgentChatPage() {
         onSelect={setCurrentSessionId}
         onCreate={() => setNewDialogOpen(true)}
         onDelete={handleDeleteSession}
+        collapsed={sessionsCollapsed}
+        onToggleCollapse={toggleSessionsCollapsed}
       />
 
       {/* 中：消息流 + 输入框 */}

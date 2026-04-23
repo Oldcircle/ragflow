@@ -1,10 +1,34 @@
-import { memo } from 'react';
+/**
+ * Agent v2 会话侧栏。
+ *
+ * 版式对齐 `next-chats/chat/sessions.tsx`：
+ *   - w-[296px] + p-5 + border-r + bg-bg-component
+ *   - header: avatar/title 左对齐 + 右侧图标按钮 + 收起按钮
+ *   - list item: group / rounded-lg / aria-selected:bg-accent-primary/10
+ *                + shadow-[inset_2px_0_0_rgb(var(--accent-primary))] 左边线高亮
+ *   - 折叠态：窄带 + avatar 展开按钮 + 快捷新建
+ *
+ * 差异化：我们保留按时间 groupByTime 分组（今天 / 本周 / 更早），
+ *         这是 Agent 场景的独有价值；对话页不分组。
+ */
+
+import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
+import {
+  LucideBot,
+  LucidePanelLeftClose,
+  LucidePanelLeftOpen,
+  LucidePlus,
+  LucideTrash2,
+} from 'lucide-react';
+import { memo, MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AgentV2Session } from '../api';
-import { T } from '../theme';
-import { Badge } from './badge';
-import { ZButton } from './button';
-import { I } from './icons';
 
 export interface SessionSidebarProps {
   sessions: AgentV2Session[];
@@ -13,6 +37,9 @@ export interface SessionSidebarProps {
   onSelect: (id: string) => void;
   onCreate: () => void;
   onDelete: (id: string) => void;
+  /** 受控折叠；由父组件持有以便同步调整主区宽度。 */
+  collapsed: boolean;
+  onToggleCollapse: () => void;
 }
 
 function groupByTime(sessions: AgentV2Session[]) {
@@ -30,21 +57,6 @@ function groupByTime(sessions: AgentV2Session[]) {
   return { today, week, older };
 }
 
-const SectionLabel = ({ children }: { children: React.ReactNode }) => (
-  <div
-    style={{
-      padding: '10px 14px 4px',
-      fontSize: 10,
-      fontWeight: 600,
-      textTransform: 'uppercase',
-      letterSpacing: 0.6,
-      color: T.textDim,
-    }}
-  >
-    {children}
-  </div>
-);
-
 export const SessionSidebar = memo(function SessionSidebar({
   sessions,
   loading,
@@ -52,181 +64,253 @@ export const SessionSidebar = memo(function SessionSidebar({
   onSelect,
   onCreate,
   onDelete,
+  collapsed,
+  onToggleCollapse,
 }: SessionSidebarProps) {
   const { t } = useTranslation();
-  const groups = groupByTime(sessions);
 
-  const renderGroup = (label: string, list: AgentV2Session[]) => {
-    if (list.length === 0) return null;
+  // ── 折叠态：窄带 ──
+  if (collapsed) {
     return (
-      <div key={label}>
-        <SectionLabel>{label}</SectionLabel>
-        <div
-          style={{
-            padding: '0 8px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 1,
-          }}
-        >
-          {list.map((s) => (
-            <SessionItem
-              key={s.id}
-              session={s}
-              active={s.id === currentSessionId}
-              onSelect={onSelect}
-              onDelete={onDelete}
-            />
-          ))}
-        </div>
-      </div>
+      <aside
+        className="flex w-14 shrink-0 flex-col items-center gap-2 border-r bg-bg-component py-4"
+        aria-label={t('agentV2.sessionsCollapsed')}
+        data-testid="agent-v2-sessions-collapsed"
+      >
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="transparent"
+              size="icon-sm"
+              className="border-0"
+              onClick={onToggleCollapse}
+              data-testid="agent-v2-sessions-open"
+            >
+              <LucidePanelLeftOpen />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            {t('agentV2.expandSessions')}
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="transparent"
+              size="icon-sm"
+              className="border-0"
+              onClick={onCreate}
+              data-testid="agent-v2-sessions-new-collapsed"
+            >
+              <LucidePlus />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            {t('agentV2.newSession')}
+          </TooltipContent>
+        </Tooltip>
+      </aside>
     );
-  };
+  }
+
+  const groups = groupByTime(sessions);
+  const total = sessions.length;
 
   return (
     <aside
-      style={{
-        width: 260,
-        background: T.surface2,
-        borderRight: `1px solid ${T.border}`,
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        flexShrink: 0,
-      }}
+      className="chat-workbench-panel flex w-[296px] shrink-0 flex-col border-r bg-bg-component p-5"
+      role="complementary"
+      data-testid="agent-v2-sessions"
     >
-      <div style={{ padding: 12 }}>
-        <ZButton
-          variant="primary"
-          size="md"
-          icon={<I.plus size={13} />}
-          style={{ width: '100%' }}
-          onClick={onCreate}
+      {/* ── Header：产品标识 + [+] + [收起] ── */}
+      <header className="flex items-center justify-between gap-3 text-base">
+        <div className="flex min-w-0 items-center gap-3">
+          <div
+            aria-hidden="true"
+            className="grid size-8 shrink-0 place-items-center rounded-md bg-accent-primary/15 text-accent-primary"
+          >
+            <LucideBot size={18} />
+          </div>
+          <span className="flex-1 truncate font-medium">
+            {t('agentV2.title')}
+          </span>
+        </div>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              onClick={onCreate}
+              size="icon-xs"
+              data-testid="agent-v2-sessions-new"
+            >
+              <LucidePlus />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('agentV2.newSession')}</TooltipContent>
+        </Tooltip>
+
+        <Button
+          variant="transparent"
+          size="icon-sm"
+          className="ml-auto border-0"
+          onClick={onToggleCollapse}
+          data-testid="agent-v2-sessions-close"
         >
-          {t('agentV2.newSession')}
-        </ZButton>
+          <LucidePanelLeftClose />
+        </Button>
+      </header>
+
+      {/* ── Title row：和对话页 `pt-10` 间距保持一致 ── */}
+      <div className="mb-4 flex items-center justify-between pt-10">
+        <div className="flex items-center gap-3">
+          <span className="text-base font-bold">{t('agentV2.sessions')}</span>
+          <data className="text-xs text-text-secondary" value={total}>
+            {total}
+          </data>
+        </div>
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto' }}>
+      {/* ── List ── */}
+      <div className="scrollbar-auto flex-1 overflow-auto">
         {loading && (
-          <div
-            style={{
-              padding: '24px 16px',
-              fontSize: 12,
-              color: T.textDim,
-              textAlign: 'center',
-            }}
-          >
+          <div className="py-6 text-center text-xs text-text-secondary">
             {t('common.loading')}
           </div>
         )}
-        {!loading && sessions.length === 0 && (
-          <div
-            style={{
-              padding: '40px 20px',
-              fontSize: 12,
-              color: T.textDim,
-              textAlign: 'center',
-              lineHeight: 1.6,
-            }}
-          >
+        {!loading && total === 0 && (
+          <div className="px-5 py-10 text-center text-xs leading-relaxed text-text-secondary">
             {t('agentV2.noSessions')}
           </div>
         )}
-        {renderGroup(t('agentV2.today'), groups.today)}
-        {renderGroup(t('agentV2.pastWeek'), groups.week)}
-        {renderGroup(t('agentV2.earlier'), groups.older)}
+
+        {renderGroup(
+          t('agentV2.today'),
+          groups.today,
+          currentSessionId,
+          onSelect,
+          onDelete,
+          t('common.delete'),
+        )}
+        {renderGroup(
+          t('agentV2.pastWeek'),
+          groups.week,
+          currentSessionId,
+          onSelect,
+          onDelete,
+          t('common.delete'),
+        )}
+        {renderGroup(
+          t('agentV2.earlier'),
+          groups.older,
+          currentSessionId,
+          onSelect,
+          onDelete,
+          t('common.delete'),
+        )}
       </div>
     </aside>
   );
 });
+
+function renderGroup(
+  label: string,
+  list: AgentV2Session[],
+  currentSessionId: string | undefined,
+  onSelect: (id: string) => void,
+  onDelete: (id: string) => void,
+  deleteLabel: string,
+) {
+  if (list.length === 0) return null;
+  return (
+    <section key={label} className="mb-3 last:mb-0">
+      <div className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-text-secondary">
+        {label}
+      </div>
+      <ul className="space-y-1">
+        {list.map((s) => (
+          <SessionItem
+            key={s.id}
+            session={s}
+            active={s.id === currentSessionId}
+            onSelect={onSelect}
+            onDelete={onDelete}
+            deleteLabel={deleteLabel}
+          />
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 interface ItemProps {
   session: AgentV2Session;
   active: boolean;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
+  deleteLabel: string;
 }
 
-function SessionItem({ session, active, onSelect, onDelete }: ItemProps) {
+function SessionItem({
+  session,
+  active,
+  onSelect,
+  onDelete,
+  deleteLabel,
+}: ItemProps) {
   const { t } = useTranslation();
   const timeLabel = formatTime(session.update_time);
+
   return (
-    <div
-      onClick={() => onSelect(session.id)}
-      onKeyDown={(e) => e.key === 'Enter' && onSelect(session.id)}
-      role="button"
-      tabIndex={0}
-      style={{
-        position: 'relative',
-        padding: '9px 10px',
-        borderRadius: T.radius,
-        fontSize: 12,
-        cursor: 'pointer',
-        background: active ? T.surface3 : 'transparent',
-        color: active ? T.text : T.textMuted,
-        fontWeight: active ? 500 : 400,
-        transition: 'background .1s',
-      }}
-      className="group"
+    <li
+      aria-selected={active}
+      className={cn(
+        'group flex items-center gap-1 rounded-lg pr-1',
+        'aria-selected:bg-accent-primary/10',
+        'aria-selected:shadow-[inset_2px_0_0_rgb(var(--accent-primary))]',
+        'has-[>button:focus-visible]:bg-bg-card',
+      )}
     >
-      <div
-        style={{
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          paddingRight: 20,
-        }}
-      >
-        {session.name || t('agentV2.untitled')}
-      </div>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          marginTop: 2,
-          fontSize: 10,
-          color: T.textDim,
-        }}
-      >
-        <span>{timeLabel}</span>
-        {session.kb_ids?.length > 0 && (
-          <Badge tone="neutral" style={{ fontSize: 9, padding: '1px 5px' }}>
-            <I.book size={8} /> {session.kb_ids.length}
-          </Badge>
-        )}
-      </div>
       <button
-        onClick={(e) => {
-          e.stopPropagation();
-          if (window.confirm(t('agentV2.confirmDelete'))) {
-            onDelete(session.id);
-          }
-        }}
-        className="opacity-0 group-hover:opacity-100"
-        style={{
-          position: 'absolute',
-          right: 6,
-          top: '50%',
-          transform: 'translateY(-50%)',
-          width: 22,
-          height: 22,
-          border: 'none',
-          background: 'transparent',
-          color: T.textDim,
-          borderRadius: 4,
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          transition: 'opacity .15s',
-        }}
-        title={t('common.delete')}
+        type="button"
+        onClick={() => onSelect(session.id)}
+        data-testid="agent-v2-session-item"
+        data-session-id={session.id}
+        className="flex min-w-0 flex-1 flex-col items-start gap-0.5 truncate px-3 py-2 text-left text-sm text-text-secondary focus-visible:outline-none group-aria-selected:text-text-primary"
       >
-        <I.trash size={12} />
+        <span className="w-full truncate">
+          {session.name || t('agentV2.untitled')}
+        </span>
+        <span className="flex items-center gap-2 text-[10px] text-text-secondary">
+          {timeLabel && <span>{timeLabel}</span>}
+          {session.kb_ids?.length > 0 && (
+            <span className="rounded bg-bg-card px-1.5 py-0.5">
+              {session.kb_ids.length} KB
+            </span>
+          )}
+        </span>
       </button>
-    </div>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="transparent"
+            size="icon-xs"
+            className="border-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+            onClick={(e: MouseEvent<HTMLButtonElement>) => {
+              e.stopPropagation();
+              if (window.confirm(t('agentV2.confirmDelete'))) {
+                onDelete(session.id);
+              }
+            }}
+            data-testid="agent-v2-session-delete"
+            data-session-id={session.id}
+          >
+            <LucideTrash2 />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{deleteLabel}</TooltipContent>
+      </Tooltip>
+    </li>
   );
 }
 

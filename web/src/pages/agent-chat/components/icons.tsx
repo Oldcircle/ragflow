@@ -87,6 +87,13 @@ export const I = {
   settings: mk(
     '<circle cx="12" cy="12" r="3"/><path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24"/>',
   ),
+  // Panel toggle（参考对话页 LucidePanelLeftClose / LucidePanelLeftOpen）
+  panelLeftClose: mk(
+    '<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><polyline points="16 15 13 12 16 9"/>',
+  ),
+  panelLeftOpen: mk(
+    '<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><polyline points="14 9 17 12 14 15"/>',
+  ),
 };
 
 export const Kbd: FC<{ children: React.ReactNode; style?: CSSProperties }> = ({
