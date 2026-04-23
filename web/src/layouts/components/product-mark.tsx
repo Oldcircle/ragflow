@@ -1,5 +1,7 @@
 import { cn } from '@/lib/utils';
 
+import zhiyuanMark from '@/assets/zhiyuan-mark.png';
+
 type ProductMarkProps = {
   className?: string;
   showSubtitle?: boolean;
@@ -8,17 +10,17 @@ type ProductMarkProps = {
 
 const sizeMap = {
   sm: {
-    mark: 'size-8 rounded-lg text-sm',
+    mark: 'size-8',
     title: 'text-sm',
     subtitle: 'text-[10px]',
   },
   md: {
-    mark: 'size-10 rounded-xl text-base',
+    mark: 'size-10',
     title: 'text-base',
     subtitle: 'text-xs',
   },
   lg: {
-    mark: 'size-12 rounded-xl text-lg',
+    mark: 'size-12',
     title: 'text-xl',
     subtitle: 'text-sm',
   },
@@ -33,15 +35,13 @@ export function ProductMark({
 
   return (
     <div className={cn('inline-flex items-center gap-3 min-w-0', className)}>
-      <div
-        className={cn(
-          'grid place-items-center bg-accent-primary text-white font-semibold shadow-sm',
-          s.mark,
-        )}
+      <img
+        src={zhiyuanMark}
+        alt=""
         aria-hidden="true"
-      >
-        知
-      </div>
+        className={cn('object-contain shrink-0 select-none', s.mark)}
+        draggable={false}
+      />
       <div className="min-w-0">
         <div
           className={cn(
