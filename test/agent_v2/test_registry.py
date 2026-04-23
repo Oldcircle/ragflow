@@ -9,9 +9,17 @@ from api.agent_v2 import registry
 
 
 def test_all_tools_registered():
-    """M1.2 预期 4 个工具全部注册。"""
-    expected = {"rag_retrieve", "rag_list_docs", "rag_read_doc", "rag_graph_query"}
-    assert set(registry.ALL_TOOLS.keys()) == expected
+    """注册表至少包含 M1.2 的 4 个 RAG 工具 + P2.3 的 spawn_subagent."""
+    expected = {
+        "rag_retrieve",
+        "rag_list_docs",
+        "rag_read_doc",
+        "rag_graph_query",
+        "spawn_subagent",  # P2.3 新增
+    }
+    actual = set(registry.ALL_TOOLS.keys())
+    missing = expected - actual
+    assert not missing, f"注册表缺少工具: {missing}"
 
 
 def test_mcp_names_format():

@@ -38,8 +38,8 @@ RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on d
 - **Runner**: `api/agent_v2/runner.py` — Claude Agent SDK 适配层；P2.5.2 起支持 `history=` / `summary_text=` 多轮参数
 - **Event**: `api/agent_v2/event.py` — 统一 SSE 事件；P2.3 / P2.5.1 加了 `subagent_*` 和 `citation_warning`
 - **Tools**: `api/agent_v2/tools/` — 5 个 MCP 工具（rag_retrieve / rag_list_docs / rag_read_doc / rag_graph_query / spawn_subagent）
-- **Validators** (P2.5.1): `api/agent_v2/validators/` — EvidenceIndex + CitationValidator，自动校验 [N] 脚注 + 数字断言
-- **Compactor** (P2.5.2): `api/agent_v2/compactor.py` — 历史摘要压缩（fire-and-forget）
+- **Validators** (P2.5.1): `api/agent_v2/validators/` — EvidenceIndex + CitationValidator（三规则 missing_chunk / number_unsupported / no_citation_for_numeric）+ `rewrite.py` strict-mode 一次性重写
+- **Compactor** (P2.5.2): `api/agent_v2/compactor.py` — 历史摘要压缩；`run_compact_safely` 入口把任何异常写进 access_audit_log（action=`agent_v2.compact`），fire-and-forget 不再静默失败
 - **Definitions** (P2.5.3): `api/agent_v2/definitions/` — 声明式 AgentDefinition schema + 6 supervisor + 2 subagent built-in
 - **Bot Channels** (P2.2): `api/bot_channels/` — 飞书 webhook adapter（签名 + 会话映射）
 - **HTTP App**: `api/apps/agent_v2_app.py` — 注册 `/v1/agent_v2/*` blueprint

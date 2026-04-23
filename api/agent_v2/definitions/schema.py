@@ -22,7 +22,7 @@ loading / GrowthBook / 颜色与图标元数据。
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Literal
 
 # kind 的语义：

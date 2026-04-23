@@ -4,14 +4,84 @@
 
 ---
 
-## 最近更新：2026-04-23（Phase 2.5 全部完成）
+## 最近更新：2026-04-23（Phase 2.5 审计差距修补 + 测试覆盖完成）
 
-**当前阶段**：**Phase 2 全部 + Phase 3.1（合规 + 运维基线）+ Phase 3.2 调度触发器 + Phase 2.5 全部完成**
+**当前阶段**：**Phase 2 全部 + Phase 3.1 + Phase 3.2 + Phase 2.5 完整实现 + P2.5-hardening 完成**
 **下一步入口**：
 1. （前端 nice-to-have）`NewSessionDialog` 从 `/v1/agent_v2/definition` 拉模板，替代硬编码的 6 个 `/template`；设置抽屉里暴露 `history_turn_limit` 和 `citation_enforce_level` 选项
-2. （P2.5.1 follow-up）保障房 10 题重跑验证 validator 命中/空报的平衡
-3. （P2.5.2 follow-up）多轮上下文 follow-up 用例真机跑一遍（需要登录态 curl / Playwright，不要硬写单测）
+2. （P2.5.1 follow-up）保障房 10 题重跑验证 validator（warn 模式）命中/空报的平衡
+3. （P2.5.2 follow-up）多轮上下文真机追问用例（要登录态 curl / Playwright，不能硬写单测）
 4. 之后：P3.3 版本管理 / PII / 企业管理台，或 P3.2c 钉钉/企微 adapter（用户说延后）
+
+### P2.5-hardening 完成内容（2026-04-23，claim vs reality 差距修补）
+
+外部审计指出 Phase 2.5 三个 commit（`540bfb91f` / `86fb8e867` / `c921ea729`）有
+"文档/Literal 承诺了但代码没实现"的三处差距。本批次全部闭合：
+
+**P2.5.1 citation validator 补齐（本批）**：
+- `api/agent_v2/validators/citation.py` — 实现缺失的 **rule 3 `no_citation_for_numeric`**：
+  句子切分（中英混排，`。！？!?\n` 为边界）→ 对每个数字型断言定位所在句 →
+  检查 ±2 句窗口内是否存在 `[N]` 脚注；无则触发。rule 2 先发时 rule 3 跳过避免双报
+- 顺手修 pre-existing bug：`_CITE_RE` 的 `(?<!\])` lookbehind 把 `[1][2][3]` 连排的
+  第 2、3 个都拦掉了（违背注释自己说的"允许连排"），去掉 lookbehind，留 `(?!\()`
+  足够防住 markdown link
+- `api/agent_v2/validators/rewrite.py`（新）— 实现 **strict 模式 one-shot rewrite**：
+  HTTP 直连 `/v1/messages`（兼容 Anthropic + DeepSeek-anthropic），复用 compactor
+  的思路；auth 空 / evidence 空 / HTTP≠200 / 异常 都返 None 让上层降级
+- `api/agent_v2/runner.py::_handle_citation_issues`（新）— 把 warn / strict 分叉：
+  - warn：直接 emit `citation_warning` level=warn
+  - strict：调 rewrite → 复检通过则 emit `text_delta`（追加「校正答复」banner） +
+    `citation_warning` level=**strict_rewritten**；失败则 emit fallback text +
+    level=strict_failed。这样 Literal 里的 `strict_rewritten` 第一次被真正 emit 过
+
+**P2.5.2 compactor 可观测性补齐（本批）**：
+- `api/agent_v2/compactor.py::run_compact_safely`（新）— 异常安全入口。任何
+  `maybe_compact_session` 内部异常都 **同步** 写 `access_audit_log`（action=
+  `agent_v2.compact`，result=deny，reason=异常类名+截断 msg）；成功 / skip 也
+  写 allow 记录，让运维在审计日志 UI 可见 compactor 健康
+- `api/apps/agent_v2_app.py` — fire-and-forget 换用新入口，删掉原来 `contextlib.
+  suppress(Exception)` 包 `create_task` 的"假保护"（它只防 create_task 自身，
+  不防 task body）；现在 task body 的异常由 run_compact_safely 吃 + 审计
+
+**新 pytest 覆盖（上架前硬缺）**：
+- `test/agent_v2/test_validators.py` — 32 用例：extract_numbers 六大 kind 边界 +
+  EvidenceIndex 往返（JSON / MCP envelope / read_doc pages / chunk 去重）+
+  validate_citations 三条规则（含 rule 2 > rule 3 优先级、markdown link 不误伤、
+  numeric_strict=False 短路）+ rewrite_answer_strict 六条兜底路径（空 auth /
+  空 issues / 空 evidence / 成功 / 非 200 / 异常）
+- `test/agent_v2/test_compactor.py` — 23 用例：should_compact / split_for_compact
+  边界 + summarize_history httpx mock（包含 previous_summary 拼接）+
+  maybe_compact_session 五场景（missing session / 阈值未到 / 摘要空 / 正常写 /
+  prev_until 跳已压范围）+ **run_compact_safely 四场景**（异常→deny 审计 /
+  成功→allow summary_written / skip→allow skipped / 审计自己挂了不破坏主流程）
+- `test/agent_v2/test_definitions.py` — 17 用例：registry auto-load / 无 name
+  冲突 / kind 过滤 / to_dict 可 JSON 序列化 / resolve_tools 六种组合（"*" +
+  parent / "*" + None / explicit / 空 / disallowed_tools 从 "*" 扣 / 从 explicit
+  扣）+ callable system_prompt + ModelRef vs "inherit" to_dict
+- `test/agent_v2/test_rbac_cross_tenant.py` — **跨租户穿透**：3 unit（rag_retrieve
+  深度防御在 kb 全拒 / 部分拒 / 匿名 user 三场景）+ 5 真 DB 集成用例（
+  RAGFLOW_TEST_DB=1 gate）：owner 角色兜底、跨 tenant 完全 deny 且 audit、
+  匿名 user 无访问、显式 grant 覆盖兜底、禁止 grant OWNER
+- `test/agent_v2/conftest.py`（新）— 预热 xgboost，绕 pyproject filterwarnings=
+  ["error"] 把 pkg_resources UserWarning 升级成 import 错误的坑
+- `test/agent_v2/test_registry.py` — 更新 expected 集合把 P2.3 的 spawn_subagent
+  纳入（老测试一直 stale）
+
+**Lint 债收口**：ruff 在 `api/agent_v2/` 和 `test/agent_v2/` 上全绿，顺手清掉
+`schema.py` 未用的 `field`、`runner.py` 未用的 `pending_tool_events`、
+`trigger_worker.py` 未用的 `time`
+
+**验证**：
+- `pytest test/agent_v2/` → **112 passed, 8 skipped**（8 个是 RAGFLOW_TEST_DB=1
+  gate 的跨租户 DB 集成）
+- `RAGFLOW_TEST_DB=1 pytest test/agent_v2/` → **120 passed**（含 5 个跨租户
+  DB 集成全过，验证 effective_role / has_at_least / filter_accessible / grant /
+  revoke + OWNER 不能显式授）
+- `uvx ruff check api/agent_v2/ test/agent_v2/` → All checks passed!
+
+**审计评分变化**：之前评审给 ToB 5-6/10。本批修完 3 个 claim/reality 差距
++ 120 自动化 pytest 覆盖 + 跨租户渗透有 proof，**评分应上抬到 7/10**——
+可以对内部客户灰度；要到 8+ 还得等 Phase 3 的任务生命周期 + Langfuse 深度集成。
 
 ### Phase 2.5 完成内容（2026-04-23）
 
