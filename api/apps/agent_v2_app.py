@@ -490,17 +490,24 @@ async def send_message():
                 )
 
             # Phase 2.5.2 — 触发 compact（fire-and-forget，不阻塞 SSE 收尾）
-            with contextlib.suppress(Exception):
-                from api.agent_v2.compactor import maybe_compact_session
+            # 用 run_compact_safely 而非 maybe_compact_session：前者保证任何内部
+            # 异常都写进 access_audit_log（action=agent_v2.compact），
+            # 不会被 asyncio 默认 handler 静默吞掉。
+            try:
+                from api.agent_v2.compactor import run_compact_safely
 
                 asyncio.create_task(
-                    maybe_compact_session(
+                    run_compact_safely(
                         session_id=session_id,
+                        tenant_id=session.tenant_id,
+                        user_id=session.user_id,
                         model=model_cfg.model,
                         base_url=model_cfg.base_url,
                         auth_token=model_cfg.auth_token or "",
                     )
                 )
+            except Exception:
+                logger.exception("failed to schedule compact task for session %s", session_id)
 
     resp = Response(stream(), mimetype="text/event-stream")
     resp.headers.add_header("Cache-Control", "no-cache")

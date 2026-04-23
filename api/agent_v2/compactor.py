@@ -162,7 +162,8 @@ async def maybe_compact_session(
 ) -> bool:
     """尝试对一个 session 做 compact，返回是否真的写了新摘要。
 
-    fire-and-forget 调用：由 HTTP 主流程 ``asyncio.create_task(...)`` 包一下。
+    fire-and-forget 调用：由 HTTP 主流程通过 ``run_compact_safely(...)`` 包一下
+    （后者负责异常捕获 + 审计日志）。
     """
     from api.db.services.agent_v2_service import (
         AgentV2MessageService,
@@ -236,3 +237,91 @@ async def maybe_compact_session(
         new_until,
     )
     return True
+
+
+async def run_compact_safely(
+    *,
+    session_id: str,
+    tenant_id: str | None,
+    user_id: str | None,
+    model: str,
+    base_url: str | None,
+    auth_token: str,
+    trigger_msgs: int = DEFAULT_COMPACT_TRIGGER_MSGS,
+    recent_keep: int = DEFAULT_RECENT_KEEP_MSGS,
+) -> bool:
+    """异常安全的 compact 入口——供 HTTP 层 ``asyncio.create_task`` 用。
+
+    - 任何异常都被 **同步** 写入 ``access_audit_log`` (action=``agent_v2.compact``,
+      result=``deny``, reason=异常类名)；让运维面板可见
+    - auth_token 缺失 / model 未配 / summarizer 返空串 → 走 INFO 级记录，
+      同样写审计但 result=``allow``（因为不是错误，只是"没触发"）
+    - 返回值同 ``maybe_compact_session``：True 表示真写了新摘要
+    """
+    import time
+
+    start = time.time()
+    try:
+        wrote = await maybe_compact_session(
+            session_id=session_id,
+            model=model,
+            base_url=base_url,
+            auth_token=auth_token,
+            trigger_msgs=trigger_msgs,
+            recent_keep=recent_keep,
+        )
+    except BaseException as exc:  # noqa: BLE001 — 顶层 task，必须吃所有异常
+        duration_ms = int((time.time() - start) * 1000)
+        logger.exception(
+            "run_compact_safely: session=%s failed after %d ms — %s",
+            session_id,
+            duration_ms,
+            type(exc).__name__,
+        )
+        _write_compact_audit(
+            session_id=session_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            result="deny",
+            reason=f"{type(exc).__name__}: {str(exc)[:200]}",
+            metadata={"duration_ms": duration_ms},
+        )
+        return False
+
+    duration_ms = int((time.time() - start) * 1000)
+    _write_compact_audit(
+        session_id=session_id,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        result="allow",
+        reason="summary_written" if wrote else "skipped",
+        metadata={"duration_ms": duration_ms, "wrote": bool(wrote)},
+    )
+    return wrote
+
+
+def _write_compact_audit(
+    *,
+    session_id: str,
+    tenant_id: str | None,
+    user_id: str | None,
+    result: str,
+    reason: str,
+    metadata: dict | None = None,
+) -> None:
+    """把 compact 结果写进 access_audit_log；失败只 log 不抛。"""
+    try:
+        from api.db.services.audit_log_service import AuditLogService
+
+        AuditLogService.log(
+            user_id=user_id,
+            tenant_id=tenant_id or "",
+            action="agent_v2.compact",
+            resource_type="agent_v2_session",
+            resource_id=session_id,
+            result=result,  # type: ignore[arg-type]
+            reason=reason,
+            metadata=metadata,
+        )
+    except Exception:
+        logger.exception("compactor: failed to write audit record")
