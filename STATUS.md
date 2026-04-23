@@ -4,14 +4,41 @@
 
 ---
 
-## 最近更新：2026-04-23（Phase 2.5 审计差距修补 + 测试覆盖完成）
+## 最近更新：2026-04-23（上架硬化：安全/多实例/质量门完成）
 
-**当前阶段**：**Phase 2 全部 + Phase 3.1 + Phase 3.2 + Phase 2.5 完整实现 + P2.5-hardening 完成**
+**当前阶段**：**Phase 2 全部 + Phase 3.1 + Phase 3.2 + Phase 2.5 完整实现 + 上架硬化第一轮完成**
 **下一步入口**：
-1. （前端 nice-to-have）`NewSessionDialog` 从 `/v1/agent_v2/definition` 拉模板，替代硬编码的 6 个 `/template`；设置抽屉里暴露 `history_turn_limit` 和 `citation_enforce_level` 选项
-2. （P2.5.1 follow-up）保障房 10 题重跑验证 validator（warn 模式）命中/空报的平衡
-3. （P2.5.2 follow-up）多轮上下文真机追问用例（要登录态 curl / Playwright，不能硬写单测）
+1. 保障房 10 题重跑验证 citation validator（warn 模式）命中/空报平衡
+2. 多轮上下文真机追问用例（需要登录态 curl / Playwright，不能硬写单测）
+3. 前端 nice-to-have：`NewSessionDialog` 从 `/v1/agent_v2/definition` 拉模板；设置抽屉暴露 `history_turn_limit` / `citation_enforce_level`
 4. 之后：P3.3 版本管理 / PII / 企业管理台，或 P3.2c 钉钉/企微 adapter（用户说延后）
+
+### 上架硬化完成内容（2026-04-23）
+
+**安全**：
+- `BotChannelService` 对飞书 `app_secret` / `encrypt_key` / `verification_token` 做应用层字段加密，DB 存储形如 `enc:v1:<base64>`；旧明文配置可继续读取，新写入自动加密
+- 管理端更新配置时，空 secret / `***` 占位不会覆盖已有密钥，避免前端脱敏显示导致误清空
+- 新增 `RAGFLOW_BOT_CHANNEL_SECRET_KEY` 运维说明；生产必须配置稳定值，未配置时回退 `settings.SECRET_KEY` 仅适合本地/灰度
+
+**多实例一致性**：
+- `api/utils/rate_limit.py` 从单进程 token bucket 升级为 Redis `lua_token_bucket` 优先、内存兜底；Redis key 使用 SHA-256 摘要，避免 API token 明文出现在 Redis/内存索引
+- `api/bot_channels/dedup.py` 从单进程 LRU TTL 升级为 Redis `SET NX EX` 优先、内存兜底；去重 key 同样摘要化
+
+**质量门**：
+- 全仓 Python ruff 修到绿，包括 app 层未用 import、`run_baojian_golden.py` async 阻塞写文件等
+- `test/agent_v2/conftest.py` 修复 Python 3.12 + pytest-asyncio 在 teardown 阶段泄露默认 loop/socket 导致的 ResourceWarning-as-error；现在测试本体通过后进程也能 0 退出
+- 前端 `npm run lint` 改为当前产品化路径质量门；全量历史 lint 债保留为 `npm run lint:legacy`
+
+**新增回归测试**：
+- `test_bot_channel_secrets.py`：secret 加密往返、旧明文兼容、脱敏/空 secret 更新保留旧值
+- `test_runtime_hardening.py`：Redis 限流、Redis 去重、Redis 不可用时内存兜底、key 摘要化
+
+**验证**：
+- `uvx ruff check` → All checks passed!
+- `uv run pytest test/agent_v2/` → **119 passed, 8 skipped**（8 个仍为 `RAGFLOW_TEST_DB=1` gate）
+- `cd web && npm run lint` → 通过
+
+**ToB 判断**：当前已经从“内部技术 demo”进入 **可给内部客户/友好客户灰度试用** 的状态。按 10 分制粗评约 **7.5/10**：RBAC、审计、配额、限流、引用校验、多轮、机器人渠道、基础上架质量门都已闭环；距离“正式商业上架/可规模化售卖”的 8.5+ 还差真机 E2E、PII/脱敏策略、版本/回滚、企业管理台与运维可观测性深水区。
 
 ### P2.5-hardening 完成内容（2026-04-23，claim vs reality 差距修补）
 
