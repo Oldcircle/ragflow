@@ -164,6 +164,8 @@ async def create_session():
             model_config=req.get("model_config"),
             max_turns=int(req.get("max_turns", 20)),
             max_budget_usd=req.get("max_budget_usd", 1.0),
+            citation_enforce_level=req.get("citation_enforce_level", "warn"),
+            citation_numeric_strict=bool(req.get("citation_numeric_strict", True)),
         )
         AuditLogService.allow(
             user_id=current_user.id,
@@ -363,6 +365,8 @@ async def send_message():
         max_turns=session.max_turns,
         max_budget_usd=session.max_budget_usd,
         session_id=session.id,  # Phase 2.3: 让 spawn_subagent 能引用父 session
+        citation_enforce_level=session.citation_enforce_level or "warn",
+        citation_numeric_strict=bool(session.citation_numeric_strict),
     )
 
     async def stream():

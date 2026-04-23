@@ -1359,6 +1359,16 @@ class AgentV2Session(DataBaseModel):
         help_text="active | archived | deleted",
     )
 
+    # Phase 2.5.1 — citation validator (nullable → 向后兼容老 session)
+    citation_enforce_level = CharField(
+        max_length=16, null=True, default="warn",
+        help_text="off | warn | strict — 答复里 [N] 脚注 / 数字型断言的校验级别",
+    )
+    citation_numeric_strict = IntegerField(
+        null=True, default=1,
+        help_text="1 = 检查数字 / 金额 / 年限 / 日期必须有原文支撑；0 = 仅检查 [N] 映射",
+    )
+
     class Meta:
         db_table = "agent_v2_session"
 

@@ -228,6 +228,11 @@ export default {
       filesLabel: 'file(s)',
       chunksLabel: 'snippet(s)',
       viewChunks: 'View retrieved snippets',
+      citationWarningTitle:
+        'Citation check: {{count}} issue(s) may be inaccurate',
+      citationKindMissing: 'Footnote index missing',
+      citationKindNumber: 'Number not supported by source',
+      citationKindNoCite: 'Numeric claim has no citation',
     },
     memories: {
       llmTooltip:

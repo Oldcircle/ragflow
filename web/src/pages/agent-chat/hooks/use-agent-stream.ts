@@ -16,8 +16,26 @@ export type AgentV2EventType =
   | 'tool_call_end'
   | 'subagent_start'
   | 'subagent_end'
+  | 'citation_warning'
   | 'error'
   | 'end';
+
+export type CitationIssueKind =
+  | 'missing_chunk'
+  | 'number_unsupported'
+  | 'no_citation_for_numeric';
+
+export interface CitationIssue {
+  kind: CitationIssueKind;
+  citation_index: number | null;
+  claim: string;
+  detail: string;
+}
+
+export interface CitationWarning {
+  issues: CitationIssue[];
+  level: 'warn' | 'strict_rewritten' | 'strict_failed';
+}
 
 export interface AgentV2Event<T = any> {
   type: AgentV2EventType;
@@ -59,6 +77,7 @@ export interface StreamingAssistantTurn {
   usage?: Record<string, unknown>;
   done: boolean;
   error?: string;
+  citationWarning?: CitationWarning;
 }
 
 const EMPTY_TURN: StreamingAssistantTurn = {
@@ -209,6 +228,13 @@ export function useAgentStream() {
                     }
                   : c,
               );
+              break;
+            }
+            case 'citation_warning': {
+              localTurn.citationWarning = {
+                issues: (ev.data?.issues ?? []) as CitationIssue[],
+                level: ev.data?.level ?? 'warn',
+              };
               break;
             }
             case 'error':

@@ -105,6 +105,10 @@ export const MessageList = memo(function MessageList({
           />
         )}
 
+        {streaming?.citationWarning && (
+          <CitationWarningPanel warning={streaming.citationWarning} />
+        )}
+
         {streaming?.error && (
           <div
             style={{
@@ -353,4 +357,100 @@ function summarizeHistoryTools(calls: AgentV2ToolCall[]): string | undefined {
   if (calls.length === 0) return undefined;
   const ok = calls.filter((c) => c.status === 'success').length;
   return `🔧 ${calls.length} · ${ok} ok`;
+}
+
+function CitationWarningPanel({
+  warning,
+}: {
+  warning: import('../hooks/use-agent-stream').CitationWarning;
+}) {
+  const { t } = useTranslation();
+  const severe = warning.level === 'strict_failed';
+  return (
+    <div
+      style={{
+        margin: '12px 0',
+        padding: '10px 14px',
+        border: `1px solid ${severe ? T.danger : T.warning}33`,
+        background: severe ? T.dangerBg : T.warningBg,
+        borderRadius: T.radius,
+        fontSize: 12,
+        color: severe ? T.danger : T.warning,
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          fontWeight: 600,
+          marginBottom: 6,
+        }}
+      >
+        <I.alert size={14} />
+        <span>
+          {t('agentV2.citationWarningTitle', {
+            count: warning.issues.length,
+          })}
+        </span>
+        <span
+          style={{
+            fontFamily: T.fontMono,
+            fontSize: 10,
+            padding: '1px 6px',
+            borderRadius: 3,
+            background: severe ? T.danger : T.warning,
+            color: '#fff',
+            textTransform: 'uppercase',
+          }}
+        >
+          {warning.level}
+        </span>
+      </div>
+      <ul
+        style={{
+          margin: 0,
+          padding: '0 0 0 18px',
+          listStyle: 'disc',
+          fontSize: 11,
+          color: T.textMuted,
+          lineHeight: 1.6,
+        }}
+      >
+        {warning.issues.slice(0, 10).map((iss, i) => (
+          <li key={i}>
+            <strong style={{ color: severe ? T.danger : T.warning }}>
+              {issueKindLabel(iss.kind, t)}
+            </strong>
+            {iss.citation_index != null && ` [${iss.citation_index}]`}:{' '}
+            <code
+              style={{
+                fontFamily: T.fontMono,
+                fontSize: 10,
+                background: T.surface2,
+                padding: '0 4px',
+                borderRadius: 3,
+              }}
+            >
+              {iss.claim}
+            </code>{' '}
+            — <span style={{ color: T.textDim }}>{iss.detail}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function issueKindLabel(kind: string, t: (k: string) => string): string {
+  switch (kind) {
+    case 'missing_chunk':
+      return t('agentV2.citationKindMissing');
+    case 'number_unsupported':
+      return t('agentV2.citationKindNumber');
+    case 'no_citation_for_numeric':
+      return t('agentV2.citationKindNoCite');
+    default:
+      return kind;
+  }
 }

@@ -207,6 +207,10 @@ export default {
       filesLabel: '个文件',
       chunksLabel: '个片段',
       viewChunks: '查看检索到的片段',
+      citationWarningTitle: '引用校验提示：{{count}} 处可能不准',
+      citationKindMissing: '脚注编号缺失',
+      citationKindNumber: '数字无原文支撑',
+      citationKindNoCite: '数字型断言无脚注',
     },
     memories: {
       llmTooltip: '分析对话内容，提取关键信息，并生成结构化的记忆摘要。',

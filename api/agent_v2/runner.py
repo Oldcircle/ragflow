@@ -81,6 +81,8 @@ class AgentRunner:
         session_id: str | None = None,
         parent_session_id: str | None = None,
         depth: int = 0,
+        citation_enforce_level: str = "warn",
+        citation_numeric_strict: bool = True,
     ):
         if not tenant_id:
             raise AgentError("tenant_id is required")
@@ -101,6 +103,10 @@ class AgentRunner:
         self.session_id = session_id
         self.parent_session_id = parent_session_id
         self.depth = depth
+
+        # Phase 2.5.1 — citation validator
+        self.citation_enforce_level = citation_enforce_level or "warn"
+        self.citation_numeric_strict = bool(citation_numeric_strict)
 
         # 子发事件会 emit 到这个 queue，父在 run() loop 里把它们穿插进自己的 SDK 流
         self._event_bus: asyncio.Queue[ev.Event] | None = None
@@ -183,8 +189,46 @@ class AgentRunner:
                 ):
                     yield event
 
+        # Phase 2.5.1 — build EvidenceIndex + final text during the stream
+        from .validators import EvidenceIndex, validate_citations
+
+        evidence = EvidenceIndex()
+        text_parts: list[str] = []
+        tool_name_by_id: dict[str, str] = {}
+
         try:
             async for event in _merge_streams(sdk_iter(), self._event_bus):
+                # ── intercept text_delta + tool_call_* for the validator ──
+                if event.type == "text_delta":
+                    text_parts.append(event.data.get("text") or "")
+                elif event.type == "tool_call_start":
+                    tid = event.data.get("id")
+                    tname = event.data.get("name") or ""
+                    if tid:
+                        tool_name_by_id[tid] = tname
+                elif event.type == "tool_call_end":
+                    tid = event.data.get("id")
+                    tname = tool_name_by_id.get(tid, "")
+                    _collect_evidence_from_tool(
+                        evidence, tname, event.data.get("result")
+                    )
+
+                if event.type == "end":
+                    # 在 end 之前跑校验，把 citation_warning 事件插到 end 前面
+                    if self.citation_enforce_level != "off":
+                        final_text = "".join(text_parts)
+                        issues = validate_citations(
+                            final_text,
+                            evidence,
+                            numeric_strict=self.citation_numeric_strict,
+                        )
+                        if issues:
+                            yield ev.citation_warning(
+                                issues=[i.to_dict() for i in issues],
+                                level="strict_failed"
+                                if self.citation_enforce_level == "strict"
+                                else "warn",
+                            )
                 yield event
         except Exception as exc:  # noqa: BLE001 — Runner 要吞所有异常转成事件
             logger.exception("AgentRunner.run failed")
@@ -330,3 +374,22 @@ class _SdkError:
 
     def __init__(self, exc: BaseException) -> None:
         self.exc = exc
+
+
+# ────────────────────────────── 2.5.1 helpers ──────────────────────────────
+
+
+def _collect_evidence_from_tool(evidence, tool_name: str, result) -> None:
+    """把一条 ``tool_call_end`` 的 result 喂给 EvidenceIndex。
+
+    仅处理知识库工具：``rag_retrieve`` / ``rag_read_doc`` / ``rag_graph_query``；
+    其他工具（比如 ``spawn_subagent`` 的最终文本）不算 evidence 来源。
+    """
+    if not tool_name or result is None:
+        return
+    if tool_name == "rag_retrieve":
+        evidence.add_from_rag_retrieve(result)
+    elif tool_name == "rag_read_doc":
+        evidence.add_from_rag_read_doc(result)
+    elif tool_name == "rag_graph_query":
+        evidence.add_from_rag_graph_query(result)

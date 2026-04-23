@@ -48,12 +48,17 @@ class AgentV2SessionService(CommonService):
         model_config: dict | None = None,
         max_turns: int = 20,
         max_budget_usd: float | None = 1.0,
+        citation_enforce_level: str = "warn",
+        citation_numeric_strict: bool = True,
     ) -> AgentV2Session:
         """创建一个新会话，返回模型实例。"""
         if not tenant_id:
             raise ValueError("tenant_id is required")
         if not kb_ids:
             raise ValueError("at least one kb_id is required")
+
+        if citation_enforce_level not in ("off", "warn", "strict"):
+            citation_enforce_level = "warn"
 
         meta = _now_meta()
         session = cls.model.create(
@@ -69,6 +74,8 @@ class AgentV2SessionService(CommonService):
             max_turns=max_turns,
             max_budget_usd=max_budget_usd,
             status="active",
+            citation_enforce_level=citation_enforce_level,
+            citation_numeric_strict=1 if citation_numeric_strict else 0,
             **meta,
         )
         return session

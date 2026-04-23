@@ -14,6 +14,7 @@ EventType = Literal[
     "tool_call_end",
     "subagent_start",
     "subagent_end",
+    "citation_warning",
     "error",
     "end",
 ]
@@ -89,6 +90,25 @@ def subagent_start(
             "max_turns": max_turns,
             "max_budget_usd": max_budget_usd,
         },
+    )
+
+
+def citation_warning(
+    *,
+    issues: list[dict],
+    level: Literal["warn", "strict_rewritten", "strict_failed"],
+) -> Event:
+    """P2.5.1 — 答复里 [N] 脚注或数字型断言未通过 EvidenceIndex 校验。
+
+    ``issues`` 每项形如::
+
+        {"kind": "number_unsupported", "citation_index": None,
+         "claim": "...那句话...",
+         "detail": "Numerical claim '21 周岁' is not present..."}
+    """
+    return Event(
+        type="citation_warning",
+        data={"issues": issues or [], "level": level},
     )
 
 
