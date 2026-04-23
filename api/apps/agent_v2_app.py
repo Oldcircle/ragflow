@@ -124,16 +124,55 @@ async def _persist_events(session_id: str, assistant_msg_id: str, events: list[d
 async def create_session():
     try:
         req = await get_request_json()
+        kb_ids = req["kb_ids"]
+
+        # Phase 2.1：创建 session 前批量校验用户对 kb_ids 的访问权限。
+        # 至少需要 VIEWER 才能用知识库做检索。
+        from api.db.services.audit_log_service import AuditLogService
+        from api.db.services.dataset_access_service import (
+            DatasetAccessService,
+            DatasetRole,
+        )
+
+        denied = [
+            k for k in kb_ids
+            if not DatasetAccessService.has_at_least(k, current_user.id, DatasetRole.VIEWER)
+        ]
+        if denied:
+            for k in denied:
+                AuditLogService.deny(
+                    user_id=current_user.id,
+                    tenant_id=current_user.id,
+                    action="agent_v2.create_session",
+                    resource_type="knowledgebase",
+                    resource_id=k,
+                    reason="no_viewer_access",
+                    request=request,
+                )
+            return get_json_result(
+                code=RetCode.AUTHENTICATION_ERROR,
+                message=f"no access to dataset(s): {denied}",
+            )
+
         session = AgentV2SessionService.create_session(
             tenant_id=current_user.id,
             user_id=current_user.id,
             name=req.get("name") or "Untitled Agent",
-            kb_ids=req["kb_ids"],
+            kb_ids=kb_ids,
             system_prompt=req.get("system_prompt", ""),
             tool_names=req.get("tool_names"),
             model_config=req.get("model_config"),
             max_turns=int(req.get("max_turns", 20)),
             max_budget_usd=req.get("max_budget_usd", 1.0),
+        )
+        AuditLogService.allow(
+            user_id=current_user.id,
+            tenant_id=current_user.id,
+            action="agent_v2.create_session",
+            resource_type="agent_v2_session",
+            resource_id=session.id,
+            metadata={"kb_ids": kb_ids},
+            request=request,
         )
         return get_json_result(data=_session_dict(session))
     except ValueError as e:

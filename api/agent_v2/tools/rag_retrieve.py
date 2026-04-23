@@ -75,6 +75,37 @@ async def rag_retrieve(args: dict) -> dict:
     top_n = int(args.get("top_n", 8))
     similarity_threshold = float(args.get("similarity_threshold", 0.15))
 
+    # 深度防御：即使 session 持久化的 kb_ids 是脏数据，工具执行时也要再校验
+    # 一次。能检索的 kb_ids 必须在用户的可访问列表里。
+    if ctx.user_id:
+        from api.db.services.audit_log_service import AuditLogService
+        from api.db.services.dataset_access_service import (
+            DatasetAccessService,
+            DatasetRole,
+        )
+
+        accessible = DatasetAccessService.filter_accessible_kb_ids(
+            kb_ids, ctx.user_id, DatasetRole.VIEWER
+        )
+        denied = [k for k in kb_ids if k not in accessible]
+        if denied:
+            for k in denied:
+                AuditLogService.deny(
+                    user_id=ctx.user_id,
+                    tenant_id=ctx.tenant_id,
+                    action="kb.retrieve",
+                    resource_type="knowledgebase",
+                    resource_id=k,
+                    reason="rag_retrieve_no_access",
+                )
+            if not accessible:
+                return mcp_json_response({
+                    "error": "no_access",
+                    "message": f"调用方没有访问以下知识库的权限: {denied}",
+                })
+            # 部分有权限：用可访问的子集继续
+            kb_ids = accessible
+
     # 按 kb_ids 拿 KB 配置（关键：所有 kb 必须用同一个 embedding 模型）
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
     if not kbs:

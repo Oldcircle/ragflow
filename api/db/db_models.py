@@ -1395,6 +1395,57 @@ class AgentV2ToolCall(DataBaseModel):
         db_table = "agent_v2_tool_call"
 
 
+# ══════════════════════════════════════════════════════════════════════
+# Phase 2.1 — 数据集 RBAC 与审计
+# ══════════════════════════════════════════════════════════════════════
+
+
+class DatasetAccess(DataBaseModel):
+    """KB 的显式成员角色；覆盖 `knowledgebase.permission` 的默认行为。
+
+    映射关系：
+      - 没有记录 + kb.permission='me'  → 仅创建者可见
+      - 没有记录 + kb.permission='team' → 同 tenant 用户视为隐式 VIEWER
+      - 有记录 → 以记录中的 role 为准（显式授权永远覆盖默认）
+    """
+
+    id = CharField(max_length=32, primary_key=True)
+    kb_id = CharField(max_length=32, null=False, index=True)
+    user_id = CharField(max_length=255, null=False, index=True)
+    role = CharField(
+        max_length=16, null=False, index=True,
+        help_text="owner | admin | contributor | viewer",
+    )
+    granted_by = CharField(max_length=255, null=True, help_text="who added this member")
+
+    class Meta:
+        db_table = "dataset_access"
+        indexes = (
+            (("kb_id", "user_id"), True),  # unique
+        )
+
+
+class AccessAuditLog(DataBaseModel):
+    """访问审计日志：所有 deny 必须记录；allow 可以按需记录."""
+
+    id = CharField(max_length=32, primary_key=True)
+    user_id = CharField(max_length=255, null=True, index=True, help_text="nullable for bots / anonymous")
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    action = CharField(max_length=32, null=False, index=True,
+                       help_text="kb.create|kb.read|kb.update|kb.delete|kb.share|kb.retrieve|kb.ingest|bot.receive|bot.reply|subagent.spawn|...")
+    resource_type = CharField(max_length=32, null=False, index=True,
+                              help_text="knowledgebase | document | agent_v2_session | bot_channel | subagent_trace")
+    resource_id = CharField(max_length=64, null=True, index=True)
+    result = CharField(max_length=16, null=False, help_text="allow | deny")
+    reason = CharField(max_length=255, null=True)
+    metadata = JSONField(null=True, default={})
+    ip = CharField(max_length=45, null=True)
+    user_agent = TextField(null=True)
+
+    class Meta:
+        db_table = "access_audit_log"
+
+
 def alter_db_add_column(migrator, table_name, column_name, column_type):
     try:
         migrate(migrator.add_column(table_name, column_name, column_type))

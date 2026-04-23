@@ -331,6 +331,29 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       detailNavigate: 'Dataset workbench',
       backToDatasets: 'All datasets',
       totalSize: 'Total size',
+      members: 'Members',
+      membersTitle: 'Members',
+      membersDescription:
+        'Grant per-dataset roles. Owner / Admin / Contributor / Viewer. Admin or Owner is required to manage members.',
+      memberRoleOwner: 'Owner',
+      memberRoleAdmin: 'Admin',
+      memberRoleContributor: 'Contributor',
+      memberRoleViewer: 'Viewer',
+      memberRoleOwnerHint: 'Creator, full control (cannot be changed)',
+      memberRoleAdminHint: 'Manage members, settings, delete dataset',
+      memberRoleContributorHint: 'Upload / parse / delete documents',
+      memberRoleViewerHint: 'Search / chat / cite',
+      memberInvite: 'Invite member',
+      memberInviteEmail: 'Email',
+      memberInviteEmailPlaceholder: 'Email of an existing account',
+      memberInviteRole: 'Role',
+      memberInviteSubmit: 'Invite',
+      memberRevokeConfirm: "Revoke this member's access?",
+      memberRevokeOwnerError:
+        'Cannot revoke the creator. Transfer ownership first.',
+      memberImplicitTip: 'Implicit (inherited from creator)',
+      memberAccessDenied:
+        "You don't have permission to manage members (requires admin or owner).",
     },
     knowledgeDetails: {
       metadata: {

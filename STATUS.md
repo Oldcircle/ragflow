@@ -6,8 +6,45 @@
 
 ## 最近更新：2026-04-22（深夜 +1）
 
-**当前阶段**：**Phase 1.7 已完成；Phase 2 设计文档已就位，进入实施**
-**下一步入口**：按 `PLAN-phase2.md` 顺序执行 — P2.1 RBAC → P2.2 飞书机器人 → P2.3 Multi-Agent
+**当前阶段**：**Phase 2.1 RBAC 已落地（后端 + 前端）；进入 P2.2 飞书机器人**
+**下一步入口**：按 `PLAN-bot-channels.md` 实施飞书 inbound webhook 适配器 + 会话映射
+
+### P2.1 完成内容（2026-04-23）
+
+**新表（已自动迁移）**：
+- `dataset_access(id, kb_id, user_id, role, granted_by, create/update_time)` — 显式成员角色
+- `access_audit_log(id, user_id, tenant_id, action, resource_type, resource_id, result, reason, metadata, ip, user_agent, create/update_time)` — 访问审计
+
+**新服务**（`api/db/services/`）：
+- `dataset_access_service.py` — `DatasetRole` 枚举 + `effective_role / has_at_least / require_at_least / filter_accessible_kb_ids / list_members / grant / revoke`
+- `audit_log_service.py` — `log / allow / deny / query_logs / count_logs`
+
+**填补的 3 个关键访问控制漏洞**（已验证）：
+- `api/db/services/dialog_service.py::async_ask` — kb_ids 批量校验，deny 自动写审计
+- `api/apps/agent_v2_app.py::create_session` — 同上 + 成功路径写 allow
+- `api/agent_v2/tools/rag_retrieve.py` — 工具执行时深度防御，部分 deny 时只用可访问的子集
+
+**新 HTTP 端点**：
+- `GET    /v1/kb/<kb_id>/member` — 列成员
+- `POST   /v1/kb/<kb_id>/member` — 添加/更新（VIEWER / CONTRIBUTOR / ADMIN，OWNER 不能显式授）
+- `DELETE /v1/kb/<kb_id>/member/<user_id>` — 撤销
+- `GET    /v1/audit_log/list?action=&resource_type=&result=...` — 分页查审计
+- 全部 `@login_required`；`grant/revoke` 还要求 ADMIN+ 角色
+
+**前端**：
+- 新路由：`/dataset/dataset-member/:id` → `web/src/pages/dataset/dataset-members/`
+- 知识库侧栏新加「成员」导航项
+- 成员页：成员表（头像 + 名 + 邮箱 + 角色徽标 + 角色下拉/移除按钮）+ 「邀请成员」对话框（邮箱 + 角色）
+- 隐式 OWNER 行不可改、不可移除；非 ADMIN+ 进入直接显示 access denied 状态
+- i18n：`knowledgeList.members*` / `memberRole*` / `memberInvite*` / `memberAccessDenied`（en + zh）
+
+**E2E 验证**：
+- DB 端：`grant / promote / revoke / query_members` 全通过；`grant(OWNER)` 正确拒绝
+- 服务端：`async_ask` 模拟 owner 通过、nobody 拒绝、空参数 no-op
+- HTTP 端：`/v1/kb/<id>/member` 与 `/v1/audit_log/list` 均返 401（路由注册成功）
+- 前端：6 条核心路由 dev server 全 200，包括新 `/dataset/dataset-member/:id`，ESLint 干净
+
+
 
 ### Phase 2 设计文档（2026-04-22）
 

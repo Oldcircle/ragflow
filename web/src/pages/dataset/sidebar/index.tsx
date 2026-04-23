@@ -8,6 +8,7 @@ import {
   LucideLogs,
   LucideSettings,
   LucideTextSearch,
+  LucideUsers,
 } from 'lucide-react';
 
 import { IconFontFill } from '@/components/icon-font';
@@ -61,6 +62,12 @@ export function SideBar({ dataset: data }: PropType) {
         label: t(`knowledgeDetails.configuration`),
         key: Routes.DataSetSetting,
         testId: 'dataset-nav-setting',
+      },
+      {
+        icon: <LucideUsers className="size-4" />,
+        label: t(`knowledgeDetails.members`),
+        key: Routes.DataSetMember,
+        testId: 'dataset-nav-members',
       },
     ];
 

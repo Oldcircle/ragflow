@@ -1402,6 +1402,32 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     rerank_id = search_config.get("rerank_id", "")
     meta_data_filter = search_config.get("meta_data_filter")
 
+    # Phase 2.1：RBAC 检查。所有现存调用方（restful_apis/chat_api.py、sdk/session.py）
+    # 传进来的第三个参数实际上是 user_id（current_user.id），三处都一致；这里
+    # 据此校验访问权限。如果未来有真正传 tenant_id 的调用方，需要改 API 签名。
+    if tenant_id and kb_ids:
+        from api.db.services.audit_log_service import AuditLogService
+        from api.db.services.dataset_access_service import (
+            DatasetAccessService,
+            DatasetRole,
+        )
+
+        denied = [
+            k for k in kb_ids
+            if not DatasetAccessService.has_at_least(k, tenant_id, DatasetRole.VIEWER)
+        ]
+        if denied:
+            for k in denied:
+                AuditLogService.deny(
+                    user_id=tenant_id,
+                    tenant_id=tenant_id,
+                    action="kb.retrieve",
+                    resource_type="knowledgebase",
+                    resource_id=k,
+                    reason="async_ask_no_access",
+                )
+            raise PermissionError(f"no access to dataset(s): {denied}")
+
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
     embedding_list = list(set([kb.embd_id for kb in kbs]))
 

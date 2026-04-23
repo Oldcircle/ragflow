@@ -65,6 +65,7 @@ export enum Routes {
   UserSetting = '/user-setting',
   DataSetOverview = '/dataset-overview',
   DataSetSetting = '/dataset-setting',
+  DataSetMember = '/dataset-member',
   DataflowResult = '/dataflow-result',
   Admin = '/admin',
   AdminServices = `${Admin}/services`,
@@ -200,6 +201,10 @@ const routeConfigOptions = [
           {
             path: `${Routes.DatasetBase}${Routes.DataSetSetting}/:id`,
             Component: () => import('@/pages/dataset/dataset-setting'),
+          },
+          {
+            path: `${Routes.DatasetBase}${Routes.DataSetMember}/:id`,
+            Component: () => import('@/pages/dataset/dataset-members'),
           },
         ],
       },

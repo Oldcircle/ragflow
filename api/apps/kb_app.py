@@ -1010,3 +1010,145 @@ async def check_embedding():
     if summary["avg_cos_sim"] > 0.9:
         return get_json_result(data={"summary": summary, "results": results})
     return get_json_result(code=RetCode.NOT_EFFECTIVE, message="Embedding model switch failed: the average similarity between old and new vectors is below 0.9, indicating incompatible vector spaces.", data={"summary": summary, "results": results})
+
+
+# ════════════════════════════════════════════════════════════════════
+# Phase 2.1 — 数据集成员管理 (RBAC)
+# ════════════════════════════════════════════════════════════════════
+
+from api.db.db_models import User
+from api.db.services.audit_log_service import AuditLogService
+from api.db.services.dataset_access_service import (
+    AccessDeniedError,
+    DatasetAccessService,
+    DatasetRole,
+)
+from api.db.services.user_service import UserService
+
+
+def _user_summary(user_id: str) -> dict:
+    """返回用户基础信息；用户不存在时返回最小结构."""
+    try:
+        user = User.select(User.id, User.nickname, User.email, User.avatar).where(
+            User.id == user_id
+        ).get()
+        return {
+            "user_id": user.id,
+            "nickname": user.nickname,
+            "email": user.email,
+            "avatar": user.avatar,
+        }
+    except Exception:
+        return {"user_id": user_id, "nickname": None, "email": None, "avatar": None}
+
+
+def _audit_kwargs():
+    """取出当前请求里的 IP / UA。请求不一定带，安静失败."""
+    try:
+        return {"request": request}
+    except Exception:
+        return {}
+
+
+@manager.route("/<kb_id>/member", methods=["GET"])  # noqa: F821
+@login_required
+async def list_members(kb_id: str):
+    """列出 KB 全部成员（含 implicit OWNER）。需要 VIEWER+ 角色才能看."""
+    try:
+        DatasetAccessService.require_at_least(kb_id, current_user.id, DatasetRole.VIEWER)
+        members = DatasetAccessService.list_members(kb_id)
+        rows = []
+        for m in members:
+            rows.append({**m, **_user_summary(m["user_id"])})
+        return get_json_result(data={"members": rows})
+    except AccessDeniedError as e:
+        AuditLogService.deny(
+            user_id=current_user.id,
+            tenant_id=current_user.id,
+            action="kb.list_members",
+            resource_type="knowledgebase",
+            resource_id=kb_id,
+            reason=str(e),
+            **_audit_kwargs(),
+        )
+        return get_json_result(code=RetCode.AUTHENTICATION_ERROR, message=str(e))
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/<kb_id>/member", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("role")
+async def grant_member(kb_id: str):
+    """添加或更新成员角色。
+
+    body: ``{"user_id"|"email": str, "role": "viewer"|"contributor"|"admin"}``
+    """
+    try:
+        DatasetAccessService.require_at_least(kb_id, current_user.id, DatasetRole.ADMIN)
+        req = await get_request_json()
+        role_str = req["role"]
+        try:
+            role = DatasetRole(role_str)
+        except ValueError:
+            return get_data_error_result(message=f"unknown role {role_str!r}")
+
+        target_user_id = req.get("user_id")
+        if not target_user_id:
+            email = (req.get("email") or "").strip().lower()
+            if not email:
+                return get_data_error_result(message="must provide user_id or email")
+            users = UserService.query_user_by_email(email)
+            if not users:
+                return get_data_error_result(message=f"user not found: {email}")
+            target_user_id = users[0].id
+
+        DatasetAccessService.grant(
+            kb_id, target_user_id, role, granted_by=current_user.id
+        )
+        AuditLogService.allow(
+            user_id=current_user.id,
+            tenant_id=current_user.id,
+            action="kb.grant",
+            resource_type="knowledgebase",
+            resource_id=kb_id,
+            metadata={"target_user_id": target_user_id, "role": role.value},
+            **_audit_kwargs(),
+        )
+        return get_json_result(data={
+            "kb_id": kb_id, "user_id": target_user_id, "role": role.value,
+        })
+    except AccessDeniedError as e:
+        return get_json_result(code=RetCode.AUTHENTICATION_ERROR, message=str(e))
+    except ValueError as e:
+        return get_data_error_result(message=str(e))
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/<kb_id>/member/<user_id>", methods=["DELETE"])  # noqa: F821
+@login_required
+async def revoke_member(kb_id: str, user_id: str):
+    """撤销显式授权."""
+    try:
+        DatasetAccessService.require_at_least(kb_id, current_user.id, DatasetRole.ADMIN)
+        kbs = KnowledgebaseService.get_by_ids([kb_id])
+        if kbs and kbs[0].created_by == user_id:
+            return get_data_error_result(
+                message="cannot revoke OWNER (creator); transfer ownership first"
+            )
+        deleted = DatasetAccessService.revoke(kb_id, user_id)
+        AuditLogService.allow(
+            user_id=current_user.id,
+            tenant_id=current_user.id,
+            action="kb.revoke",
+            resource_type="knowledgebase",
+            resource_id=kb_id,
+            metadata={"target_user_id": user_id, "deleted": deleted},
+            **_audit_kwargs(),
+        )
+        return get_json_result(data={"deleted": deleted})
+    except AccessDeniedError as e:
+        return get_json_result(code=RetCode.AUTHENTICATION_ERROR, message=str(e))
+    except Exception as e:
+        return server_error_response(e)
