@@ -43,7 +43,12 @@ class CitationIssue:
 
 
 # 匹配 Markdown 里的 [N] 脚注（允许 [1][2][3] 连排；不匹配 [link](url)）
-_CITE_RE = re.compile(r"(?<!\])\[(\d{1,3})\](?!\()")
+# 注：早期版本加过 (?<!\]) 想防某种双报，但那反而把连排的第 2、3 个都拦了，
+# 已去掉；``(?!\()`` 足够防住 markdown link。
+_CITE_RE = re.compile(r"\[(\d{1,3})\](?!\()")
+
+# 句子切分：优先 Chinese/English 终结符；保留标点防止偏移漂移
+_SENT_SPLIT_RE = re.compile(r"(?<=[。！？!?\.\n])\s+")
 
 
 class CitationExtractor:
@@ -60,6 +65,34 @@ class CitationExtractor:
         return extract_numbers(text or "")
 
 
+def _split_sentences(text: str) -> list[tuple[int, int]]:
+    """返回每个 sentence 的 [start, end) span 序列（覆盖全文）.
+
+    中英文混排：句号 / 感叹号 / 问号 / 换行 后断句；不丢弃任何字符。
+    """
+    if not text:
+        return []
+    out: list[tuple[int, int]] = []
+    last = 0
+    for m in _SENT_SPLIT_RE.finditer(text):
+        end = m.start()
+        if end > last:
+            out.append((last, end))
+        last = m.end()
+    if last < len(text):
+        out.append((last, len(text)))
+    return out
+
+
+def _locate_sentence(span: tuple[int, int], sentences: list[tuple[int, int]]) -> int:
+    """给一个 offset span，返回它落在第几个句子（-1 表示失败）。"""
+    start = span[0]
+    for i, (s, e) in enumerate(sentences):
+        if s <= start < e:
+            return i
+    return -1
+
+
 # ────────────────────────────── 主验证器 ──────────────────────────────
 
 
@@ -69,7 +102,10 @@ def validate_citations(
     *,
     numeric_strict: bool = True,
 ) -> list[CitationIssue]:
-    """返回 issues 列表（空 = 全过）."""
+    """返回 issues 列表（空 = 全过）.
+
+    规则 1 始终检查；规则 2/3 只在 ``numeric_strict`` 打开时跑。
+    """
     issues: list[CitationIssue] = []
     if not final_text:
         return issues
@@ -92,6 +128,14 @@ def validate_citations(
 
     if not numeric_strict:
         return issues
+
+    # 提前切句 + 定位所有 [N] 出现的句子下标，规则 2/3 都用
+    sentences = _split_sentences(final_text)
+    cite_sentence_idx: set[int] = set()
+    for _, off in cites:
+        s_i = _locate_sentence((off, off), sentences)
+        if s_i >= 0:
+            cite_sentence_idx.add(s_i)
 
     # ── 规则 2：number_unsupported ──
     evidence_numbers = index.all_normalized_numbers()
@@ -120,6 +164,39 @@ def validate_citations(
                     ),
                 )
             )
+
+    # ── 规则 3：no_citation_for_numeric ──
+    # 数字型断言（非 bare）所在句及其 ±2 句内必须出现 [N]，否则算无出处。
+    # 跳过已经被规则 2 抓到的（避免双报）：用 normalized+span 做键。
+    rule2_spans = {
+        (iss.citation_index, iss.claim)
+        for iss in issues
+        if iss.kind == "number_unsupported"
+    }
+    for nm in claim_numbers:
+        if nm.kind == "bare":
+            continue
+        s_i = _locate_sentence(nm.span, sentences)
+        if s_i < 0:
+            continue
+        window = range(max(0, s_i - 2), min(len(sentences), s_i + 3))
+        if any(k in cite_sentence_idx for k in window):
+            continue
+        claim_snippet = _context_window(final_text, nm.span[0], 60)
+        # 这个数字本轮根本没在 evidence 里 → 规则 2 已经报了，跳过避免重复
+        if (None, claim_snippet) in rule2_spans:
+            continue
+        issues.append(
+            CitationIssue(
+                kind="no_citation_for_numeric",
+                citation_index=None,
+                claim=claim_snippet,
+                detail=(
+                    f"Numerical claim '{nm.raw}' ({nm.kind}) has no [N] citation "
+                    f"within ±2 sentences; the reader cannot verify its source."
+                ),
+            )
+        )
 
     return issues
 

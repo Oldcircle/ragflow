@@ -239,7 +239,7 @@ class AgentRunner:
                     )
 
                 if event.type == "end":
-                    # 在 end 之前跑校验，把 citation_warning 事件插到 end 前面
+                    # 在 end 之前跑校验 + （strict 模式下）追一次 rewrite
                     if self.citation_enforce_level != "off":
                         final_text = "".join(text_parts)
                         issues = validate_citations(
@@ -248,12 +248,12 @@ class AgentRunner:
                             numeric_strict=self.citation_numeric_strict,
                         )
                         if issues:
-                            yield ev.citation_warning(
-                                issues=[i.to_dict() for i in issues],
-                                level="strict_failed"
-                                if self.citation_enforce_level == "strict"
-                                else "warn",
-                            )
+                            async for post_ev in self._handle_citation_issues(
+                                final_text=final_text,
+                                issues=issues,
+                                evidence=evidence,
+                            ):
+                                yield post_ev
                 yield event
         except Exception as exc:  # noqa: BLE001 — Runner 要吞所有异常转成事件
             logger.exception("AgentRunner.run failed")
@@ -400,6 +400,74 @@ class AgentRunner:
         )
         return "\n\n".join(parts)
 
+    async def _handle_citation_issues(
+        self,
+        *,
+        final_text: str,
+        issues: list,
+        evidence,
+    ) -> AsyncIterator[ev.Event]:
+        """P2.5.1 citation 校验失败后的事件序列生成器。
+
+        - warn 模式：直接 yield 一条 ``citation_warning`` level=warn，不追改
+        - strict 模式：尝试一次 rewrite（HTTP POST /v1/messages），再 validator 复检
+          - 复检通过 → yield text_delta（追加校正段）+ ``citation_warning`` level=strict_rewritten
+          - 复检仍失败 / rewrite 调用失败 → yield text_delta（降级文案）+ ``citation_warning`` level=strict_failed
+        """
+        from .validators import validate_citations
+        from .validators.rewrite import rewrite_answer_strict
+
+        if self.citation_enforce_level != "strict":
+            yield ev.citation_warning(
+                issues=[i.to_dict() for i in issues],
+                level="warn",
+            )
+            return
+
+        # strict 模式：尝试一次 rewrite
+        rewritten = await rewrite_answer_strict(
+            original_text=final_text,
+            issues=issues,
+            evidence=evidence,
+            model=self.model.model,
+            base_url=self.model.base_url,
+            auth_token=self.model.auth_token or "",
+        )
+
+        if rewritten:
+            # 复检：重写后的文本也必须过 validator
+            recheck = validate_citations(
+                rewritten,
+                evidence,
+                numeric_strict=self.citation_numeric_strict,
+            )
+            if not recheck:
+                # 追加校正段给前端渲染
+                banner = (
+                    "\n\n---\n**🛡️ 校正答复（strict 模式自动重写，已通过 citation 校验）**\n\n"
+                )
+                yield ev.text_delta(banner + rewritten + "\n")
+                yield ev.citation_warning(
+                    issues=[i.to_dict() for i in issues],
+                    level="strict_rewritten",
+                )
+                return
+            # 复检仍失败 → 视为 strict_failed，也把重写后发现的新问题合并上报
+            issues = list(issues) + list(recheck)
+
+        # 降级：追加一段对用户说清"数字没能核实"的提示
+        fallback = (
+            "\n\n---\n"
+            "**⚠️ 系统提示**：本次答复中出现的部分数字 / 年限 / 金额在检索结果中"
+            "找不到直接出处（strict 模式自动校验）。该部分请视为"
+            "**未经核实**，建议以官方政策原文或向相应部门咨询为准。\n"
+        )
+        yield ev.text_delta(fallback)
+        yield ev.citation_warning(
+            issues=[i.to_dict() for i in issues],
+            level="strict_failed",
+        )
+
     @staticmethod
     def _extract_tool_result_text(block: ToolResultBlock) -> str | dict | None:
         """从 ToolResultBlock 中提取文本/结构化内容。"""
@@ -441,7 +509,7 @@ async def _merge_streams(
             await bus.put(_SENTINEL_SDK_DONE)
 
     sdk_task = asyncio.create_task(_sdk_to_bus())
-    pending_tool_events = 0  # 目前没显式追踪；SDK 结束时直接 drain bus 完成
+    # SDK 结束时直接 drain bus 完成；工具尾声事件数量不需要显式追踪
     try:
         while True:
             event = await bus.get()
