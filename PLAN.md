@@ -166,6 +166,35 @@
 - 保障房 10 题黄金集用 warn 模式重跑以校准 validator 命中/误报率
 - 真机跑一遍追问多轮用例（现有 smoke 只覆盖代码路径，不走 LLM）
 
+---
+
+### Phase 2.6 — 文档运营工具 + 交互工具（✅ 完成 2026-04-24）
+
+**目标**：Agent 从"只读 KB 顾问"升级到"能做语义级文档运营"。不做 bash，不做 POSIX 文件操作；所有工具走 RAGFlow 已有 service 层语义。
+
+| 分层 | 工具 | audit action |
+|---|---|---|
+| **写 — 低风险** | `doc_tag` / `doc_rename` | `kb.doc.tag` / `kb.doc.rename` |
+| **写 — additive** | `kb_create` | `kb.create` |
+| **写 — 中等风险** | `doc_archive` / `doc_reparse` | `kb.doc.archive` / `kb.doc.reparse` |
+| **写 — 外部内容入库** | `doc_upload_from_url` | `kb.doc.upload` |
+| **交互** | `ask_user_question` / `submit_plan` | `agent_v2.ask_user` / `agent_v2.plan_submit` |
+
+**四条默认决策**（详见 `PLAN-doc-ops.md §2`）：
+1. Supervisor 默认只读；写工具集中到 `sub_archivist` subagent
+2. 破坏性操作用 confirm=true + 软删 grace period；人工审批走 Phase 3 任务生命周期
+3. 跨 KB 移动需要源 + 目标**双边** CONTRIBUTOR+
+4. Agent 仅在用户**明确指令**时动手；批量前先 submit_plan
+
+**参考 `~/Opensource/vendor/claude-code-ref/`**：`AskUserQuestionTool` / `EnterPlanModeTool` / `ExitPlanModeTool`；抄 schema + 交互协议，去掉 HTML preview / channel 分发。不抄 BashTool / FileReadTool / FileWriteTool / FileEditTool / WorktreeTool（那是代码 Agent 场景）。
+
+详见 `PLAN-doc-ops.md`。
+
+**明确不做**（延 Phase 3）：
+- `doc_delete` / `kb_delete` — 等人工审批队列
+- `doc_edit_content` — 不改 blob 内容（违反"KB 存原文"承诺）
+- 裸 bash / exec — 以后需要再做 `exec_preset` 命令白名单
+
 **非目标（推迟到 Phase 2.5 / 3）**：
 - 钉钉 / 企微适配器（预留扩展点，飞书先跑通）
 - Trigger（Cron + Webhook 定时任务）
@@ -249,6 +278,7 @@
 | `PLAN-bot-channels.md` | P2.2 飞书机器人渠道详细设计 |
 | `PLAN-multi-agent.md` | P2.3 Multi-Agent subagent 详细设计 |
 | `PLAN-agent-runtime-maturity.md` | Phase 2.5 Agent Runtime 成熟化（Citation validator / 多轮上下文 / Agent definition，参考 `vendor/claude-code-ref`）|
+| `PLAN-doc-ops.md` | Phase 2.6 文档运营工具（doc_tag / rename / archive / reparse / upload / kb_create + ask_user_question / submit_plan + sub_archivist）|
 | `PRODUCT-UI-PLAN.md` | Phase 1.7 前端产品化（已完成，可归档）|
 | `STATUS.md` | 会话交接文档，每次实质进展必更 |
 | `DESIGN.md` | Phase 1 Agent v2 架构设计（稳定，不再改） |
@@ -262,4 +292,5 @@
 |---|---|---|
 | 2026-04-21 | v0.1 | 初稿；确定路径：RAGFlow + Claude Agent SDK，不用 CCB |
 | 2026-04-23 | v0.2 | 插入 Phase 2.5（Agent Runtime 成熟化）：Citation validator / 多轮上下文 / Agent definition manifest，全程参考 `vendor/claude-code-ref` |
+| 2026-04-24 | v0.3 | 插入 Phase 2.6（文档运营工具）：6 写工具 + 2 交互工具 + sub_archivist subagent + 前端卡片渲染；Agent 正式从 KB-QA 升级到可做语义级文档运营 |
 | 2026-04-23 | v0.3 | Phase 2.5 全部完成（commits `540bfb91f` / `86fb8e867` / `c921ea729`）；Phase 2 + 3.1 + 3.2 + 2.5 全数落地，下一批为 Phase 3.3 企业管理台或 P3.2c 钉钉/企微 |

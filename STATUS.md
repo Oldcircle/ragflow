@@ -4,6 +4,66 @@
 
 ---
 
+## 最近更新：2026-04-24（Phase 2.6 文档运营工具 + 交互工具 + 前端渲染完成）
+
+**当前阶段**：**Phase 2 全部 + Phase 3.1 + Phase 3.2 + Phase 2.5 + Phase 2.6 完整实现**
+**下一步入口**：
+1. 亲测 sub_archivist：对保障房库做一次"把过期政策归到归档库 + 打 2024 标签"的全流程，验 ask_user_question 和 submit_plan 前端卡片
+2. `PLAN-doc-ops.md §12 延伸`：pandoc/ocrmypdf 的 exec_preset、doc_delete 走人工审批、undo 栈
+3. 保障房 10 题重跑一次 validator + streaming（用新 Agent v2）
+
+### Phase 2.6 完成内容（2026-04-24，通用知识库 Agent 的第一步）
+
+把 Agent v2 从"只读 KB 顾问"推进到"能做语义级文档运营"。**不引入 bash，纯走 RAGFlow 已有 service 层**。
+
+**6 个语义写工具**（commits `940f77bbb` + `8614b4e3f`，新目录 `api/agent_v2/tools/doc_ops/`）：
+- `doc_tag` — 加/删/设 meta 标签（DocMetadataService / ES）；noop 识别
+- `doc_rename` — 改 `Document.name`；禁止控制字符 + Windows 保留字；同 KB 重名自动加后缀
+- `kb_create` — 新建空 KB；inherit embedding from session 第一个 KB；kb_max 配额硬拒
+- `doc_archive` — 跨 KB 移动；同 tenant + 同 embedding 硬约束；ES chunks kb_id 批更新 + 两端计数同步
+- `doc_reparse` — 清 chunks + enqueue 解析任务（可选换 parser_id）
+- `doc_upload_from_url` — 从 http/https 拉文件；SSRF 防护（private/loopback/link-local IP 拒）+ 50MB 上限 + xxhash128 dedup；入库走 FileService.upload_document 和 UI 一致
+
+**共享基础设施** (`doc_ops/_common.py`)：
+- `@require_kb_write(action, min_role, kb_id_from, extra_audit_metadata)` 装饰器统一 RBAC / 审计 / 异常路径；5 条路径全覆盖单测
+- `check_idempotency` + `remember_result` — Redis 优先 + 内存兜底，90s TTL
+- `ok()` / `err()` — MCP 响应统一形状
+
+**2 个交互工具**（参考 `vendor/claude-code-ref/AskUserQuestionTool / EnterPlanModeTool`，简化掉 HTML preview / channel 分发）：
+- `ask_user_question` — 2-4 option 多/单选；emit SSE 事件，下一 user message 带回答
+- `submit_plan` — 提交 title / steps / affected_resources / risk_level / estimated_cost / reversible / hint 等审批
+
+**新 Agent Definition `sub_archivist`**：承载所有写工具 + 读工具 + 交互工具；`citation_enforce=off`；`can_spawn_subagents=False`；system prompt 内置四条红线（明确指令 / 批量前先 submit_plan / 不加 [N] / 错误立即停）。加入 `sz-baojian-house / generic-policy / research-analyst / legal-contract` 四个 supervisor 的 `allowed_subagent_types`。
+
+**前端**（commit `1425c64d3`）：
+- `components/pending-question-card.tsx` — 多选卡片；toggle + 自由文本兜底
+- `components/pending-plan-card.tsx` — 计划审批；风险色 chip（绿/琥珀/红）+ 受影响资源标签云 + Approve/Reject/Request Changes 三按钮
+- `use-agent-stream.ts` 扩 2 个事件类型 + `pendingQuestion/pendingPlan` state
+- `message-list.tsx` 下面接入两个卡片
+- i18n 20 个新 key（zh + en）
+
+**测试**：
+- `test_doc_ops_common.py` 9 用例 / `test_doc_ops_tools.py` 21 / `test_interactive_tools.py` 12 / `test_sub_archivist.py` 16
+- `scripts/tob_acceptance.py` +5 live check（S20–S24）
+
+**验证**：
+- `pytest test/agent_v2/` → **177 passed, 8 skipped**（上一轮 119 → +58）
+- `RAGFLOW_TEST_DB=1 pytest test/agent_v2/` → **185 passed**
+- `scripts/tob_acceptance.py --live-llm` → **PASS 24 / FAIL 0 / SKIP 0**（真 DeepSeek 1000 事件）
+- `uvx ruff check api/ test/ scripts/` → clean
+- `npm run lint` → 产品路径 clean
+
+**ToB 成熟度**：Phase 2.6 补了"Agent 能真正做事"这个缺口，Agent v2 从"知识库 QA"变成"能运营知识库的 agent"。按 10 分制粗评到 **8/10**（之前 7.5）——距离正式商用上架只差任务生命周期（长任务后台化 + 完成通知）、文档版本/回滚栈、企业管理台 UI、PII 脱敏策略。
+
+### Phase 2.6 里程 commits
+
+- `940f77bbb` feat(agent-v2): doc_ops 基础设施 + 6 写工具
+- `8614b4e3f` feat(agent-v2): 交互工具 + sub_archivist + registry wiring
+- `9c35115b8` test(agent-v2): 49 unit + 5 acceptance 覆盖
+- `1425c64d3` feat(agent-chat): ask/plan 前端卡片 + i18n
+
+---
+
 ## 最近更新：2026-04-23（上架硬化：安全/多实例/质量门完成）
 
 **当前阶段**：**Phase 2 全部 + Phase 3.1 + Phase 3.2 + Phase 2.5 完整实现 + 上架硬化第一轮完成**
