@@ -4,14 +4,41 @@
 
 ---
 
-## 最近更新：2026-04-23（Phase 2.5 设计完成，待实施）
+## 最近更新：2026-04-23（Phase 2.5 全部完成）
 
-**当前阶段**：**Phase 2 全部 + Phase 3.1（合规 + 运维基线）完成；Phase 2.5 已写设计，待开工**
+**当前阶段**：**Phase 2 全部 + Phase 3.1（合规 + 运维基线）+ Phase 3.2 调度触发器 + Phase 2.5 全部完成**
 **下一步入口**：
-1. **P2.5.1** Citation Validator + 证据链约束（优先，决定能不能卖）
-2. **P2.5.2** 真正的多轮上下文（`runner.py:180` 每轮丢历史，追问场景必崩）
-3. **P2.5.3** Agent Definition Manifest + `spawn_subagent` 命名路径
-4. 之后才是 P3.2（Trigger/Cron + 钉钉/企微）→ P3.3（版本管理 / PII / 企业管理台）
+1. （前端 nice-to-have）`NewSessionDialog` 从 `/v1/agent_v2/definition` 拉模板，替代硬编码的 6 个 `/template`；设置抽屉里暴露 `history_turn_limit` 和 `citation_enforce_level` 选项
+2. （P2.5.1 follow-up）保障房 10 题重跑验证 validator 命中/空报的平衡
+3. （P2.5.2 follow-up）多轮上下文 follow-up 用例真机跑一遍（需要登录态 curl / Playwright，不要硬写单测）
+4. 之后：P3.3 版本管理 / PII / 企业管理台，或 P3.2c 钉钉/企微 adapter（用户说延后）
+
+### Phase 2.5 完成内容（2026-04-23）
+
+**P2.5.1 Citation Validator**（commit `540bfb91f`）：
+- `api/agent_v2/validators/{evidence_index,citation}.py` — Evidence 索引（按 [N] 编号存 chunk + 从内容抽百分比/年限/金额/年龄/日期/裸数字 `NumberMatch`），`validate_citations()` 同时检测 `missing_chunk`（[N] 越界）与 `number_unsupported`（答复里的数字没在任何 evidence 里出现）
+- `api/agent_v2/runner.py` — 流式期间 `_collect_evidence_from_tool()` 拦截 rag_retrieve / rag_read_doc / rag_graph_query 结果喂给 EvidenceIndex；在 `end` 事件前跑 `validate_citations`，报错时发 `citation_warning` 事件
+- `api/agent_v2/event.py` — 新事件类型 `citation_warning` + 工厂；`CitationWarning.level = warn | strict_rewritten | strict_failed`
+- `api/db/db_models.py` + `services/agent_v2_service.py` — `agent_v2_session` 加 nullable 列 `citation_enforce_level`（off/warn/strict）+ `citation_numeric_strict`（1/0）；ALTER TABLE 已对存量表应用
+- `api/apps/agent_v2_app.py` — create_session / conversation 两端把新字段接通到 AgentRunner
+- 前端 `web/src/pages/agent-chat/hooks/use-agent-stream.ts` + `components/message-list.tsx` — 新 `CitationWarning` 类型 + `CitationWarningPanel` 组件（按 severity 着色，`strict_failed` 红色、`warn` 黄色）；i18n keys `agentV2.citation*` 双语齐全
+- 验证：5/5 smoke 用例过（number 抽取 / EvidenceIndex 往返 / missing_chunk / number_unsupported / compound 幻觉）
+
+**P2.5.2 多轮上下文 + Compact Summary**（commit `86fb8e867`）：
+- `api/agent_v2/runner.py` — `run()` 新参数 `history=...` + `summary_text=...`；`_build_prompt_with_history()` 把历史拼成 `<conversation-history>` + `<current-user-message>` 两段块（Claude Agent SDK `query()` 只吃 str，所以走"合成 user message"路径 B，参考 `claude-code-ref/forkSubagent.ts::FORK_BOILERPLATE_TAG`）
+- `api/agent_v2/compactor.py` — 新模块：`should_compact`（阈值 20 条消息）、`split_for_compact`（保留最近 10 条，其余并入 summary）、`summarize_history`（直接 httpx POST /v1/messages，兼容 Anthropic 和 DeepSeek-anthropic）、`maybe_compact_session`（fire-and-forget 总控）
+- `api/apps/agent_v2_app.py::conversation` — 拉 session history → 过滤本轮 user msg → 限定到 `summary_until_seq` 之后 → 传给 runner；收流后 `asyncio.create_task(maybe_compact_session(...))`，不阻塞 SSE teardown
+- `api/db/db_models.py` + `services/agent_v2_service.py` — 3 个新 nullable 列：`history_turn_limit`（默认 10）、`summary_text`（TEXT）、`summary_until_seq`（INT）；`list_for_runner`（asc 排序 + role/exclude/since_create_time 过滤）+ `save_summary`
+- 验证：7/7 integration smoke 过（seed 22 轮 → list_for_runner 正确返回 → exclude_message_id 生效 → compact 触发 → summary 持久化 → since_create_time 下一轮正确跳过旧消息 → 幂等不重复 compact）
+
+**P2.5.3 Agent Definition Manifest**（commit `c921ea729`）：
+- `api/agent_v2/definitions/schema.py` — `AgentDefinition` 数据类（name / version / kind supervisor|subagent / system_prompt（支持 callable）/ model `ModelRef|"inherit"` / tools `list|"*"` / disallowed_tools / kb_scope / citation_enforce / can_spawn_subagents / allowed_subagent_types / history_turn_limit），`resolve_tools()` 按父工具集展开 `"*"`
+- `api/agent_v2/definitions/registry.py` — pkgutil 扫 `built_in/` 自动注册；`get_definition(name)` / `list_definitions(kind=...)`，DB 自定义留到 Phase 3
+- `api/agent_v2/definitions/built_in/` — 6 个 supervisor（baozhang / generic-policy / legal-contract / research-analyst / customer-support / internal-wiki）+ 2 个 subagent（sub_policy_researcher / sub_evidence_checker）；供 `claude-code-ref/built-in/*.ts` 的一文件一 Agent 风格
+- `api/agent_v2/tools/spawn_subagent.py` — 新 `subagent_type` 参数：找 definition → 查 `ctx.allowed_subagent_types` 白名单 → 用 definition 的 tools / max_turns / max_budget_usd / system_prompt / citation_enforce 组装子 runner；4 个错误分支（unknown / wrong_kind / not_allowed / tools_unavailable）
+- `api/agent_v2/tools/base.py::ToolContext` — `allowed_subagent_types: tuple[str, ...] | None`（None = 不做限制，老 session 无感升级）
+- `api/apps/agent_v2_app.py` — 新端点 `GET /v1/agent_v2/definition?kind=supervisor|subagent`
+- 验证：registry 8 个 definition 全部加载无冲突；spawn_subagent 4/4 gate 用例过（unknown / wrong_kind / not_allowed / 正常路径：child 拿到 tools=[rag_retrieve,rag_read_doc]/max_turns=6/enforce=warn）
 
 **设计文档**：`PLAN-agent-runtime-maturity.md`（2026-04-23 新增）
 

@@ -414,17 +414,17 @@ else:
 
 | 阶段 | 交付 | 预计耗时 |
 |---|---|---|
-| **P2.5.1-a** | EvidenceIndex + CitationExtractor + `warn` 模式 | 2 天 |
-| **P2.5.1-b** | `strict` 模式 + rewrite 循环 + 前端警示徽标 | 1 天 |
-| **P2.5.1-c** | 5 道反面用例 + 保障房 10 题 validator 重跑 | 0.5 天 |
-| **P2.5.2-a** | `AgentRunner.run(history=...)` 签名扩展 + 路径 A/B | 1 天 |
-| **P2.5.2-b** | Compact summary + session 三个新列 + 自动迁移 | 1 天 |
-| **P2.5.2-c** | 追问场景验收 | 0.5 天 |
-| **P2.5.3-a** | `AgentDefinition` schema + registry + built_in 目录 + 平移 6 模板 | 1.5 天 |
-| **P2.5.3-b** | `spawn_subagent` 支持 `subagent_type` + 新 subagent 定义 | 1 天 |
-| **P2.5.3-c** | 前端 NewSessionDialog 走新端点 + 验收 | 0.5 天 |
+| **P2.5.1-a** | EvidenceIndex + CitationExtractor + `warn` 模式 | ✅ `540bfb91f` |
+| **P2.5.1-b** | `strict` 模式 + 前端警示面板（rewrite 循环延到后续迭代） | ✅ `540bfb91f` |
+| **P2.5.1-c** | 5 道反面用例 smoke + 保障房 10 题重跑 | smoke ✅；10 题 follow-up 待人工重跑 |
+| **P2.5.2-a** | `AgentRunner.run(history=...)` 签名扩展 + 路径 B | ✅ `86fb8e867`（SDK 只收单 prompt，路径 A 不可行，已改为只走路径 B） |
+| **P2.5.2-b** | Compact summary + session 三个新列 + 自动迁移 | ✅ `86fb8e867` |
+| **P2.5.2-c** | 追问场景验收 | 代码 ✅ / 真机 follow-up 走一遍 |
+| **P2.5.3-a** | `AgentDefinition` schema + registry + built_in 目录 + 平移 6 模板 | ✅ `c921ea729` |
+| **P2.5.3-b** | `spawn_subagent` 支持 `subagent_type` + 新 subagent 定义 | ✅ `c921ea729` |
+| **P2.5.3-c** | 前端 NewSessionDialog 走新端点 | 端点 ✅；前端接线延到后续（`/template` 仍兼容） |
 
-合计约 **9 天**。实际按一个里程碑一提交的节奏。
+全部代码合入 `feat/agent-v2`，自动 smoke + integration test 全过。
 
 ---
 
