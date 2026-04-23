@@ -1501,6 +1501,66 @@ class BotChannel(DataBaseModel):
         )
 
 
+class TenantQuota(DataBaseModel):
+    """Phase 3.1b — 每租户的配额设置。
+
+    每个 tenant 最多一条。首次被查询时若不存在则返回默认值（不自动建行，
+    避免未激活 tenant 污染表）。实际修改由 super-admin 或系统级迁移写入。
+    """
+
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, unique=True, index=True)
+
+    # 资源上限（0 或负 = 无限）
+    kb_max = IntegerField(null=False, default=50, help_text="知识库数量上限")
+    doc_max = IntegerField(null=False, default=10_000, help_text="文档总数上限")
+    token_month_max = BigIntegerField(
+        null=False, default=50_000_000, help_text="月累计 Token 上限（in+out）",
+    )
+    api_rps_max = IntegerField(null=False, default=20, help_text="APIToken 每秒请求上限")
+    bot_message_day_max = IntegerField(
+        null=False, default=5_000, help_text="单日所有机器人累计消息上限",
+    )
+    subagent_day_max = IntegerField(
+        null=False, default=2_000, help_text="单日 spawn_subagent 调用次数上限",
+    )
+    hard_enforce = IntegerField(
+        null=False, default=0,
+        help_text="0 = 只记审计不阻塞；1 = 超额直接 429 / 403",
+    )
+
+    class Meta:
+        db_table = "tenant_quota"
+
+
+class TenantUsageDaily(DataBaseModel):
+    """Phase 3.1b — 每租户每天的用量滚动记账。
+
+    统计口径（按租户日历日，服务器时区）：
+      - token_in / token_out：Agent v2 session 的 LLM usage（含子 Agent）
+      - cost_usd：LLM 成本估算（SDK 带的 total_cost_usd 累加）
+      - api_requests：走 APIToken 的外部调用
+      - bot_messages：webhook 接收到的入站消息
+      - subagent_spawns：spawn_subagent 工具调用次数
+    """
+
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    date_ymd = IntegerField(null=False, index=True, help_text="YYYYMMDD (服务器时区)")
+    token_in = BigIntegerField(null=False, default=0)
+    token_out = BigIntegerField(null=False, default=0)
+    cost_usd = FloatField(null=False, default=0.0)
+    api_requests = IntegerField(null=False, default=0)
+    bot_messages = IntegerField(null=False, default=0)
+    subagent_spawns = IntegerField(null=False, default=0)
+
+    class Meta:
+        db_table = "tenant_usage_daily"
+        indexes = (
+            (("tenant_id", "date_ymd"), True),
+        )
+
+
 class AgentV2SubagentTrace(DataBaseModel):
     """Multi-Agent（Phase 2.3）子 Agent 执行轨迹。
 

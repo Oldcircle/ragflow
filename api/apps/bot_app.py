@@ -116,7 +116,36 @@ async def receive_event(channel_type: str, account_id: str):
         # 非消息事件、bot 自己发的、空文本等
         return get_json_result(data={"ignored": True}, code=0)
 
-    # 6) 入异步处理管道；webhook 立刻返 200
+    # 6) Phase 3.1b — 记录 1 条入站消息到 usage
+    try:
+        from api.db.services.tenant_quota_service import (
+            TenantUsageService,
+            check_bot_message_daily,
+            QuotaExceeded,
+        )
+        TenantUsageService.increment(bc.tenant_id, bot_messages=1)
+        try:
+            check_bot_message_daily(bc.tenant_id)
+        except QuotaExceeded as qe:
+            # hard_enforce 模式下 → 不进入 agent pipeline，返 429 给 IM 平台
+            AuditLogService.deny(
+                user_id=f"bot:{bc.channel_type}:{inbound.im_user_id}",
+                tenant_id=bc.tenant_id,
+                action="bot.receive",
+                resource_type="bot_channel",
+                resource_id=bc.id,
+                reason=f"quota_exceeded:{qe.metric}",
+                metadata={"used": qe.used, "limit": qe.limit},
+                request=request,
+            )
+            return get_json_result(
+                code=RetCode.OPERATING_ERROR,
+                message=f"{qe.metric}_quota_exceeded",
+            )
+    except Exception:
+        pass
+
+    # 7) 入异步处理管道；webhook 立刻返 200
     asyncio.create_task(_handle_inbound(bc, inbound))
     return get_json_result(data={"queued": True}, code=0)
 

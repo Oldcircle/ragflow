@@ -14,6 +14,7 @@ import { TFunction } from 'i18next';
 import {
   ArrowLeft,
   Bot,
+  LucideBarChart3,
   LucideBox,
   LucideServer,
   LucideShieldCheck,
@@ -56,6 +57,12 @@ const menuItems = (t: TFunction) => [
     label: t('audit.navLabel'),
     key: Routes.AuditLog,
     testId: 'settings-nav-audit',
+  },
+  {
+    icon: <LucideBarChart3 className="size-4" />,
+    label: t('usage.navLabel'),
+    key: Routes.Usage,
+    testId: 'settings-nav-usage',
   },
   {
     icon: <LucideUsers className="size-4" />,

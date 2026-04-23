@@ -40,6 +40,7 @@ export enum Routes {
   Mcp = '/mcp',
   BotChannels = '/bot-channels',
   AuditLog = '/audit-log',
+  Usage = '/usage',
   Team = '/team',
   Plan = '/plan',
   Model = '/model',
@@ -302,6 +303,10 @@ const routeConfigOptions = [
           {
             path: `${Routes.UserSetting}${Routes.AuditLog}`,
             Component: () => import('@/pages/user-setting/audit-log'),
+          },
+          {
+            path: `${Routes.UserSetting}${Routes.Usage}`,
+            Component: () => import('@/pages/user-setting/usage'),
           },
 
           {

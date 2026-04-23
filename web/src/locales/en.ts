@@ -2824,6 +2824,33 @@ Important structured information may include: names, dates, locations, events, k
       addNow: 'Add Now',
     },
 
+    usage: {
+      navLabel: 'Usage & quota',
+      title: 'Tenant usage',
+      description:
+        'Current resource consumption and quota limits. In "hard enforce" mode, over-quota requests are rejected; otherwise we only log the event.',
+      hardEnforce: 'Hard enforce',
+      hardEnforceTip: 'Over-quota requests are rejected (429 / 403).',
+      softEnforce: 'Soft mode',
+      softEnforceTip: 'Audit-only; nothing is blocked.',
+      cardKb: 'Datasets',
+      cardDoc: 'Documents',
+      cardTokens: 'Tokens this month',
+      cardTokensSub: 'input + output combined',
+      cardCost: 'Cost this month',
+      cardCostSub: 'LLM estimate',
+      todayHeader: "Today's usage",
+      apiRequests: 'API requests',
+      botMessages: 'Bot messages',
+      subagents: 'Subagent spawns',
+      rangeHeader: 'Token usage last {{days}} days',
+      limitsHeader: 'Quota limits',
+      apiRps: 'API per second',
+      botMessagesLimit: 'Bot messages',
+      subagentsLimit: 'Subagents',
+      perDay: '/ day',
+    },
+
     audit: {
       navLabel: 'Audit log',
       title: 'Access audit',

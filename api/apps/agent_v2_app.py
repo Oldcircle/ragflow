@@ -425,6 +425,22 @@ async def send_message():
                     message_id=assistant_msg_id,
                 )
 
+            # Phase 3.1b — 记录 token + cost 用量（尽量不阻塞，静默失败）
+            with contextlib.suppress(Exception):
+                from api.db.services.tenant_quota_service import (
+                    TenantUsageService,
+                )
+                subagent_spawns = sum(
+                    1 for e in events if e["type"] == "subagent_start"
+                )
+                TenantUsageService.increment(
+                    session.tenant_id,
+                    token_in=int(usage.get("input_tokens") or 0),
+                    token_out=int(usage.get("output_tokens") or 0),
+                    cost_usd=float(usage.get("total_cost_usd") or 0.0),
+                    subagent_spawns=subagent_spawns,
+                )
+
     resp = Response(stream(), mimetype="text/event-stream")
     resp.headers.add_header("Cache-Control", "no-cache")
     resp.headers.add_header("X-Accel-Buffering", "no")

@@ -139,7 +139,27 @@ async def spawn_subagent(args: dict) -> dict:
             "message": "Parent agent has no model config; cannot spawn child.",
         })
 
-    # ── 6) 创建 trace 记录 + emit start 事件 ──
+    # ── 6a) 配额（Phase 3.1b）：hard_enforce 超限直接拒 ──
+    try:
+        from api.db.services.tenant_quota_service import (
+            QuotaExceeded,
+            TenantUsageService,
+            check_subagent_daily,
+        )
+        try:
+            check_subagent_daily(ctx.tenant_id)
+        except QuotaExceeded as qe:
+            return mcp_json_response({
+                "error": "quota_exceeded",
+                "metric": qe.metric,
+                "used": qe.used,
+                "limit": qe.limit,
+            })
+        TenantUsageService.increment(ctx.tenant_id, subagent_spawns=1)
+    except Exception:
+        pass
+
+    # ── 6b) 创建 trace 记录 + emit start 事件 ──
     trace = SubagentTraceService.start(
         parent_session_id=ctx.session_id or "",
         parent_tool_call_id=ctx.current_tool_call_id or "",
