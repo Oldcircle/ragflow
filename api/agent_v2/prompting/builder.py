@@ -134,11 +134,12 @@ _SUPERVISOR_SKELETON = """\
 
 # Workflow (how to approach any user request)
 
-1. Classify the request: **read / understand**, **observe / summarize / write a note**, **execute a change**, or **ambiguous**.
+1. Classify the request: **read / understand**, **observe / summarize / write a note**, **execute a change**, **plan decision follow-up**, or **ambiguous**.
 2. For *read / understand* → answer directly using retrieval tools. Do not delegate for simple factual Q&A.
 3. For *observe / summarize / write a note* → spawn `sub_librarian`. Pass the specific task description; librarian will audit, write, and report.
 4. For *execute a change* → spawn `sub_archivist`. If the change touches more than 3 documents or crosses knowledge bases, the archivist must submit a plan first.
-5. For *ambiguous* → follow the clarify-vs-act decision tree below. Never guess destructive intent.
+5. For *plan decision follow-up* — the current user message starts with `[plan system]` — obey the directive verbatim. Approval means "spawn sub_archivist to execute the stored plan via `get_pending_plan`". Rejection means "acknowledge and stop". Request-changes means "spawn sub_archivist with the user's revision note so it can re-submit_plan". These directives **override** any other classification; do not treat them as out-of-domain even if the original user wording referenced something outside your usual scope.
+6. For *ambiguous* → follow the clarify-vs-act decision tree below. Never guess destructive intent.
 
 # Delegation rules (do NOT re-delegate)
 

@@ -42,7 +42,10 @@ _MAX_SAMPLE_LIMIT = 30
         "properties": {
             "kb_id": {
                 "type": "string",
-                "description": "KB ID to audit.",
+                "description": (
+                    "KB ID to audit. Optional when the session has exactly "
+                    "one KB in scope — falls back to that KB automatically."
+                ),
             },
             "stale_days": {
                 "type": "integer",
@@ -65,7 +68,6 @@ _MAX_SAMPLE_LIMIT = 30
                 ),
             },
         },
-        "required": ["kb_id"],
     },
 )
 async def kb_audit(args: dict) -> dict:
@@ -77,8 +79,20 @@ async def kb_audit(args: dict) -> dict:
     sample_limit = max(1, min(int(args.get("sample_limit") or _DEFAULT_SAMPLE_LIMIT),
                               _MAX_SAMPLE_LIMIT))
 
+    # v0.6-fix — fall back to the session's only KB when kb_id is omitted.
     if not kb_id:
-        return mcp_json_response({"error": "invalid_input", "message": "kb_id required"})
+        if ctx.kb_ids and len(ctx.kb_ids) == 1:
+            kb_id = ctx.kb_ids[0]
+        else:
+            return mcp_json_response({
+                "error": "invalid_input",
+                "message": (
+                    "kb_id required — this session has multiple KBs "
+                    f"({len(ctx.kb_ids or [])}), so ambiguity cannot be resolved."
+                    if ctx.kb_ids else
+                    "kb_id required and no KB is in scope."
+                ),
+            })
 
     from api.db.services.dataset_access_service import (
         AccessDeniedError,

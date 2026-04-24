@@ -138,13 +138,34 @@ class TestDocCreateNote:
 
 @pytest.mark.p0
 class TestKbAudit:
-    def test_requires_kb_id(self):
-        token = set_ctx(_ctx())
+    def test_empty_kb_id_with_multi_kb_session_rejected(self):
+        """v0.6-fix: kb_id 缺失且 session 有多 KB → 报 invalid_input
+        （无法自动选一个）。"""
+        token = set_ctx(_ctx(kb_ids=("kb1", "kb2")))
         try:
             resp = _call(kb_audit, {"kb_id": ""})
         finally:
             reset_ctx(token)
         assert _parse(resp)["error"] == "invalid_input"
+
+    def test_empty_kb_id_with_single_kb_falls_back(self):
+        """v0.6-fix: kb_id 缺失但 session 只有 1 个 KB → 自动 fallback。
+        （会继续往下跑到 RBAC，这里 patch 放行后再到 KB 查询）。"""
+        token = set_ctx(_ctx())
+        try:
+            with patch(
+                "api.db.services.dataset_access_service."
+                "DatasetAccessService.require_at_least"
+            ), patch(
+                "api.db.services.knowledgebase_service.KnowledgebaseService.get_by_id",
+                return_value=(False, None),  # KB 查不到，确认不是 invalid_input 路径
+            ):
+                resp = _call(kb_audit, {"kb_id": ""})
+        finally:
+            reset_ctx(token)
+        out = _parse(resp)
+        # 不应再是 "invalid_input"——证明 fallback 生效到了下一步
+        assert out.get("error") != "invalid_input"
 
     def test_cross_tenant_target_rejected(self):
         token = set_ctx(_ctx(tenant_id="t1"))

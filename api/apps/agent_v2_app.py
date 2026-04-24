@@ -30,7 +30,7 @@ from api.utils.api_utils import (
     validate_request,
 )
 from api.agent_v2.model_resolver import list_available_chat_models, resolve_model
-from api.agent_v2.plan_decision import parse_plan_decision
+from api.agent_v2.plan_decision import augment_for_plan_decision, parse_plan_decision
 from api.agent_v2.registry import ALL_TOOLS, list_tool_names
 from api.agent_v2.runner import AgentRunner, ModelConfig
 from api.agent_v2.templates import list_templates
@@ -383,10 +383,26 @@ async def send_message():
     )
 
     # 登记 user 消息（保留 id 以便 2.5.2 拉 history 时排除本条）
+    # 注意：落库的是**用户原始消息**（已剥 plan 前缀），不包含我们追加给 LLM 的
+    # meta 指令——那只是 runner 喂 LLM 的上下文，不属于用户说过的话。
     user_msg = AgentV2MessageService.append(
         session_id=session_id, role="user", content=user_message
     )
     user_msg_id = getattr(user_msg, "id", None)
+
+    # Phase 2.6 v0.6-fix — augment the user_message with an explicit directive
+    # when a plan decision was parsed. Without this, a bare `[plan approved]`
+    # becomes an empty string after prefix-stripping, and the supervisor — which
+    # is domain-scoped ("answer housing policy questions") — has no hook telling
+    # it to re-spawn the archivist. It falls back to "out-of-domain" and refuses.
+    #
+    # We build a short instructional prefix the LLM sees as the current
+    # user message; the real user text (if any) follows verbatim.
+    runner_input = augment_for_plan_decision(
+        user_message=user_message,
+        plan_decision=plan_decision,
+        plan_status=plan_status_at_turn_start,
+    )
 
     try:
         model_cfg = _build_model_config(session.model_config_json, session.tenant_id)
@@ -444,7 +460,7 @@ async def send_message():
         events: list[dict] = []
         try:
             async for ev in runner.run(
-                user_message,
+                runner_input,
                 history=history,
                 summary_text=summary_text,
             ):

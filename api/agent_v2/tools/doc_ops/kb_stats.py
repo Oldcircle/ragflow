@@ -34,10 +34,12 @@ logger = logging.getLogger("ragflow.agent_v2.doc_ops.kb_stats")
         "properties": {
             "kb_id": {
                 "type": "string",
-                "description": "KB ID to snapshot.",
+                "description": (
+                    "KB ID to snapshot. Optional when the session has exactly "
+                    "one KB in scope — falls back to that KB automatically."
+                ),
             },
         },
-        "required": ["kb_id"],
     },
 )
 async def kb_stats(args: dict) -> dict:
@@ -45,8 +47,23 @@ async def kb_stats(args: dict) -> dict:
     tenant_id = ctx.tenant_id
     user_id = ctx.user_id
     kb_id = str(args.get("kb_id") or "").strip()
+    # v0.6-fix — fall back to ctx.kb_ids[0] when the session scope is a single
+    # KB. The LLM often forgets to pass kb_id because the session prompt
+    # doesn't echo specific IDs; this makes the tool forgiving rather than
+    # returning `invalid_input` on an obvious-single-KB session.
     if not kb_id:
-        return mcp_json_response({"error": "invalid_input", "message": "kb_id required"})
+        if ctx.kb_ids and len(ctx.kb_ids) == 1:
+            kb_id = ctx.kb_ids[0]
+        else:
+            return mcp_json_response({
+                "error": "invalid_input",
+                "message": (
+                    "kb_id required — this session has multiple KBs "
+                    f"({len(ctx.kb_ids or [])}), so ambiguity cannot be resolved."
+                    if ctx.kb_ids else
+                    "kb_id required and no KB is in scope."
+                ),
+            })
 
     from api.db.services.dataset_access_service import (
         AccessDeniedError,

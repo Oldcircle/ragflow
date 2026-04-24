@@ -71,4 +71,60 @@ def parse_plan_decision(message: str) -> tuple[str, str | None]:
     return message, None
 
 
-__all__ = ["parse_plan_decision"]
+_PLAN_DIRECTIVE_MAP: dict[str, str] = {
+    "approved": (
+        "[plan system] The user approved the plan submitted in the previous turn. "
+        "Its full payload is stored on this session. Spawn `sub_archivist` with "
+        "a one-line description (e.g. 'execute approved plan'); the archivist "
+        "will call `get_pending_plan` to read the exact steps and execute them "
+        "in order, emitting `[step K/N done: ...]` markers. Do not try to do "
+        "the writes yourself — you do not have write tools."
+    ),
+    "rejected": (
+        "[plan system] The user rejected the plan submitted in the previous "
+        "turn. Do NOT execute any part of it. Acknowledge the rejection, ask "
+        "what they want to change, and stop. Do not spawn sub_archivist."
+    ),
+    "request_changes": (
+        "[plan system] The user asked to revise the plan submitted in the "
+        "previous turn. Spawn `sub_archivist` to re-plan with a new scope "
+        "based on the user's note below; the archivist will call "
+        "`submit_plan` again with the adjusted steps. Do not execute writes."
+    ),
+}
+
+
+def augment_for_plan_decision(
+    *,
+    user_message: str,
+    plan_decision: str | None,
+    plan_status: str | None = None,
+) -> str:
+    """Phase 2.6 v0.6-fix — inject an explicit directive when a plan decision
+    was parsed from the user message.
+
+    Without this, a bare ``[plan approved]`` becomes an empty string after
+    prefix-stripping, and the supervisor (scoped to its domain — housing
+    policy, legal contracts, …) has nothing to latch onto. It falls back to
+    "out-of-domain" and refuses.
+
+    The directive we add is task-neutral: we don't mention housing, legal, or
+    any domain. We only tell the supervisor *what action the plan system
+    expects of it right now* + leave the user's original (stripped) message
+    intact after the directive. The supervisor prompt is updated separately
+    (builder.py) to recognize the ``[plan system]`` marker and override its
+    domain-scope classifier when seeing it.
+    """
+    if not plan_decision:
+        return user_message
+    directive = _PLAN_DIRECTIVE_MAP.get(plan_decision)
+    if not directive:
+        return user_message
+
+    residual = (user_message or "").strip()
+    if residual:
+        return f"{directive}\n\nUser's accompanying note:\n{residual}"
+    return directive
+
+
+__all__ = ["parse_plan_decision", "augment_for_plan_decision"]

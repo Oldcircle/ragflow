@@ -47,7 +47,10 @@ ARCHIVIST_HARD_RULES = [
     "`request_changes`. The gate only lifts when the next user message starts "
     "with `[plan approved]`.",
     "After calling `submit_plan`, STOP. Do not call any write tool in the "
-    "same turn — it will be rejected and logged as a policy violation.",
+    "same turn — it will be rejected and logged as a policy violation. Also "
+    "do not re-narrate the plan in chat text; the frontend renders the plan "
+    "card from the `plan_submitted` SSE event. One short line is enough: "
+    "'Plan submitted for your review.'",
     "Never generate [N] citations in your output. You are an operator, not a "
     "writer. Keep answers to one sentence per operation: what you did + what "
     "changed + the new doc_id / kb_id.",
