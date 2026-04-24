@@ -90,6 +90,15 @@ export interface PlanAffectedResource {
   action?: string;
 }
 
+// Phase 2.7 Stage 3 — optional content preview rendered in the plan card.
+export interface PlanPreview {
+  kind: 'markdown_excerpt' | 'diff' | 'url_dump' | string;
+  title: string | null;
+  excerpt: string;
+  sourceRef: string | null;
+  truncated: boolean;
+}
+
 export interface PendingPlan {
   pendingId: string;
   toolUseId: string | null;
@@ -100,6 +109,7 @@ export interface PendingPlan {
   estimatedCostUsd: number | null;
   reversible: boolean;
   reversibleHint: string | null;
+  preview?: PlanPreview;
 }
 
 export interface StreamingAssistantTurn {
@@ -299,6 +309,17 @@ export function useAgentStream() {
               break;
             }
             case 'plan_submitted': {
+              const rawPreview = ev.data?.preview;
+              const preview =
+                rawPreview && typeof rawPreview === 'object'
+                  ? {
+                      kind: String(rawPreview.kind ?? 'markdown_excerpt'),
+                      title: rawPreview.title ?? null,
+                      excerpt: String(rawPreview.excerpt ?? ''),
+                      sourceRef: rawPreview.source_ref ?? null,
+                      truncated: Boolean(rawPreview.truncated),
+                    }
+                  : undefined;
               localTurn.pendingPlan = {
                 pendingId: ev.data?.pending_id,
                 toolUseId: ev.data?.tool_use_id ?? null,
@@ -311,6 +332,7 @@ export function useAgentStream() {
                 estimatedCostUsd: ev.data?.estimated_cost_usd ?? null,
                 reversible: Boolean(ev.data?.reversible),
                 reversibleHint: ev.data?.reversible_hint ?? null,
+                preview,
               };
               break;
             }

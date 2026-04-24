@@ -102,6 +102,65 @@ _MAX_STEPS = 10
                 "type": "string",
                 "description": "可逆时写清 revert 方法；不可逆时说明为什么",
             },
+            # Phase 2.7 Stage 3 — 内容预览（向后兼容：省略则 plan card 仅展示
+            # 步骤元信息）。主要场景：
+            # 1. `web_fetch_to_attachment` 抓了一份政策 → 用户审批前要看内容
+            # 2. `doc_archive_attachment` 归档前让用户确认附件正文
+            # 3. `doc_rename` / `doc_archive` 可能附 diff-style preview
+            "preview": {
+                "type": "object",
+                "description": (
+                    "Optional content preview to show the user in the plan "
+                    "card (above the approve/reject buttons). Use when the "
+                    "plan acts on a concrete document or URL that the user "
+                    "should see before approving. Omit when the plan is "
+                    "self-describing via steps alone."
+                ),
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": ["markdown_excerpt", "diff", "url_dump"],
+                        "description": (
+                            "markdown_excerpt: rendered as markdown (default "
+                            "for attachments / web fetch). diff: reserved for "
+                            "doc_rename/doc_tag before/after. url_dump: raw "
+                            "plain text with a URL source."
+                        ),
+                    },
+                    "title": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "description": "Short label above the preview region.",
+                    },
+                    "excerpt": {
+                        "type": "string",
+                        "maxLength": 8192,
+                        "description": (
+                            "Preview body, up to 8 KB. For long documents, "
+                            "show the first N bytes from attachment."
+                            "preview_text. Truncation is the caller's job — "
+                            "anything past 8 KB is dropped."
+                        ),
+                    },
+                    "source_ref": {
+                        "type": "string",
+                        "maxLength": 2048,
+                        "description": (
+                            "Optional provenance: attachment_id / URL / "
+                            "doc_id. Rendered as a muted footer."
+                        ),
+                    },
+                    "truncated": {
+                        "type": "boolean",
+                        "description": (
+                            "Set true when excerpt is a head-of-document "
+                            "snippet; the UI adds a '... [truncated]' "
+                            "affordance."
+                        ),
+                    },
+                },
+                "required": ["kind", "excerpt"],
+            },
         },
         "required": ["title", "steps"],
     },
@@ -156,6 +215,40 @@ async def submit_plan(args: dict) -> dict:
     except (TypeError, ValueError):
         est_cost = None
 
+    # Phase 2.7 Stage 3 — preview payload (optional)
+    preview_clean: dict | None = None
+    raw_preview = args.get("preview")
+    if isinstance(raw_preview, dict):
+        kind = str(raw_preview.get("kind") or "markdown_excerpt").strip().lower()
+        if kind not in ("markdown_excerpt", "diff", "url_dump"):
+            return mcp_json_response({
+                "error": "invalid_input",
+                "message": (
+                    "preview.kind must be one of "
+                    "markdown_excerpt / diff / url_dump"
+                ),
+            })
+        excerpt = str(raw_preview.get("excerpt") or "")
+        if not excerpt.strip():
+            return mcp_json_response({
+                "error": "invalid_input",
+                "message": "preview.excerpt must be a non-empty string",
+            })
+        # Enforce 8 KB cap — anything over is silently truncated (caller may
+        # not have been careful; better to ship than reject).
+        excerpt_bytes = excerpt.encode("utf-8")
+        truncated_here = False
+        if len(excerpt_bytes) > 8192:
+            excerpt = excerpt_bytes[:8192].decode("utf-8", errors="ignore")
+            truncated_here = True
+        preview_clean = {
+            "kind": kind,
+            "title": str(raw_preview.get("title") or "")[:200].strip() or None,
+            "excerpt": excerpt,
+            "source_ref": str(raw_preview.get("source_ref") or "")[:2048] or None,
+            "truncated": bool(raw_preview.get("truncated")) or truncated_here,
+        }
+
     pending_id = uuid.uuid4().hex
 
     # ── Phase 2.6 v0.4 — runtime gate ───────────────────────────────
@@ -177,6 +270,8 @@ async def submit_plan(args: dict) -> dict:
         "reversible": reversible,
         "reversible_hint": reversible_hint,
     }
+    if preview_clean:
+        plan_body["preview"] = preview_clean
 
     if ctx.session_id:
         try:
@@ -201,6 +296,7 @@ async def submit_plan(args: dict) -> dict:
                 reversible=reversible,
                 reversible_hint=reversible_hint,
                 tool_use_id=ctx.current_tool_call_id,
+                preview=preview_clean,
             )
         )
     except Exception:
@@ -226,6 +322,14 @@ async def submit_plan(args: dict) -> dict:
                 "reversible": reversible,
                 "estimated_cost_usd": est_cost,
                 "affected_count": len(affected),
+                # Phase 2.7 — audit the preview kind + length (NOT content,
+                # to keep audit log compact and PII-free)
+                "preview_kind": preview_clean.get("kind") if preview_clean else None,
+                "preview_bytes": (
+                    len(preview_clean["excerpt"].encode("utf-8"))
+                    if preview_clean
+                    else 0
+                ),
             },
         )
     except Exception:

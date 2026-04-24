@@ -10,10 +10,13 @@ import { cn } from '@/lib/utils';
 import {
   LucideAlertTriangle,
   LucideCheck,
+  LucideChevronDown,
+  LucideChevronRight,
+  LucideFileText,
   LucideListOrdered,
   LucideX,
 } from 'lucide-react';
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { PendingPlan } from '../hooks/use-agent-stream';
 
@@ -39,6 +42,9 @@ export const PendingPlanCard = memo(function PendingPlanCard({
 }: Props) {
   const { t } = useTranslation();
   const riskClass = riskColors[plan.riskLevel] ?? riskColors.medium;
+  // Phase 2.7 Stage 3 — preview default collapsed (avoids flooding the chat
+  // column when the excerpt is long). User opens if they want to audit.
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   return (
     <aside
@@ -120,6 +126,58 @@ export const PendingPlanCard = memo(function PendingPlanCard({
               </li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {plan.preview && (
+        <section
+          className="mb-3 overflow-hidden rounded-md border border-border-button bg-bg-base/40"
+          data-testid="agent-v2-plan-preview"
+        >
+          <button
+            type="button"
+            onClick={() => setPreviewOpen((v) => !v)}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-text-primary transition hover:bg-bg-base"
+            aria-expanded={previewOpen}
+          >
+            {previewOpen ? (
+              <LucideChevronDown size={12} className="shrink-0" />
+            ) : (
+              <LucideChevronRight size={12} className="shrink-0" />
+            )}
+            <LucideFileText size={12} className="shrink-0 text-accent-primary" />
+            <span className="font-medium">
+              {plan.preview.title ??
+                t('agentV2.planContentPreview', '内容预览')}
+            </span>
+            {plan.preview.truncated && (
+              <span className="text-[10px] text-text-disabled">
+                {t('agentV2.planPreviewTruncated', '（节选）')}
+              </span>
+            )}
+            <span className="ml-auto text-[10px] text-text-disabled">
+              {plan.preview.excerpt.length}{' '}
+              {t('agentV2.charactersShort', '字符')}
+            </span>
+          </button>
+          {previewOpen && (
+            <div className="border-t border-border-button bg-bg-component/60 px-3 py-2">
+              <pre className="max-h-[320px] overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-text-primary">
+                {plan.preview.excerpt}
+              </pre>
+              {plan.preview.sourceRef && (
+                <div
+                  className="mt-2 truncate text-[10px] text-text-disabled"
+                  title={plan.preview.sourceRef}
+                >
+                  {t('agentV2.planPreviewSource', '来源')}:{' '}
+                  <code className="rounded bg-bg-base/50 px-1">
+                    {plan.preview.sourceRef}
+                  </code>
+                </div>
+              )}
+            </div>
+          )}
         </section>
       )}
 

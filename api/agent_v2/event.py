@@ -153,21 +153,29 @@ def plan_submitted(
     reversible: bool,
     reversible_hint: str | None,
     tool_use_id: str | None,
+    preview: dict | None = None,
 ) -> Event:
-    """Phase 2.6 — Agent 提交执行计划供用户审批。"""
+    """Phase 2.6 — Agent 提交执行计划供用户审批。
+
+    Phase 2.7 Stage 3 — ``preview`` optional content block rendered above
+    approve/reject buttons; see ``PLAN-attachments.md`` §5.
+    """
+    data: dict = {
+        "pending_id": pending_id,
+        "tool_use_id": tool_use_id,
+        "title": title,
+        "steps": steps,
+        "affected_resources": affected_resources,
+        "risk_level": risk_level,
+        "estimated_cost_usd": estimated_cost_usd,
+        "reversible": bool(reversible),
+        "reversible_hint": reversible_hint,
+    }
+    if preview:
+        data["preview"] = preview
     return Event(
         type="plan_submitted",
-        data={
-            "pending_id": pending_id,
-            "tool_use_id": tool_use_id,
-            "title": title,
-            "steps": steps,
-            "affected_resources": affected_resources,
-            "risk_level": risk_level,
-            "estimated_cost_usd": estimated_cost_usd,
-            "reversible": bool(reversible),
-            "reversible_hint": reversible_hint,
-        },
+        data=data,
     )
 
 
