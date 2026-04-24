@@ -239,3 +239,4 @@ nltk_data/
 /tika-server.jar
 /tika-server.jar.md5
 
+*.md.bak
