@@ -5,14 +5,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It's a full-stack application with:
+
 - Python backend (Flask-based API server)
-- React/TypeScript frontend (built with UmiJS)
+- React/TypeScript frontend (built with vitejs)
 - Microservices architecture with Docker deployment
 - Multiple data stores (MySQL, Elasticsearch/Infinity, Redis, MinIO)
 
 ## Architecture
 
 ### Backend (`/api/`)
+
 - **Main Server**: `api/ragflow_server.py` - Flask application entry point
 - **Apps**: Modular Flask blueprints in `api/apps/` for different functionalities:
   - `kb_app.py` - Knowledge base management
@@ -24,12 +26,14 @@ RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on d
 - **Models**: Database models in `api/db/db_models.py`
 
 ### Core Processing (`/rag/`)
+
 - **Document Processing**: `deepdoc/` - PDF parsing, OCR, layout analysis
 - **LLM Integration**: `rag/llm/` - Model abstractions for chat, embedding, reranking
 - **RAG Pipeline**: `rag/flow/` - Chunking, parsing, tokenization
 - **Graph RAG**: `rag/graphrag/` - Knowledge graph construction and querying
 
 ### Agent System (`/agent/`) — 上游原版 Dialog 画布模式
+
 - **Components**: Modular workflow components (LLM, retrieval, categorize, etc.)
 - **Templates**: Pre-built agent workflows in `agent/templates/`
 - **Tools**: External API integrations (Tavily, Wikipedia, SQL execution, etc.)
@@ -51,14 +55,16 @@ RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on d
 - **HTTP App**: `api/apps/agent_v2_app.py` — 注册 `/v1/agent_v2/*` blueprint；v0.4 起在 `send_message` 入口解析 plan 前缀 / 落 DB / 注入 runner ctx / 在 turn 收尾清 stale 状态
 
 ### Frontend (`/web/`)
-- React/TypeScript with UmiJS framework
-- Ant Design + shadcn/ui components
+
+- React/TypeScript with vitejs framework
+- shadcn/ui components
 - State management with Zustand
 - Tailwind CSS for styling
 
 ## Common Development Commands
 
 ### Backend Development
+
 ```bash
 # Install Python dependencies
 uv sync --python 3.12 --all-extras
@@ -82,6 +88,7 @@ ruff format
 ```
 
 ### Frontend Development
+
 ```bash
 cd web
 npm install
@@ -92,6 +99,7 @@ npm run test       # Jest tests
 ```
 
 ### Docker Development
+
 ```bash
 # Full stack with Docker
 cd docker
@@ -120,6 +128,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
 ## Database Engines
 
 RAGFlow supports switching between Elasticsearch (default) and Infinity:
+
 - Set `DOC_ENGINE=infinity` in `docker/.env` to use Infinity
 - Requires container restart: `docker compose down -v && docker compose up -d`
 
@@ -237,3 +246,14 @@ cd ~/Opensource/forks/ragflow
 export PYTHONPATH=$(pwd) NLTK_DATA=./nltk_data
 .venv/bin/python rag/svr/task_executor.py 0
 ```
+
+## Working Style (from upstream)
+
+1. Think before acting. Read existing files before writing code.
+2. Be concise in output but thorough in reasoning.
+3. Prefer editing over rewriting whole files.
+4. Do not re-read files you have already read.
+5. Test your code before declaring done.
+6. No sycophantic openers or closing fluff.
+7. Keep solutions simple and direct.
+8. User instructions always override this file.

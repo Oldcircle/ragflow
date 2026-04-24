@@ -1,6 +1,5 @@
 import { EmptyType } from '@/components/empty/constant';
 import Empty from '@/components/empty/empty';
-import HighLightMarkdown from '@/components/highlight-markdown';
 import { FilterButton } from '@/components/list-filter-bar';
 import { FilterPopover } from '@/components/list-filter-bar/filter-popover';
 import { FilterCollection } from '@/components/list-filter-bar/interface';
