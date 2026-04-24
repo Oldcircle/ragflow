@@ -2091,6 +2091,11 @@ def migrate_db():
     alter_db_add_column(migrator, "api_4_conversation", "version_title", CharField(max_length=255, null=True, help_text="canvas version title when session created", index=False))
     alter_db_column_type(migrator, "document", "size", BigIntegerField(default=0, index=True))
     alter_db_column_type(migrator, "file", "size", BigIntegerField(default=0, index=True))
+    # Phase 2.6 v0.4 / v0.6 — AgentV2Session 真 plan gate + plan body 持久化
+    alter_db_add_column(migrator, "agent_v2_session", "pending_plan_id", CharField(max_length=32, null=True, default=None, index=True, help_text="Current submit_plan pending_id awaiting user decision."))
+    alter_db_add_column(migrator, "agent_v2_session", "pending_plan_status", CharField(max_length=24, null=True, default=None, index=True, help_text="waiting | approved | rejected | request_changes | null"))
+    alter_db_add_column(migrator, "agent_v2_session", "pending_plan_submitted_at", BigIntegerField(null=True, default=None, help_text="submit_plan 提交时的 ms timestamp；用于 TTL 过期判断"))
+    alter_db_add_column(migrator, "agent_v2_session", "pending_plan_body", JSONField(null=True, default=None, help_text="Full submit_plan payload; cleared together with pending_plan_status"))
     logging.disable(logging.NOTSET)
     # this is after re-enabling logging to allow logging changed user emails
     migrate_add_unique_email(migrator)
