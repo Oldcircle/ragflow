@@ -20,31 +20,39 @@ logger = logging.getLogger("ragflow.agent_v2.rag_read_doc")
 @tool(
     name="rag_read_doc",
     description=(
-        "读取指定文档的完整内容（或分段范围）。"
-        "拿到后可以看整篇政策/法规的所有条款。"
-        "适合先用 rag_retrieve 或 rag_list_docs 找到 doc_id，再调此工具读全文。"
-        "注意：返回的文本可能被截断到 32KB 以内——"
-        "对长文档请用 chunk_offset + chunk_limit 分段读取。"
+        "Use this tool when retrieved chunks are fragmented or missing "
+        "context and you need the full body of a specific document to "
+        "answer confidently. First resolve the doc_id via `rag_retrieve` "
+        "or `rag_list_docs`.\n\n"
+        "Returns concatenated chunk text with metadata. Output is capped "
+        "at ~32 KB — use `chunk_offset` + `chunk_limit` for longer "
+        "documents.\n\n"
+        "Usage notes:\n"
+        "- Don't use this as a substitute for `rag_retrieve`; retrieval-"
+        "by-similarity is cheaper and more focused.\n"
+        "- Cite [N] markers as if this document were a single chunk source."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "doc_id": {
                 "type": "string",
-                "description": "文档 ID（从 rag_retrieve 或 rag_list_docs 的返回中获取）",
+                "description": (
+                    "Document ID from rag_retrieve or rag_list_docs."
+                ),
             },
             "chunk_offset": {
                 "type": "integer",
                 "default": 0,
                 "minimum": 0,
-                "description": "从第几个 chunk 开始读，默认 0",
+                "description": "Start chunk index (0 = from beginning).",
             },
             "chunk_limit": {
                 "type": "integer",
                 "default": 50,
                 "minimum": 1,
                 "maximum": 500,
-                "description": "读多少个 chunk，默认 50",
+                "description": "Number of chunks to return. Default 50.",
             },
         },
         "required": ["doc_id"],

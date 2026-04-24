@@ -18,16 +18,26 @@ logger = logging.getLogger("ragflow.agent_v2.rag_list_docs")
 @tool(
     name="rag_list_docs",
     description=(
-        "列出当前会话可见知识库下的文档（元数据：ID、名称、类型、chunk 数、进度）。"
-        "适用于用户问「有哪些文件」或 Agent 需要先了解文档清单再决定下一步查哪份时使用。"
-        "返回所有 KB 的合并列表，可选按文件名关键词过滤。"
+        "Use this tool when you need to know which documents exist in the "
+        "session's knowledge base(s) before deciding what to retrieve or "
+        "read. Also appropriate when the user asks 'what files are in this "
+        "KB?'\n\n"
+        "Returns documents across all KBs in scope as a merged list with "
+        "ID, name, file type, chunk count, and parse progress.\n\n"
+        "Usage notes:\n"
+        "- Supply `keywords` to filter by filename substring (case-insensitive).\n"
+        "- Use `rag_retrieve` (not this tool) for answering content questions; "
+        "this tool returns *metadata only*."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "keywords": {
                 "type": "string",
-                "description": "按文件名模糊过滤（可选）。例如「管理办法」只匹配文件名含此词的",
+                "description": (
+                    "Optional filename substring filter "
+                    "(case-insensitive). Leave empty for all documents."
+                ),
             },
             "page": {"type": "integer", "default": 1, "minimum": 1},
             "page_size": {
@@ -35,7 +45,9 @@ logger = logging.getLogger("ragflow.agent_v2.rag_list_docs")
                 "default": 50,
                 "minimum": 1,
                 "maximum": 200,
-                "description": "单 KB 返回条数上限，默认 50",
+                "description": (
+                    "Max rows per KB to return. Default 50."
+                ),
             },
         },
     },

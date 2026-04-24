@@ -37,16 +37,20 @@ MAX_DEPTH = 1  # 0 = 父；子不能再派
 @tool(
     name="spawn_subagent",
     description=(
-        "Dispatch a focused subagent to perform an isolated investigation "
-        "or task. Use this when you need to:\n"
-        "  - investigate multiple targets in parallel context (one per subagent)\n"
-        "  - delegate a deep read of specific documents without cluttering your own context\n"
-        "  - run a long tool chain and synthesize a summary\n\n"
-        "The subagent shares the same tenant, knowledge bases, and model with you, "
-        "but has its OWN message history. It CANNOT spawn further subagents.\n\n"
-        "You receive a single synthesized text response. Plan carefully before spawning: "
-        "one subagent per clearly-scoped task. Give a complete brief — the subagent "
-        "cannot ask you clarifying questions."
+        "Use this tool when a user request needs capabilities or operations "
+        "you do not directly have in your toolbelt — e.g. write operations "
+        "(sub_archivist), KB audits / report writing (sub_librarian), deep "
+        "clause reading (sub_policy_researcher), or citation re-verification "
+        "(sub_evidence_checker).\n\n"
+        "The subagent shares the tenant and KB scope with you but has its "
+        "own isolated message history and cannot spawn further subagents.\n\n"
+        "Usage notes:\n"
+        "- Always set `subagent_type` to pick the right specialist. Leaving "
+        "it unset spawns a generic subagent and is discouraged.\n"
+        "- Pass a complete brief in `prompt`: the subagent cannot ask you "
+        "clarifying questions mid-run.\n"
+        "- One user request → at most ONE subagent of each type. Do not "
+        "re-spawn the same type repeatedly; the second call wastes budget."
     ),
     input_schema={
         "type": "object",

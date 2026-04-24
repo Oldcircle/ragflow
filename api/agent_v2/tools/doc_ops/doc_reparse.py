@@ -64,24 +64,32 @@ def _extra_audit(args: dict, result: Any, _ctx) -> dict:
 @tool(
     name="doc_reparse",
     description=(
-        "重新解析一个文档并重新入库；**只在用户明确要求**时调用，例如："
-        "『把这份 PDF 用 book 解析器重跑一遍』、『这个文档 chunk 效果不好，"
-        "换 naive 再切一次』。\n\n"
-        "行为：清旧 chunks + 重新排任务，task_executor 会在下一轮处理。"
-        "不修改 blob 本身；可选改 parser_id。需要 CONTRIBUTOR+ 权限。"
+        "Use this tool when the user asks to re-run the parser on a "
+        "document — typically because the current chunks are poor quality "
+        "or they want to switch the parser (e.g. naive → book for PDFs).\n\n"
+        "Clears existing chunks and enqueues a fresh parse task; the "
+        "task_executor picks it up asynchronously. The blob itself is "
+        "unchanged. Optionally switch `parser_id` as part of the call. "
+        "Requires CONTRIBUTOR+ on the owning KB."
     ),
     input_schema={
         "type": "object",
         "properties": {
-            "doc_id": {"type": "string", "description": "要重解析的文档 ID"},
+            "doc_id": {
+                "type": "string",
+                "description": "ID of the document to re-parse.",
+            },
             "parser_id": {
                 "type": "string",
                 "description": (
-                    "可选：切换新的解析器，如 'naive' / 'book' / 'qa' / 'laws'。"
-                    "不填则沿用当前 parser_id。"
+                    "Optional new parser: 'naive' / 'book' / 'qa' / "
+                    "'laws' / ... Leave unset to keep the current parser."
                 ),
             },
-            "reason": {"type": "string", "description": "可选；写进审计便于追溯。"},
+            "reason": {
+                "type": "string",
+                "description": "Optional audit-log reason.",
+            },
         },
         "required": ["doc_id"],
     },

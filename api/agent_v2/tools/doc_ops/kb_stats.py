@@ -19,17 +19,23 @@ logger = logging.getLogger("ragflow.agent_v2.doc_ops.kb_stats")
 @tool(
     name="kb_stats",
     description=(
-        "【WHEN】**需要快速拿 KB 的几个关键数字**时用，例如：\n"
-        "- 写计划前问『这个 KB 现在多大？』\n"
-        "- doc_create_note 之前确认目标库还能装\n"
-        "- 周期巡检的 ping（配 Phase 3 的 Trigger 用）\n\n"
-        "相比 kb_audit：只返 totals + 最旧/最新文档时间 + embedding 模型，"
-        "响应体 < 1KB。"
+        "Use this tool when you need a quick numeric snapshot of a KB — "
+        "before writing a plan ('how big is this KB?'), before "
+        "`doc_create_note` to confirm the target isn't at quota, or as a "
+        "periodic health ping.\n\n"
+        "Returns doc_num / chunk_num / token_num / embd_id / parser_id / "
+        "oldest & newest document timestamps / unparsed count. Response "
+        "is under 1 KB — cheap to call repeatedly. For a full health "
+        "report use `kb_audit`.\n\n"
+        "Read-only. Requires VIEWER+."
     ),
     input_schema={
         "type": "object",
         "properties": {
-            "kb_id": {"type": "string", "description": "KB ID"},
+            "kb_id": {
+                "type": "string",
+                "description": "KB ID to snapshot.",
+            },
         },
         "required": ["kb_id"],
     },

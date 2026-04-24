@@ -64,27 +64,30 @@ def _extra_audit(args: dict, result: Any, _ctx) -> dict:
 @tool(
     name="doc_rename",
     description=(
-        "重命名一个文档的显示名（Document.name）。**只在用户明确要求**时调用，"
-        "例如：『把「合同_V3_final_fixed.pdf」改成「2024-Q1 服务合同.pdf」』。"
-        "\n\n"
-        "不会改 blob / chunks / 元数据，不重解析。"
-        "同 KB 内若目标名已被占用，会自动加 -1 / -2 后缀以避免冲突。"
-        "需要 CONTRIBUTOR+ 权限。"
+        "Use this tool when the user has asked you to rename a specific "
+        "document's display name (Document.name). The file blob, chunks, "
+        "and metadata are left unchanged — no re-parse is triggered.\n\n"
+        "On name collision within the same KB an auto-suffix (-1, -2, ...) "
+        "is applied. Requires CONTRIBUTOR+ on the owning KB."
     ),
     input_schema={
         "type": "object",
         "properties": {
-            "doc_id": {"type": "string", "description": "文档 ID"},
+            "doc_id": {"type": "string", "description": "Document ID."},
             "new_name": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": _MAX_NAME_LEN,
                 "description": (
-                    "新文件名。避免使用 /\\<>:\"|?* 等非法字符；"
-                    "尽量保留原扩展名以便 UI 正确显示图标。"
+                    "New display name. Avoid forbidden chars (/\\<>:\"|?*); "
+                    "keep the original extension so the UI renders the "
+                    "correct icon."
                 ),
             },
-            "reason": {"type": "string", "description": "可选；写进审计便于追溯。"},
+            "reason": {
+                "type": "string",
+                "description": "Optional audit-log reason.",
+            },
         },
         "required": ["doc_id", "new_name"],
     },

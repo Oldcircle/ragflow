@@ -26,39 +26,44 @@ logger = logging.getLogger("ragflow.agent_v2.rag_graph_query")
 @tool(
     name="rag_graph_query",
     description=(
-        "在知识图谱（GraphRAG）中检索实体和关系。"
-        "适合回答「X 和 Y 有什么关系」「X 涉及哪些实体」「X 属于什么类别」一类的问题，"
-        "或者需要跨多份文档做「命中实体 → 关联实体」这种链式推理的场景。"
-        "仅当 KB 建索引时启用了 Knowledge Graph 时有结果；否则返回空。"
-        "优先考虑 rag_retrieve，只在普通语义检索不够用时调用本工具。"
+        "Use this tool when you need entity-relationship reasoning across "
+        "documents — e.g. 'how does X relate to Y', 'which entities belong "
+        "to category Z', or chained 'hit entity → related entities' "
+        "inferences.\n\n"
+        "Only works when the KB was indexed with GraphRAG enabled; otherwise "
+        "returns empty results. Prefer `rag_retrieve` for ordinary semantic "
+        "questions and only reach here when vanilla retrieval is insufficient."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": "检索问题或实体名。例如「保障性住房」或「公租房 租金 计算方式」",
+                "description": (
+                    "Entity name or short question (e.g. 'public rental "
+                    "housing' or 'housing subsidy formula')."
+                ),
             },
             "ent_topn": {
                 "type": "integer",
                 "default": 6,
                 "minimum": 1,
                 "maximum": 20,
-                "description": "返回前 N 个相关实体，默认 6",
+                "description": "Top N entities to return. Default 6.",
             },
             "rel_topn": {
                 "type": "integer",
                 "default": 6,
                 "minimum": 1,
                 "maximum": 20,
-                "description": "返回前 N 条相关关系，默认 6",
+                "description": "Top N relations to return. Default 6.",
             },
             "max_token": {
                 "type": "integer",
                 "default": 4096,
                 "minimum": 512,
                 "maximum": 8192,
-                "description": "图谱上下文最大 token 数，默认 4096",
+                "description": "Max tokens in the combined graph context.",
             },
         },
         "required": ["query"],

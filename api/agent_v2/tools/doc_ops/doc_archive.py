@@ -65,27 +65,37 @@ def _extra_audit(args: dict, result: Any, _ctx) -> dict:
 @tool(
     name="doc_archive",
     description=(
-        "把一个文档从一个知识库**移到**另一个知识库（跨 KB 归档）。\n"
-        "**只在用户明确要求**时调用，例如：『把合同归档到法务-过期库』、"
-        "『把 2023 年的政策全部移到归档库』、『这份白皮书更适合放在行业库』。\n\n"
-        "限制：\n"
-        "- 源和目标必须同一 tenant（不跨租户）\n"
-        "- 源和目标必须使用**同一 embedding 模型**；否则 chunks 无法直接复用，会被拒绝"
-        "（此时应先用 kb_create 建一个和源 KB 同 embedding 的新库）\n"
-        "- 源 KB 和目标 KB **双边都需 CONTRIBUTOR+** 权限\n\n"
-        "可逆：执行后审计里会记录 source/target；任意时候调同一工具把 target→source 即可回滚。"
+        "Use this tool when the user has asked to move a document from one "
+        "knowledge base to another (cross-KB archiving).\n\n"
+        "Constraints:\n"
+        "- Source and target must be in the same tenant.\n"
+        "- Source and target must use the **same embedding model**, else "
+        "the existing chunks cannot be reused and the call is rejected. "
+        "When this happens, first use `kb_create` with matching `embd_id`.\n"
+        "- Requires CONTRIBUTOR+ on BOTH the source and target KB.\n\n"
+        "Reversible: call the tool again with source/target swapped to "
+        "move the document back. Previous source/target IDs are recorded "
+        "in the audit log."
     ),
     input_schema={
         "type": "object",
         "properties": {
-            "doc_id": {"type": "string", "description": "要移动的文档 ID"},
+            "doc_id": {
+                "type": "string",
+                "description": "ID of the document to move.",
+            },
             "target_kb_id": {
                 "type": "string",
-                "description": "目标知识库 ID；必须和源 KB 同 tenant、同 embedding。",
+                "description": (
+                    "Target KB ID. Must share tenant and embedding model "
+                    "with the source KB."
+                ),
             },
             "reason": {
                 "type": "string",
-                "description": "可选；写进审计便于追溯（如『过期归档』）。",
+                "description": (
+                    "Optional audit-log reason, e.g. 'expired archival'."
+                ),
             },
         },
         "required": ["doc_id", "target_kb_id"],

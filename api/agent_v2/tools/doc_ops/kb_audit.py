@@ -26,37 +26,43 @@ _MAX_SAMPLE_LIMIT = 30
 @tool(
     name="kb_audit",
     description=(
-        "【WHEN】**需要全面了解一个 KB 的当前形态**时用，典型场景：\n"
-        "- 用户问『这个 KB 里有多少陈旧文档？』\n"
-        "- 作为『整理 / 清理 / 归档』前的第一步，了解全貌\n"
-        "- 周期巡检：『这个 KB 健不健康？』\n"
-        "- 做 submit_plan 前对规模 / 风险的量化估计\n\n"
-        "【WHAT】返回结构化健康报告：\n"
-        "- 文档总数 + 按解析状态拆分（done / running / failed / queued）\n"
-        "- 陈旧文档（create_time 早于 ``stale_days`` 且未更新过，默认 180 天）\n"
-        "- 可疑重复（同 content_hash 的多份）\n"
-        "- 未解析（progress < 1 或 state 不是 done）\n"
-        "- 标签分布（Top 10 tags）\n"
-        "- 整体统计（token_num / chunk_num / storage bytes）\n\n"
-        "【读-only】不修改任何东西；VIEWER+ 权限。"
+        "Use this tool when you need a complete structural health check of "
+        "a KB — before planning a cleanup, before writing a report, or when "
+        "the user asks 'is this KB healthy?' / 'what needs attention?'.\n\n"
+        "Returns a structured report: doc counts by parse status (done / "
+        "running / queued / cancelled / likely_failed), stale documents "
+        "(older than `stale_days`, default 180), duplicate candidates "
+        "(same content_hash), unparsed docs (progress<1), top tags, and "
+        "totals. Also returns a human-readable `suggestions` field you "
+        "can lean on when writing follow-up recommendations.\n\n"
+        "Read-only. Requires VIEWER+."
     ),
     input_schema={
         "type": "object",
         "properties": {
-            "kb_id": {"type": "string", "description": "要体检的 KB ID"},
+            "kb_id": {
+                "type": "string",
+                "description": "KB ID to audit.",
+            },
             "stale_days": {
                 "type": "integer",
                 "default": _DEFAULT_STALE_DAYS,
                 "minimum": 7,
                 "maximum": 3650,
-                "description": "超过多少天没更新算陈旧；默认 180",
+                "description": (
+                    "Documents untouched for this many days are flagged "
+                    "as stale. Default 180."
+                ),
             },
             "sample_limit": {
                 "type": "integer",
                 "default": _DEFAULT_SAMPLE_LIMIT,
                 "minimum": 1,
                 "maximum": _MAX_SAMPLE_LIMIT,
-                "description": "每类问题返回几个样本 doc（名 + ID）；默认 5",
+                "description": (
+                    "Number of sample documents returned per issue class "
+                    "(name + ID). Default 5, max 30."
+                ),
             },
         },
         "required": ["kb_id"],

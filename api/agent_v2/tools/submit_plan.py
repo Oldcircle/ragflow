@@ -29,20 +29,20 @@ _MAX_STEPS = 10
 @tool(
     name="submit_plan",
     description=(
-        "提交一份待执行计划给用户审批。**在触发破坏性 / 不可逆操作前必须先调用**。\n\n"
-        "协议：工具立即返 ``{status:'waiting', pending_id:...}``；**立刻停止生成**，"
-        "等用户在下一个 turn 里回复 approve / reject / request_changes。\n\n"
-        "典型场景：\n"
-        "  - 要把一批文档跨 KB 移动（doc_archive）\n"
-        "  - 要从 URL 批量入库多份文件\n"
-        "  - 要对大批文档重解析\n"
-        "  - 即将对大量 doc 打 / 去 标签\n\n"
-        "字段要求：\n"
-        "  - title：一句话；用户在卡片顶端看到\n"
-        "  - steps：每步一行，1-10 步；按执行顺序\n"
-        "  - affected_resources：结构化影响面（kb / doc_count / 外链）\n"
-        "  - risk_level：low / medium / high；high 建议要二次确认\n"
-        "  - reversible：是否可靠工具回滚；不可逆必须 true 时说清楚 hint\n"
+        "Use this tool before executing a batch (≥3 operations), a cross-KB "
+        "move, a URL ingest, or any other change where the user should see "
+        "what you intend before you act.\n\n"
+        "On call the tool returns `{status:'waiting', pending_id}` and emits "
+        "a plan-approval card to the frontend. STOP generating further text "
+        "this turn — the user will respond with approve / reject / "
+        "request_changes in the next message.\n\n"
+        "Usage notes:\n"
+        "- `title` is the one-liner the user sees at the top of the card.\n"
+        "- `steps` are ordered 1-10 execution steps.\n"
+        "- `affected_resources` lists concrete impact (kb / doc_count / URLs).\n"
+        "- `risk_level` = low / medium / high; mark non-reversible work high.\n"
+        "- Set `reversible=false` and populate `reversible_hint` when undo "
+        "requires manual intervention (admin console, support ticket)."
     ),
     input_schema={
         "type": "object",

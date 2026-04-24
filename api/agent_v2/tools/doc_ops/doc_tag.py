@@ -75,39 +75,44 @@ def _hint(op: str | None) -> str:
 @tool(
     name="doc_tag",
     description=(
-        "给一个文档加 / 去 / 设标签（meta_fields.tags）。**只在用户明确要求**时调用，"
-        "例如：『给深圳市人才安居办法打上「2024 最新」和「人才」标签』、"
-        "『把过期的合同标为 expired』、『把这份重置成只有「合规」一个标签』。"
-        "\n\n"
-        "operation:\n"
-        "  - add: 并集；重复 tag 自动去重\n"
-        "  - remove: 减集；不存在的 tag 忽略不报错\n"
-        "  - set: 完全覆盖，用 args.tags 替换所有现有标签\n\n"
-        "需要 CONTRIBUTOR+ 权限；失败会返 no_access。"
+        "Use this tool when the user has explicitly asked to tag a specific "
+        "document — add / remove / replace tags on its metadata.\n\n"
+        "Operation semantics:\n"
+        "- add: union with existing tags (duplicates deduped)\n"
+        "- remove: difference; missing tags are silently ignored\n"
+        "- set: full replacement of the tag list with `tags`\n\n"
+        "Requires CONTRIBUTOR+ on the owning KB. Returns status=noop when "
+        "the requested change leaves tags unchanged."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "doc_id": {
                 "type": "string",
-                "description": "文档 ID（从 rag_list_docs / rag_retrieve 的返回里拿）。",
+                "description": (
+                    "Document ID (from rag_list_docs / rag_retrieve)."
+                ),
             },
             "tags": {
                 "type": "array",
                 "items": {"type": "string", "minLength": 1, "maxLength": 64},
                 "minItems": 1,
                 "maxItems": 20,
-                "description": "要操作的标签列表；单个长度 1-64 字符，总数 1-20。",
+                "description": (
+                    "Tag list to apply. Each tag 1-64 chars; up to 20 tags."
+                ),
             },
             "operation": {
                 "type": "string",
                 "enum": ["add", "remove", "set"],
                 "default": "add",
-                "description": "加（add）/ 减（remove）/ 完全覆盖（set）。",
+                "description": "add / remove / set (full replacement).",
             },
             "reason": {
                 "type": "string",
-                "description": "可选；写进审计日志便于后续追溯。",
+                "description": (
+                    "Optional free-text reason recorded in the audit log."
+                ),
             },
         },
         "required": ["doc_id", "tags"],

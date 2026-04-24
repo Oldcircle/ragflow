@@ -48,11 +48,17 @@ def _extra_audit(args: dict, result: Any, _ctx) -> dict:
 @tool(
     name="kb_create",
     description=(
-        "新建一个**空**知识库；只在用户要求"
-        "『建一个新库用来放 X』、『先建一个归档桶』、『按年份分库』时调用。\n\n"
-        "- 不会自动写入任何文档；后续用 doc_archive / doc_upload_from_url 填充。\n"
-        "- parser_id / embd_id 不填时自动继承当前会话第一个 KB 的配置（保证 embedding 兼容）。\n"
-        "- 失败原因常见：name 重复（会自动加后缀）、kb_max 配额超、tenant 无效。"
+        "Use this tool when the user asks to create a new empty knowledge "
+        "base — typically as an archival bucket or a per-year / per-category "
+        "split.\n\n"
+        "The new KB starts empty; populate it later with `doc_archive` or "
+        "`doc_upload_from_url`.\n\n"
+        "Usage notes:\n"
+        "- If `parser_id` / `embd_id` are omitted, they inherit from the "
+        "session's first KB — this matters because `doc_archive` requires "
+        "matching embedding models on source and target.\n"
+        "- Fails with `quota_exceeded` when tenant.kb_max is reached.\n"
+        "- Name collisions within the tenant are auto-suffixed (-1 / -2)."
     ),
     input_schema={
         "type": "object",
@@ -61,27 +67,39 @@ def _extra_audit(args: dict, result: Any, _ctx) -> dict:
                 "type": "string",
                 "minLength": 1,
                 "maxLength": _MAX_NAME_LEN,
-                "description": "KB 显示名；同 tenant 内若重名会自动加 -1 / -2 后缀。",
+                "description": (
+                    "Display name. Auto-suffixed on collision within "
+                    "the tenant."
+                ),
             },
             "description": {
                 "type": "string",
-                "description": "可选：这个 KB 的用途说明，会写到 KB 详情页。",
+                "description": (
+                    "Optional purpose blurb shown on the KB detail page."
+                ),
             },
             "parser_id": {
                 "type": "string",
                 "description": (
-                    "可选：默认解析器类型，如 'naive' / 'qa' / 'book'。不填 = 继承当前会话第一个 KB。"
+                    "Optional parser choice: 'naive' / 'qa' / 'book' / "
+                    "etc. Defaults to the session's first KB."
                 ),
             },
             "embd_id": {
                 "type": "string",
-                "description": "可选：嵌入模型 ID。不填 = 继承当前会话第一个 KB。",
+                "description": (
+                    "Optional embedding-model ID. Defaults to the "
+                    "session's first KB."
+                ),
             },
             "permission": {
                 "type": "string",
                 "enum": ["me", "team"],
                 "default": "me",
-                "description": "可见性；'me' 只创建者可见，'team' 同 tenant 成员默认 VIEWER。",
+                "description": (
+                    "'me' = creator only; 'team' = all tenant members "
+                    "with default VIEWER role."
+                ),
             },
         },
         "required": ["name"],

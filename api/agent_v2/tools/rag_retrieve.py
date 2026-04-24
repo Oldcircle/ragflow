@@ -21,29 +21,41 @@ logger = logging.getLogger("ragflow.agent_v2.rag_retrieve")
 @tool(
     name="rag_retrieve",
     description=(
-        "在企业知识库中做语义检索，返回与 query 最相关的原文片段。"
-        "用于查政策条款、法规条文、产品说明等。"
-        "返回内容包含每个片段的文档名、原文、相似度分数。"
-        "当用户问题涉及知识库内容时必须优先调用此工具；"
-        "检索结果不足时可以换关键词多次调用。"
+        "Use this tool when you need to look up factual content in the "
+        "knowledge base to answer the user's question.\n\n"
+        "Returns the top_n most similar chunks across all KBs in scope, "
+        "each with its source document name, verbatim text, and similarity "
+        "score.\n\n"
+        "Usage notes:\n"
+        "- Use short keyword-style queries (core nouns + verbs). Full-sentence "
+        "queries dilute similarity scores.\n"
+        "- Call 1-3 times per turn, varying keywords if the first pass "
+        "returns sparse results.\n"
+        "- Assign [1], [2], [3] to chunks in the order they appear in the "
+        "aggregated results across this turn; reuse those markers in your answer."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": "检索关键词。用用户问题的核心名词和动词；避免完整长句。",
+                "description": (
+                    "Keyword-style query; prefer the core nouns and verbs "
+                    "from the user's question over a full sentence."
+                ),
             },
             "top_n": {
                 "type": "integer",
-                "description": "返回前 N 个最相关片段，默认 8，范围 1-30。",
+                "description": "Return the top N chunks. Default 8, max 30.",
                 "default": 8,
                 "minimum": 1,
                 "maximum": 30,
             },
             "similarity_threshold": {
                 "type": "number",
-                "description": "相似度阈值，低于此值的片段会被过滤，默认 0.15。",
+                "description": (
+                    "Drop chunks below this similarity score. Default 0.15."
+                ),
                 "default": 0.15,
                 "minimum": 0.0,
                 "maximum": 1.0,

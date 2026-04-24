@@ -59,40 +59,46 @@ def _extra_audit(args: dict, result: Any, _ctx) -> dict:
 @tool(
     name="doc_create_note",
     description=(
-        "【WHEN】**需要把自己生成的 Markdown 内容作为新文档保存到 KB**时用。"
-        "典型场景：\n"
-        "- 用户要求『把这次检索总结成一份笔记存下来』\n"
-        "- 自己做完 kb_audit 之后，生成『巡检报告』存回某个元数据 KB\n"
-        "- 生成 FAQ / 政策速览 / 行业摘要 作为可检索文档\n\n"
-        "【WHAT】把 ``markdown_body`` 作为 ``.md`` 文件写到目标 KB；自动排进解析队列，"
-        "解析完成后其他 Agent 通过 rag_retrieve 能检索到。\n\n"
-        "【限制】\n"
-        "- 单次 markdown_body ≤ 2MB（足够一份报告，超过说明 prompt 出错）\n"
-        "- 同 KB 内 content_hash 相同 → 不重复入库，返 duplicate 提示\n"
-        "- 需要 CONTRIBUTOR+ 权限"
+        "Use this tool when you (or the user) needs to persist Markdown "
+        "content as a new document in a KB — a report, FAQ, summary, "
+        "audit writeup, or distilled digest. The alternative (replying "
+        "in chat only) loses the artifact at end-of-turn.\n\n"
+        "The body is saved as a `.md` file and auto-enqueued for parsing; "
+        "after parsing, other agents can retrieve it via `rag_retrieve`.\n\n"
+        "Usage notes:\n"
+        "- Max body size 2 MB (enough for a detailed report).\n"
+        "- Dedup via content_hash per KB: identical content returns "
+        "status=duplicate and does NOT write again.\n"
+        "- Auto-applies 'source:agent_note' tag; add topical tags yourself.\n"
+        "- Requires CONTRIBUTOR+ on the target KB."
     ),
     input_schema={
         "type": "object",
         "properties": {
-            "kb_id": {"type": "string", "description": "目标知识库 ID"},
+            "kb_id": {
+                "type": "string",
+                "description": "Target KB ID.",
+            },
             "title": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": _MAX_TITLE_LEN,
                 "description": (
-                    "笔记标题。**不要**包含扩展名；工具会自动加 `.md`。"
-                    "例：'2024-Q1 保障房政策速览' / '深圳户籍人才安居 FAQ'"
+                    "Note title. Do NOT include an extension; the tool "
+                    "appends `.md`. Recommended format: "
+                    "'YYYY-MM-DD · <topic>'."
                 ),
             },
             "markdown_body": {
                 "type": "string",
                 "minLength": 32,
                 "description": (
-                    "Markdown 正文。要点：\n"
-                    "- 开头一行 `# <标题>` 方便人类阅读\n"
-                    "- 用 `##` / `###` 分节便于检索 chunk 边界\n"
-                    "- 引用其他文档时用链接或明确『依据：《XX 办法》第 N 条』\n"
-                    "- **不要**凭训练知识补 KB 里没有的细节——这里是笔记不是答复"
+                    "Markdown body. Start with '# <title>' for human "
+                    "readers; use '##' / '###' for sections (helps chunk "
+                    "boundaries). Cite other documents with links or an "
+                    "inline 'per <Policy Name> §N'. Do NOT supplement from "
+                    "training knowledge — notes are distilled retrieval, "
+                    "not free-form writing."
                 ),
             },
             "tags": {
@@ -100,11 +106,15 @@ def _extra_audit(args: dict, result: Any, _ctx) -> dict:
                 "items": {"type": "string", "minLength": 1, "maxLength": 64},
                 "maxItems": 10,
                 "description": (
-                    "可选：自动打标签，方便以后筛出 agent 生成的笔记。"
-                    "建议至少带 ['agent_note'] 一个通用 tag。"
+                    "Optional topical tags. 'source:agent_note' is added "
+                    "automatically. Recommended to also include "
+                    "'by:<subagent-name>' for provenance."
                 ),
             },
-            "reason": {"type": "string", "description": "可选；写进审计便于追溯。"},
+            "reason": {
+                "type": "string",
+                "description": "Optional audit-log reason.",
+            },
         },
         "required": ["kb_id", "title", "markdown_body"],
     },

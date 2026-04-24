@@ -71,15 +71,18 @@ def _extra_audit(args: dict, result: Any, _ctx) -> dict:
 @tool(
     name="doc_upload_from_url",
     description=(
-        "从公网 URL 拉一个文件，入到指定 KB。**只在用户明确给 URL 并要求入库**"
-        "时调用，例如：『把 https://example.com/report.pdf 加到行业库』。\n\n"
-        "限制（硬性）：\n"
-        "- 仅允 http / https scheme；不支持 file:// / ftp:// 等\n"
-        "- 拒绝访问内网 / loopback / link-local（防 SSRF）\n"
-        "- 总大小上限 50 MB；超限立即中断\n"
-        "- 若同 KB 已有相同 xxhash128 的文档 → 不重新入库，返回 duplicate 提示\n"
-        "- 需要 CONTRIBUTOR+ 权限\n\n"
-        "入库后文件会自动排进解析队列，等同于 UI 上传；进度可用 rag_list_docs 查。"
+        "Use this tool when the user supplied a public http/https URL and "
+        "asked to ingest the file into a specific KB.\n\n"
+        "Hard security constraints:\n"
+        "- http / https scheme only (file://, ftp:// etc. are refused).\n"
+        "- Hosts resolving to private / loopback / link-local IPs are "
+        "refused (SSRF protection).\n"
+        "- 50 MB body cap; streaming is aborted if exceeded.\n"
+        "- Duplicate detection via xxhash128 against the target KB — if "
+        "content matches an existing doc, status=duplicate and no new "
+        "upload happens.\n\n"
+        "Requires CONTRIBUTOR+ on the target KB. Ingested docs follow the "
+        "same parse queue as UI uploads; check progress via `rag_list_docs`."
     ),
     input_schema={
         "type": "object",
@@ -87,20 +90,27 @@ def _extra_audit(args: dict, result: Any, _ctx) -> dict:
             "url": {
                 "type": "string",
                 "format": "uri",
-                "description": "公网 http/https URL；拒绝内网、file://、ftp:// 等",
+                "description": (
+                    "Public http/https URL. Internal hosts, file://, "
+                    "ftp://, etc. are rejected."
+                ),
             },
             "kb_id": {
                 "type": "string",
-                "description": "目标知识库 ID",
+                "description": "Target knowledge base ID.",
             },
             "name": {
                 "type": "string",
                 "description": (
-                    "可选：自定义文件名。不填则使用 URL 路径末段或 "
-                    "Content-Disposition 头里的 filename。"
+                    "Optional custom filename. If omitted, we use the URL "
+                    "path's last segment or the server's "
+                    "Content-Disposition filename header."
                 ),
             },
-            "reason": {"type": "string", "description": "可选；写进审计便于追溯。"},
+            "reason": {
+                "type": "string",
+                "description": "Optional audit-log reason.",
+            },
         },
         "required": ["url", "kb_id"],
     },

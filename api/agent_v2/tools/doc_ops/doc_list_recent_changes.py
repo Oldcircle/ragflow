@@ -25,45 +25,62 @@ _MAX_LIMIT = 200
 @tool(
     name="doc_list_recent_changes",
     description=(
-        "【WHEN】**需要核对一批操作是否成功 / 谁改过 KB**时用：\n"
-        "- sub_archivist 做完批量 archive 后，确认『我的 12 个 doc_archive 都成功了吗』\n"
-        "- 用户问『这个 KB 最近谁改过？』\n"
-        "- 审计回溯事故：某个 doc 是怎么跑到这里来的\n\n"
-        "【WHAT】读 access_audit_log，按时间倒序返回：\n"
-        "- 每条 record 含 action / result / resource_id / reason / user_id / ts / metadata\n"
-        "- 默认窗口 24 小时；最多 30 天\n"
-        "- 可按 kb_id 过滤（只看那个 KB 相关）\n"
-        "- 可按 action prefix 过滤（如 'kb.doc.' 只看文档相关）\n\n"
-        "读-only；如果传 kb_id 则 VIEWER+，否则按 tenant 级。"
+        "Use this tool when you need to verify recent write activity: did "
+        "my last batch of archives succeed? who touched this KB last week? "
+        "why does this document show up in an unexpected KB?\n\n"
+        "Reads the `access_audit_log` table and returns rows in reverse "
+        "chronological order, each containing action / result / resource_id "
+        "/ reason / user_id / timestamp / metadata.\n\n"
+        "Usage notes:\n"
+        "- Default window 24 hours, max 30 days. Values above the max "
+        "are clamped, not rejected.\n"
+        "- Filter by `kb_id` to focus on a KB's activity; by `action_prefix` "
+        "(e.g. 'kb.doc.') to narrow to a category.\n"
+        "- Read-only. Requires VIEWER+ on `kb_id` when supplied; else "
+        "tenant-level access."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "kb_id": {
                 "type": "string",
-                "description": "可选：只看这个 KB 相关的记录",
+                "description": (
+                    "Optional filter: only rows referencing this KB "
+                    "(matches resource_id OR metadata substring)."
+                ),
             },
             "window_hours": {
                 "type": "integer",
                 "minimum": 1,
                 "maximum": _MAX_WINDOW_HOURS,
                 "default": _DEFAULT_WINDOW_HOURS,
+                "description": (
+                    "Lookback window in hours. Default 24, max 720 (30 days)."
+                ),
             },
             "action_prefix": {
                 "type": "string",
-                "description": "可选：action 的前缀过滤，如 'kb.doc.' 或 'agent_v2.'",
+                "description": (
+                    "Optional prefix filter on the action field "
+                    "(e.g. 'kb.doc.' or 'agent_v2.')."
+                ),
             },
             "result_filter": {
                 "type": "string",
                 "enum": ["allow", "deny", "any"],
                 "default": "any",
-                "description": "只看 allow 记录 / 只看 deny 记录 / 全部",
+                "description": (
+                    "Restrict to allow-only / deny-only / both."
+                ),
             },
             "limit": {
                 "type": "integer",
                 "minimum": 1,
                 "maximum": _MAX_LIMIT,
                 "default": _DEFAULT_LIMIT,
+                "description": (
+                    "Max rows returned. Default 50, max 200."
+                ),
             },
         },
     },

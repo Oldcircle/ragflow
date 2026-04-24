@@ -30,17 +30,19 @@ _MIN_OPTIONS = 2
 @tool(
     name="ask_user_question",
     description=(
-        "向用户发起一个多选问题来澄清需求或在关键分叉点征求意见。\n"
-        "**什么时候用**：\n"
-        "  - 用户指令模糊（『归档一下这些合同』但没说归到哪个库）\n"
-        "  - 多种合理做法需要用户选（『你要覆盖原标签，还是在原基础上加？』）\n"
-        "  - 破坏性/不可逆操作需要二次确认\n\n"
-        "**协议**：调用后立即收到 ``{status:'waiting', pending_id:...}``；"
-        "此时**立刻停止**，不要继续生成任何文本；用户在新 turn 里回答你。"
-        "如果 multi_select=true 则允许多选。\n\n"
-        "选项设计建议：\n"
-        "  - 2-4 个 options；label 1-5 个词；description 一句话说清差别\n"
-        "  - 若有推荐项放第一位，label 末尾可加『（推荐）』\n"
+        "Use this tool when the user's request is ambiguous and the "
+        "answer is a choice from a small set — destination KB, action "
+        "mode, confirmation before a destructive op, etc.\n\n"
+        "On call the tool returns immediately with "
+        "`{status:'waiting', pending_id}` and emits a multi-choice card "
+        "to the frontend. STOP generating further text in this turn — the "
+        "user's selection arrives as the next user message.\n\n"
+        "Usage notes:\n"
+        "- 2-4 options. Label 1-5 words; description one sentence.\n"
+        "- If you recommend one option, place it first and append "
+        "'(recommended)' to its label.\n"
+        "- Prefer this over free-text Markdown questions when the user's "
+        "answer is a small enum — the frontend card gives a better UX."
     ),
     input_schema={
         "type": "object",
@@ -48,13 +50,16 @@ _MIN_OPTIONS = 2
             "question": {
                 "type": "string",
                 "minLength": 2,
-                "description": "要问的完整问题；用问号结尾。",
+                "description": "The full question to ask, ending with '?'.",
             },
             "header": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 12,
-                "description": "前端卡片上方的短标签，≤12 字符。例：『目标库』『操作』。",
+                "description": (
+                    "Short chip label above the question card (≤12 chars). "
+                    "Examples: 'Target KB', 'Action', 'Scope'."
+                ),
             },
             "options": {
                 "type": "array",
