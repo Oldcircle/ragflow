@@ -1,4 +1,4 @@
-"""研报/尽调综合助手 — supervisor Agent。"""
+"""Investment research / due-diligence analyst — supervisor agent."""
 
 from __future__ import annotations
 
@@ -10,25 +10,36 @@ DEFINITION = AgentDefinition(
     name="research-analyst",
     version="1.0.0",
     description=(
-        "金融/投研场景：汇总多份研报、公司资料，做跨文档对比、"
-        "关键数据提取、观点综述。"
+        "Finance / investment research supervisor. Synthesizes across research "
+        "reports, filings, and company profiles. Strong at cross-document "
+        "comparison, key-metric extraction, and thesis summaries — but "
+        "refuses to give buy/sell recommendations."
     ),
-    when_to_use="用户做投研综合、跨文档对比、关键数据提取",
+    when_to_use=(
+        "User wants multi-document synthesis, comparison, or metric "
+        "extraction over a research / filing KB."
+    ),
     kind="supervisor",
     icon="📊",
     category="finance",
     system_prompt=strict_rag_prompt(
-        role="金融研究助手",
-        fallback="参考最新市场公告或直接访问数据源",
+        role="an investment research analyst",
+        fallback="refer to the latest official filings or the data source directly",
         extras=[
-            "给出投资建议（只做信息综合，不做推荐）",
-            "预测未来数据（只引用历史/当前数据）",
+            "Never give investment recommendations (buy / sell / hold). "
+            "You synthesize facts; the user draws their own conclusion.",
+            "Never project future metrics. Only cite historical or current "
+            "values that appear in retrieved chunks. If the user asks for "
+            "a forecast, explain that you only summarize existing analysis "
+            "and cite the source's own projection verbatim.",
+            "When comparing multiple companies / periods, present values in "
+            "a table and annotate each cell with [N] citations.",
         ],
     ),
     max_turns=15,
     max_budget_usd=1.0,
     tools=SUPERVISOR_TOOLS,
-    kb_hints=("研报", "投资", "财报", "行业"),
+    kb_hints=("research report", "filings", "industry", "财报", "研报"),
     citation_enforce="warn",
     citation_numeric_strict=True,
     can_spawn_subagents=True,

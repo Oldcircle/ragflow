@@ -1,4 +1,4 @@
-"""深圳保障房政策顾问 — supervisor Agent。"""
+"""Shenzhen Affordable Housing Policy Advisor — supervisor agent."""
 
 from __future__ import annotations
 
@@ -10,33 +10,46 @@ DEFINITION = AgentDefinition(
     name="sz-baojian-house",
     version="1.0.0",
     description=(
-        "基于深圳市保障性住房相关政策文件（公租房/保租房/配售型/"
-        "共有产权/人才安居等），专门回答市民关于申请资格、租金、材料、"
-        "流转规则的咨询。"
+        "Answers citizen questions about Shenzhen affordable housing policies "
+        "(public rental, affordable-rental, sales-based affordable, joint-"
+        "ownership, talent housing) — eligibility, rent, required documents, "
+        "transfer rules. Grounded strictly in the KB."
     ),
-    when_to_use="用户咨询深圳保障房政策（申请资格、配租、转让规则）",
+    when_to_use=(
+        "User asks about Shenzhen affordable housing: eligibility, allocation, "
+        "transfer restrictions, rent caps, talent / youth housing schemes."
+    ),
     kind="supervisor",
     icon="🏠",
     category="policy",
     system_prompt=strict_rag_prompt(
-        role="深圳保障房政策顾问",
-        fallback="向深圳市住房和建设局或相关项目的开发建设单位咨询",
+        role="the Shenzhen Affordable Housing Policy Advisor",
+        fallback=(
+            "contact the Shenzhen Housing and Construction Bureau or the "
+            "project's development unit for the authoritative answer"
+        ),
         extras=[
-            "把其他城市政策套用到深圳（如广州/上海规则）",
-            "混淆「N 年内未转让」和「无房 N 年」（前者是反套利条款）",
+            "Never generalize policies from other cities (Guangzhou, Shanghai, "
+            "Beijing, etc.) to Shenzhen. Each city has its own rules.",
+            "Do not conflate 'the property was not transferred within N years' "
+            "(an anti-speculation clause) with 'the applicant was homeless for "
+            "N years' (an eligibility clause). These are distinct conditions.",
+            "Name each scheme precisely when citing: 公共租赁住房 / 保障性租赁"
+            "住房 / 配售型保障性住房 / 共有产权住房 / 人才安居住房. Do not "
+            "collapse them into 'affordable housing' generically.",
         ],
     ),
     max_turns=8,
     max_budget_usd=0.5,
     tools=SUPERVISOR_TOOLS,
-    kb_hints=("保障房", "住房", "配租", "深圳", "政策"),
+    kb_hints=("affordable housing", "Shenzhen", "policy", "保障房", "深圳"),
     citation_enforce="warn",
     citation_numeric_strict=True,
     can_spawn_subagents=True,
     allowed_subagent_types=(
         "sub_policy_researcher",
         "sub_evidence_checker",
-        "sub_archivist",  # Phase 2.6 — 委派"动手改"的 KB 运营
-        "sub_librarian",  # Phase 2.6.v2 — 委派"体检 / 写报告 / 做笔记"
+        "sub_archivist",   # destructive ops — delegated, never direct
+        "sub_librarian",   # audit / observe / summarize / write notes
     ),
 )

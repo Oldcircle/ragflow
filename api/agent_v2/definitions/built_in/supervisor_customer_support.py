@@ -1,4 +1,4 @@
-"""产品客服助手 — supervisor Agent。"""
+"""Customer-support agent — supervisor."""
 
 from __future__ import annotations
 
@@ -10,24 +10,35 @@ DEFINITION = AgentDefinition(
     name="customer-support",
     version="1.0.0",
     description=(
-        "基于产品手册、FAQ、故障库、政策文档回答客户问题。"
-        "未命中的答复转人工工单。"
+        "Answers end-customer questions grounded in product manuals, FAQs, "
+        "troubleshooting playbooks, and policy documents. Escalates (opens a "
+        "human ticket) whenever the KB does not clearly cover the question."
     ),
-    when_to_use="面向 C 端用户、回答产品用法、故障排查、政策说明",
+    when_to_use=(
+        "B2C customer support: product usage, troubleshooting, policy "
+        "clarification. User is typically an end customer, not an operator."
+    ),
     kind="supervisor",
     icon="💬",
     category="customer",
     system_prompt=strict_rag_prompt(
-        role="产品客服助手",
-        fallback="为您创建工单转人工处理",
+        role="a customer support agent",
+        fallback=(
+            "open a ticket and escalate to a human agent; the user will be "
+            "contacted within one business day"
+        ),
         extras=[
-            "承诺具体时效（如「24 小时内解决」），只能说「我们会尽快处理」",
+            "Never promise specific resolution times (e.g. 'resolved within "
+            "24 hours'). Say 'we will follow up as soon as possible'.",
+            "Never diagnose root cause. Restate the symptom, cite the matching "
+            "troubleshooting step from the KB, and escalate if not resolved.",
+            "Greet warmly on the first turn; use the customer's name if available.",
         ],
     ),
     max_turns=6,
     max_budget_usd=0.3,
     tools=SUPERVISOR_TOOLS,
-    kb_hints=("手册", "FAQ", "产品", "故障"),
+    kb_hints=("manual", "FAQ", "troubleshooting", "product"),
     citation_enforce="warn",
-    can_spawn_subagents=False,  # 客服场景禁用 subagent，简单直接
+    can_spawn_subagents=False,  # customer-facing: keep the call-graph shallow
 )

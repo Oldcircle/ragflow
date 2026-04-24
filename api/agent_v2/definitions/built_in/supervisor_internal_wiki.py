@@ -1,4 +1,4 @@
-"""内部 Wiki 问答助手 — supervisor Agent。"""
+"""Internal wiki / SOP advisor — supervisor agent."""
 
 from __future__ import annotations
 
@@ -10,21 +10,28 @@ DEFINITION = AgentDefinition(
     name="internal-wiki",
     version="1.0.0",
     description=(
-        "通用内部文档问答：把公司制度、流程、SOP、培训材料丢进知识库，"
-        "让员工直接问 Agent，而不是翻文档。"
+        "General-purpose internal knowledge advisor. Point it at your company "
+        "handbook, SOP, process, and training KBs so employees can ask the "
+        "agent directly instead of grepping intranet pages."
     ),
-    when_to_use="员工查公司制度/流程/SOP/培训材料",
+    when_to_use=(
+        "Employees asking about company policies, SOPs, onboarding, HR, IT "
+        "procedures, or training materials that live in the internal KB."
+    ),
     kind="supervisor",
     icon="📚",
     category="general",
     system_prompt=strict_rag_prompt(
-        role="公司内部知识助手",
-        fallback="在工单系统搜索或联系 IT/HR/行政对接人",
+        role="an internal company knowledge assistant",
+        fallback=(
+            "search your company's ticket system, or contact the relevant "
+            "IT / HR / admin point of contact"
+        ),
     ),
     max_turns=8,
     max_budget_usd=0.5,
     tools=SUPERVISOR_TOOLS,
-    kb_hints=("SOP", "制度", "流程", "手册", "Wiki"),
+    kb_hints=("SOP", "handbook", "wiki", "process", "manual"),
     citation_enforce="warn",
     can_spawn_subagents=False,
 )

@@ -1,25 +1,17 @@
-"""内置 Agent 之间共享的 prompt 生成逻辑。
+"""Shared definitions for built-in agents (Phase 2.6 v0.3).
 
-这里只做文本拼接——真实的 kb_ids / tenant 上下文注入放在 runner / spawn
-子流程里，不放 definition 层。
+All prompts are now English and section-structured (see
+`api/agent_v2/prompting/builder.py`). Domain specialization is preserved via
+the `role_line` + `domain_context` + `hard_constraints` parameters fed to
+`build_supervisor_prompt`.
+
+This module only deals with text assembly. Runtime context (kb_ids, tenant)
+is injected by the runner / spawn flow, not at definition time.
 """
 
 from __future__ import annotations
 
-_STRICT_RAG_PROMPT_TEMPLATE = """你是一名{role}，严格基于知识库内容答复。
-
-工作方式：
-1. 判断用户问题是否与知识库内容相关。无关则直接说明，不调工具。
-2. 相关问题：使用 rag_retrieve 工具检索原文；必要时换关键词多次检索。
-3. 严格基于检索结果回答：数字、年限、比例、条款必须有原文支撑；原文未涵盖的内容，回答「未查到相关规定，建议{fallback}」。
-4. **引用规范**：当某句话依据检索到的某个文档片段时，在该句末尾加形如 [1]、[2]、[3] 的上标编号，对应该次对话里按检索顺序出现的文档。一句话同时依据多片段可写 [1][2]。不要在正文里列文件名——文件名会自动展示在答复下方的"引用来源"区。
-5. 回答结尾无需重复「依据文件」清单，编号本身已标出归属。
-
-禁止事项：
-{prohibitions}- 用训练知识补充原文未说的内容；
-- 编造数字、名称、时间；
-- 给没有检索依据的句子加 [N] 编号。
-"""
+from ...prompting import build_supervisor_prompt
 
 
 def strict_rag_prompt(
@@ -28,10 +20,54 @@ def strict_rag_prompt(
     fallback: str,
     extras: list[str] | None = None,
 ) -> str:
-    prohibitions = "\n".join(f"- {x}" for x in (extras or [])) + ("\n" if extras else "")
-    return _STRICT_RAG_PROMPT_TEMPLATE.format(
-        role=role, fallback=fallback, prohibitions=prohibitions
+    """Backwards-compatible supervisor prompt builder.
+
+    `role` is now expected in English (e.g. "the Shenzhen Affordable Housing
+    Policy Advisor"), though Chinese still works — the model handles
+    multilingual role names. `fallback` is the phrase the agent emits when
+    the KB does not cover a fact (e.g. "consult your local housing bureau").
+    `extras` are additional domain-specific hard constraints.
+    """
+    domain_context = (
+        f"You operate on a knowledge base curated for {role}. "
+        f"If users ask questions outside this scope, reply briefly that you "
+        f"can only answer questions relating to {role}, and do not call any tools."
     )
+    # Map the legacy "fallback" string into a hard constraint phrased
+    # the way the rest of the prompt talks about gaps:
+    # "If the retrieved material does not answer, say 'no direct basis in
+    # the knowledge base; please {fallback}'."
+    fallback_constraint = (
+        "When the knowledge base does not directly answer the user, say "
+        f"exactly: 'No direct basis in the knowledge base; please {fallback}.' "
+        "Do not bridge the gap with training knowledge."
+    )
+    hard = [fallback_constraint]
+    if extras:
+        hard.extend(extras)
+    return build_supervisor_prompt(
+        role_line=f"You are {role}, answering strictly from the knowledge base.",
+        domain_context=domain_context,
+        hard_constraints=hard,
+    )
+
+
+# Phase 2.6 v0.2 设计约束：supervisor 只做「检索 QA + 委派」，不直接持写/审计工具。
+# 拿写工具要去 spawn sub_archivist；做体检 / 写笔记要 spawn sub_librarian。
+# 这样确保 tool-level 架构分离不会被 "tools=*" 绕掉。
+SUPERVISOR_TOOLS = [
+    # Read
+    "rag_retrieve",
+    "rag_list_docs",
+    "rag_read_doc",
+    "rag_graph_query",
+    # Cheap health snapshot (<1KB, no side effects)
+    "kb_stats",
+    # Delegation + user interaction
+    "spawn_subagent",
+    "ask_user_question",
+    "submit_plan",
+]
 
 
 # Phase 2.6 v0.2 设计约束：supervisor 只做「检索 QA + 委派」，不直接持写/审计工具。
