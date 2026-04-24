@@ -216,6 +216,10 @@ async def doc_tag(args: dict) -> dict:
         before_tags=before_tags,
         after_tags=after_tags,
         reason=args.get("reason"),
+        next_steps=[
+            f"Confirm with rag_list_docs(kb_id='{kb_id}', doc_id='{doc_id}')",
+            "If tagging a batch, continue to the next doc — do NOT re-invoke on this one",
+        ],
     )
 
 

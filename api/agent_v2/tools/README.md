@@ -33,96 +33,47 @@ SdkMcpTool.handler(args)            # 本进程内 MCP In-Process Server
 这是两个进程空间。用 `contextvars.ContextVar` 可以在同事件循环的异步任务里
 自动传播，工具可以拿到 Runner 注入的 `ToolContext`。
 
-## 工具清单（5 个）
+## 工具清单（18 个，截至 Phase 2.6 v0.6）
 
-### 1. `rag_retrieve` — 语义检索（最核心）
+| 分层 | 工具 | 归属 subagent | 受 plan gate |
+|---|---|---|---|
+| 读 | `rag_retrieve` / `rag_list_docs` / `rag_read_doc` / `rag_graph_query` | supervisor + 所有 subagent | — (只读) |
+| 轻体检 | `kb_stats` | supervisor + sub_librarian | — (只读) |
+| 委派 | `spawn_subagent` | supervisor | — |
+| 交互 | `ask_user_question` / `submit_plan` | 所有 | — |
+| 写 | `doc_tag` / `doc_rename` / `doc_archive` / `doc_reparse` / `doc_upload_from_url` / `kb_create` | **sub_archivist 独占** | ✅ 硬约束 |
+| 自省 | `kb_audit` / `doc_list_recent_changes` | sub_librarian 独占 | — (只读) |
+| 总结 | `doc_create_note` | sub_librarian 独占 | 显式 `plan_gated=False`（低风险可删） |
+| plan 执行（v0.6） | `get_pending_plan` | sub_archivist 独占 | — (只读) |
 
-```
-用途: 在知识库中搜索与 query 最相关的原文片段（向量 + BM25 融合）
-输入: {query: str, top_n?: int=8, similarity_threshold?: float=0.15}
-输出: {query, total, chunks[{doc_name, doc_id, content, similarity, page, position}], doc_aggs}
-底层: rag/nlp/search.py  Dealer.retrieval()
-```
+每个工具的 schema / Agent 调用策略见 `README-agent-v2.md §4`（不在本文件重复）。
+RAG 链路工具（retrieve / list_docs / read_doc / graph_query）会被
+`api/agent_v2/validators/evidence.py::EvidenceIndex` 吸收，用于 Citation
+Validator 的 [N] 脚注 / 数字断言校验（Phase 2.5.1）。
 
-Agent 调用策略：涉及知识库内容时必调；多轮换关键词也是合理策略。
+### `spawn_subagent` gate 链（按顺序）
 
-**Phase 2.5.1 联动**：结果会被 `EvidenceIndex.add_from_rag_retrieve()` 吸收，
-答复收尾时用于校验 [N] 脚注 + 数字断言是否有原文支撑。
-
-### 2. `rag_list_docs` — 文档清单
-
-```
-用途: 列出当前会话所有可见 KB 下的文档（名称 + 元数据）
-输入: {keywords?: str, page?: int=1, page_size?: int=50}
-输出: {total_matched, returned, page, page_size, documents[{doc_id, name, type, chunk_num, ...}]}
-底层: api/db/services/document_service.py  DocumentService.get_list()
-```
-
-Agent 调用策略：当用户问"有哪些文件"，或需要先掌握文档全貌再决定查哪份时调。
-
-### 3. `rag_read_doc` — 读整文档
-
-```
-用途: 按 doc_id 读文档的完整或部分内容（按 chunk_order_int 排序）
-输入: {doc_id: str, chunk_offset?: int=0, chunk_limit?: int=50}
-输出: {doc_id, doc_name, kb_id, total_chunks, returned_chunks, chunks[{order, page, content}]}
-底层: rag/nlp/search.py  Dealer.chunk_list()
-权限: 自动校验 doc_id 必须属于当前会话授权的 kb_ids
-```
-
-Agent 调用策略：语义检索命中了某份关键文档、需要看完整条款时调。
-注意输出受 32KB 截断限制，对长文档需分段读取（调整 `chunk_offset`）。
-
-**Phase 2.5.1 联动**：结果会被 `EvidenceIndex.add_from_rag_read_doc()` 吸收。
-
-### 4. `rag_graph_query` — GraphRAG 实体查询
-
-```
-用途: 在知识图谱中按问题/实体检索相关实体 + 关系 + 社区摘要
-输入: {query: str, ent_topn?: int=6, rel_topn?: int=6, max_token?: int=4096}
-输出: {query, graph_context, raw_keys}
-底层: rag/graphrag/search.py  KGSearch.retrieval()
-前提: KB 建索引时必须勾选 Knowledge Graph
-```
-
-Agent 调用策略：跨文档链式推理场景用；普通问题先用 rag_retrieve，
-不够再升级到 graph。KB 未启用图谱时会返回空 graph_context（不报错）。
-
-**Phase 2.5.1 联动**：结果会被 `EvidenceIndex.add_from_rag_graph_query()` 吸收。
-
-### 5. `spawn_subagent` — 派独立子 Agent（P2.3 + P2.5.3）
-
-```
-用途: 派一个独立 context 的子 Agent 完成聚焦任务
-输入: {
-  description: str,          # 3-8 词任务标题
-  prompt: str,               # 自包含的子任务简报
-  allowed_tools?: list[str], # 子工具白名单（必须 ⊆ 父）
-  max_turns?: int=10,        # 子最大轮次（≤ 20）
-  subagent_type?: str,       # P2.5.3 — 命名 subagent（可选）
-}
-输出: {result: str, trace_id: str, description: str, cost_usd: float, truncated: bool}
-底层: 在本进程里再起一个 AgentRunner，独立 context
-```
-
-**命名 subagent 路由（P2.5.3）**：当 `subagent_type` 给出时，去
-`api/agent_v2/definitions/registry.py` 查 `AgentDefinition`，用定义的
-`system_prompt / tools / max_turns / max_budget_usd / citation_enforce`
-组装子 runner。
-
-目前内置 2 个命名 subagent（`api/agent_v2/definitions/built_in/`）：
-- `sub_policy_researcher` — 深入研读单一政策
-- `sub_evidence_checker` — 逐句核对答复证据（与 Citation Validator strict 联动）
-
-**Gate 链**（按顺序）：
 1. `ctx.depth >= 1` → `nested_spawn_forbidden`
 2. `ctx.subagent_count_this_turn >= 3` → `too_many_subagents`
 3. `subagent_type` 给了但 registry 找不到 → `unknown_subagent_type`
 4. `subagent_type` 找到但 kind != "subagent" → `wrong_definition_kind`
 5. `ctx.allowed_subagent_types` 非 None 且不含此 type → `subagent_type_not_allowed`
-6. definition 要求的工具不在父工具集 → `definition_tools_unavailable`
-7. 父工具白名单不含此 type 的 tools → `no_allowed_tools`
+6. definition 要求的工具在全局 `ALL_TOOLS` 找不到 → `definition_tools_unavailable`
+   （v0.2 起**不做**父子工具交集——命名 subagent 可拿父都没有的工具）
+7. 非命名派时父工具白名单不含请求工具 → `no_allowed_tools`
 8. 空 prompt → `empty_prompt`
+
+### `@require_kb_write` gate 链（doc_ops 写工具，Phase 2.6 + v0.4）
+
+1. **RBAC**：`kb_id` + `user_id` 齐全时调
+   `DatasetAccessService.require_at_least(kb_id, user_id, role)`，不足直接
+   `error: no_access`
+2. **Plan gate**（`plan_gated=True` 默认）：
+   - 如果 `ctx.plan_submitted_this_turn == True` → `plan_submitted_same_turn`
+   - session `pending_plan_status == waiting` → `plan_waiting_user_decision`
+   - `rejected` → `plan_rejected`；`request_changes` → `plan_request_changes`
+   - `approved` 或 `None` → 放行；`waiting` 超 1h 自动 TTL 清空
+3. 执行工具本体；异常写 deny 审计并重抛；成功写 allow 审计（含 `extra_audit_metadata`）
 
 ## 通用约定
 
@@ -141,6 +92,12 @@ Agent 调用策略：跨文档链式推理场景用；普通问题先用 rag_ret
 
 用 `mcp_json_response(obj)` / `mcp_text_response(text)` 生成。
 
+doc_ops 写工具统一走 `ok()` / `err()` helper（`api/agent_v2/tools/doc_ops/_common.py`）：
+
+- `ok(**kw)` → `{"status": "ok", ...}`
+- `ok(next_steps=[...], **kw)` → 同上 + `next_steps` 数组（v0.4，最多 3 条 × 160 字符）
+- `err("code", "message", **kw)` → `{"error": "code", "message": "...", ...}`
+
 ### 上下文（ToolContext）
 
 工具通过 `get_ctx()` 获取 `ToolContext`：
@@ -154,6 +111,8 @@ async def my_tool(args: dict) -> dict:
     # ctx.session_id / ctx.depth / ctx.current_tool_call_id       (P2.3)
     # ctx.event_emitter (callable → emit SSE event)                (P2.3)
     # ctx.allowed_subagent_types (tuple | None)                    (P2.5.3)
+    # ctx.pending_plan_status / pending_plan_id                    (P2.6 v0.4)
+    # ctx.plan_submitted_this_turn                                 (P2.6 v0.4)
 ```
 
 要求字段可以显式传入 `get_ctx(require=["tenant_id"])`。
@@ -168,36 +127,47 @@ Agent 上下文。对可能返回大量文本的工具（如 `rag_read_doc`）�
 
 工具出错两种模式：
 
-1. **业务错误**（如 KB 不存在、参数无效）：返回 `{"error": "..."}` JSON，
-   **不抛异常**。这让 Agent 知道错误原因并继续推理。
+1. **业务错误**（如 KB 不存在、参数无效、plan gate 拒绝）：返回
+   `{"error": "..."}` JSON，**不抛异常**。这让 Agent 知道错误原因并继续推理。
 2. **系统级异常**（DB 断连、模型调用失败等）：直接 raise，Runner 会捕获
    并转成 `tool_call_end(error=...)` 事件。
 
 ## 新增工具步骤
 
-1. 在本目录新建 `my_tool.py`
-2. 用 `@tool(name, description, input_schema)` 装饰 async 函数
-3. 在 `api/agent_v2/registry.py` 的 `ALL_TOOLS` 字典注册
-4. 在 `scripts/test_tools_direct.py` 加一个 smoke 调用
-5. 在本 README 加一条工具描述
+1. 在本目录（或 `doc_ops/`）新建 `my_tool.py`
+2. 用 `@tool(name, description, input_schema)` 装饰 async 函数。Description
+   写英文，开头 `Use this tool when ...`（Claude Code 风格）
+3. 写工具一定要加 `@require_kb_write(action="kb.xxx.yyy", ...)` 装饰器；低风险
+   工具可带 `plan_gated=False`，但**必须有明确理由**
+4. 在 `api/agent_v2/registry.py` 的 `ALL_TOOLS` 字典注册
+5. 在 `api/agent_v2/annotations.py::ANNOTATIONS` 补一条 `ToolAnnotation`。
+   `test/agent_v2/test_annotations.py` 有 parity 断言，漏掉就挂
+6. 在某个 supervisor / subagent definition 的 `tools=[...]` 里加进去
+   （supervisor 默认只有 `SUPERVISOR_TOOLS`；写/审计工具必须挂在 subagent 上）
+7. 在 `scripts/test_tools_direct.py` 加一个 smoke 调用
+8. 有需要在 `README-agent-v2.md §4` 表格里加一行
 
 ## 新增 subagent 定义步骤（P2.5.3）
 
 1. 在 `api/agent_v2/definitions/built_in/` 建一个 `.py` 文件，export 一个
    `DEFINITION = AgentDefinition(kind="subagent", ...)`
-2. 在某个 supervisor definition 的 `allowed_subagent_types` tuple 里加这个 name
-3. `api/agent_v2/definitions/registry.py` 会在下次访问时自动 pickup
+2. system prompt 用 `build_subagent_prompt(...)` 组装；传 `tool_names_for_annotations`
+   让 **Tool cost hints** 段只显示该 subagent 自己能用的工具
+3. 在某个 supervisor definition 的 `allowed_subagent_types` tuple 里加这个 name
+4. `api/agent_v2/definitions/registry.py` 会在下次访问时自动 pickup
 
 ## 测试
 
 - 直接 smoke：`python scripts/test_tools_direct.py`（绕过 Agent，验证纯工具逻辑）
 - Agent 端到端：`python scripts/test_agent_v2.py`（让 Agent 自主选工具）
-- 单元测试：`pytest tests/agent_v2/`（正在补齐）
+- 单元测试：`pytest test/agent_v2/`（229 pass / 8 skip，截至 Phase 2.6 v0.4）
 
-### Phase 2.5 smoke 验证
+### 关键测试文件
 
-- `/tmp/validator_smoke.py` — Citation Validator 5/5 用例（number 抽取 / EvidenceIndex 往返 / missing_chunk / number_unsupported / compound 幻觉）
-- `/tmp/history_smoke.py` — `_build_prompt_with_history` 4/4 用例
-- `/tmp/compactor_smoke.py` — `should_compact` 阈值 + `split_for_compact` 切分
-- `/tmp/p252_integration_smoke.py` — 7/7 集成：DB 播种 22 条消息 → 触发 compact → summary 持久化 → 下一轮 `since_create_time` 正确跳过
-- `/tmp/spawn_subagent_smoke.py` — subagent_type 4/4 gate（unknown / wrong_kind / not_allowed / 正常路径）
+- `test_doc_ops_common.py` — `@require_kb_write` 五条路径 + plan gate 七分支
+  + plan 决策前缀解析
+- `test_annotations.py` — 注册表 parity / `ok().next_steps` 裁剪
+- `test_sub_archivist.py` / `test_doc_ops_reflect.py` — 两个命名 subagent 的
+  工具集 / 白名单 / definition 结构
+- `test_validators.py` — Citation Validator 全量规则
+- `test_tool_schemas.py` — 每个工具的 `input_schema` 合法性

@@ -6,6 +6,23 @@ from ...prompting import build_subagent_prompt
 from ..schema import AgentDefinition
 
 
+LIBRARIAN_TOOLS = [
+    # Observe
+    "kb_stats",
+    "kb_audit",
+    "doc_list_recent_changes",
+    # Retrieve content to write about
+    "rag_retrieve",
+    "rag_list_docs",
+    "rag_read_doc",
+    # Produce a durable artifact
+    "doc_create_note",
+    # Interactive
+    "ask_user_question",
+    "submit_plan",
+]
+
+
 LIBRARIAN_ROLE = "You are sub_librarian, the knowledge base investigator-scribe."
 
 LIBRARIAN_MISSION = (
@@ -114,25 +131,12 @@ DEFINITION = AgentDefinition(
         workflow_steps=LIBRARIAN_WORKFLOW,
         tool_rules=LIBRARIAN_TOOL_RULES,
         output_rules=LIBRARIAN_OUTPUT_RULES,
+        tool_names_for_annotations=LIBRARIAN_TOOLS,
     ),
     model="inherit",
     max_turns=12,
     max_budget_usd=0.4,
-    tools=[
-        # Observe
-        "kb_stats",
-        "kb_audit",
-        "doc_list_recent_changes",
-        # Retrieve content to write about
-        "rag_retrieve",
-        "rag_list_docs",
-        "rag_read_doc",
-        # Produce a durable artifact
-        "doc_create_note",
-        # Interactive
-        "ask_user_question",
-        "submit_plan",
-    ],
+    tools=LIBRARIAN_TOOLS,
     citation_enforce="warn",
     citation_numeric_strict=True,
     can_spawn_subagents=False,

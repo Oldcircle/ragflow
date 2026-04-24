@@ -160,6 +160,100 @@ class AgentV2SessionService(CommonService):
     def soft_delete(cls, session_id: str) -> int:
         return cls.update_fields(session_id, status="deleted")
 
+    # ────────── Phase 2.6 v0.4 — real plan gating ──────────
+    #
+    # submit_plan 和用户回复之间隔着一整个 HTTP turn。为了让下一轮的
+    # ``@require_kb_write`` 能知道"用户到底点了 Approve 还是 Reject"，这三
+    # 个方法管理 ``AgentV2Session`` 上的 ``pending_plan_*`` 列。
+    #
+    # 合法状态机：
+    #   NULL ─set_pending_plan→ "waiting" ─transition_status→ approved / rejected / request_changes
+    #   {approved, rejected, request_changes} ─clear_pending_plan→ NULL
+
+    _VALID_PLAN_STATUSES = ("waiting", "approved", "rejected", "request_changes")
+
+    @classmethod
+    @DB.connection_context()
+    def set_pending_plan(
+        cls,
+        session_id: str,
+        pending_id: str,
+        plan_body: dict | None = None,
+    ) -> int:
+        """submit_plan 调用后标记 session 进入 'waiting' 状态。
+
+        Phase 2.6 v0.6 — ``plan_body`` 存整个 plan payload，让下一轮 approved
+        的 Agent 能通过 ``get_pending_plan`` 工具读回 steps / affected_resources
+        等，不用从 tool_call 历史里间接重建。
+        """
+        updates: dict = {
+            "pending_plan_id": pending_id,
+            "pending_plan_status": "waiting",
+            "pending_plan_submitted_at": current_timestamp(),
+            "update_time": current_timestamp(),
+            "update_date": datetime_format(datetime.now()),
+        }
+        if plan_body is not None:
+            updates["pending_plan_body"] = plan_body
+        q = cls.model.update(**updates).where(cls.model.id == session_id)
+        return q.execute()
+
+    @classmethod
+    @DB.connection_context()
+    def transition_plan_status(cls, session_id: str, status: str) -> int:
+        """把 waiting 推进到 approved / rejected / request_changes。"""
+        if status not in cls._VALID_PLAN_STATUSES:
+            raise ValueError(
+                f"invalid plan status {status!r}; must be one of "
+                f"{cls._VALID_PLAN_STATUSES}"
+            )
+        q = cls.model.update(
+            pending_plan_status=status,
+            update_time=current_timestamp(),
+            update_date=datetime_format(datetime.now()),
+        ).where(cls.model.id == session_id)
+        return q.execute()
+
+    @classmethod
+    @DB.connection_context()
+    def clear_pending_plan(cls, session_id: str) -> int:
+        """写完后清空，保证每个 plan 只解一次锁。Phase 2.6 v0.6 起同时清 body。"""
+        q = cls.model.update(
+            pending_plan_id=None,
+            pending_plan_status=None,
+            pending_plan_submitted_at=None,
+            pending_plan_body=None,
+            update_time=current_timestamp(),
+            update_date=datetime_format(datetime.now()),
+        ).where(cls.model.id == session_id)
+        return q.execute()
+
+    @classmethod
+    @DB.connection_context()
+    def get_pending_plan(cls, session_id: str, include_body: bool = False) -> dict | None:
+        """读回当前 session 的 plan 状态；查不到返 None。
+
+        Phase 2.6 v0.6 — ``include_body=True`` 会把 plan 完整 payload 一起
+        拉回；`@require_kb_write` 的 gate 只需要 status 所以默认不拉 body，
+        新工具 `get_pending_plan` 显式要 body。
+        """
+        cols = [
+            cls.model.pending_plan_id,
+            cls.model.pending_plan_status,
+            cls.model.pending_plan_submitted_at,
+        ]
+        if include_body:
+            cols.append(cls.model.pending_plan_body)
+        rows = list(
+            cls.model.select(*cols).where(cls.model.id == session_id).dicts()
+        )
+        if not rows:
+            return None
+        row = rows[0]
+        if not row.get("pending_plan_status"):
+            return None
+        return row
+
 
 # ────────────────────────────── Message ──────────────────────────────
 
@@ -214,6 +308,7 @@ class AgentV2MessageService(CommonService):
         limit: int = 10,
         exclude_message_id: str | None = None,
         since_create_time: int | None = None,
+        include_tool_calls: bool = False,
     ) -> list[dict]:
         """返回喂给 AgentRunner 的历史消息（按时间升序）。
 
@@ -223,6 +318,11 @@ class AgentV2MessageService(CommonService):
         - `exclude_message_id` 用来跳过本轮刚落库的空 assistant 占位
         - `limit` 是"消息数"（不是轮次），UI 约定用户输入 1 条 + 助手 1 条算 1 轮
           所以这里 limit=20 相当于约 10 轮
+        - `include_tool_calls`（Phase 2.6 v0.5）：``True`` 时给每条 assistant
+          消息附上 ``tool_calls`` 字段，从 ``AgentV2ToolCall`` 反查出一组
+          ``{id, tool_name, args, result, error, status, duration_ms}`` 条目。
+          Runner 用这份数据把工具往返过程渲染进 ``<conversation-history>``，
+          让追问"刚才那个 kb_audit 结果"时不用重跑。
         """
         q = cls.model.select().where(
             cls.model.session_id == session_id,
@@ -236,6 +336,49 @@ class AgentV2MessageService(CommonService):
         # 先按 create_time 降序取 limit 条，再翻回升序，这样拿的是"最新的 N 条"
         rows = list(q.order_by(cls.model.create_time.desc()).limit(limit).dicts())
         rows.reverse()
+
+        if not include_tool_calls or not rows:
+            return rows
+
+        # 收集所有 assistant 消息里引用的 tool_call_ids，一次查完再按 message_id 归位
+        wanted_ids: list[str] = []
+        for r in rows:
+            if r.get("role") == "assistant":
+                ids = r.get("tool_call_ids") or []
+                if isinstance(ids, list):
+                    wanted_ids.extend(str(x) for x in ids if x)
+        if not wanted_ids:
+            for r in rows:
+                r["tool_calls"] = []
+            return rows
+
+        tool_rows = list(
+            AgentV2ToolCall.select(
+                AgentV2ToolCall.id,
+                AgentV2ToolCall.message_id,
+                AgentV2ToolCall.tool_name,
+                AgentV2ToolCall.args,
+                AgentV2ToolCall.result,
+                AgentV2ToolCall.error,
+                AgentV2ToolCall.status,
+                AgentV2ToolCall.duration_ms,
+                AgentV2ToolCall.start_time,
+            )
+            .where(AgentV2ToolCall.id.in_(wanted_ids))
+            .dicts()
+        )
+        # 按原 tool_call_ids 顺序归位（保留 Agent 实际调用顺序）
+        by_id = {t["id"]: t for t in tool_rows}
+        for r in rows:
+            if r.get("role") != "assistant":
+                r["tool_calls"] = []
+                continue
+            ordered = []
+            for tid in r.get("tool_call_ids") or []:
+                t = by_id.get(str(tid))
+                if t:
+                    ordered.append(t)
+            r["tool_calls"] = ordered
         return rows
 
 

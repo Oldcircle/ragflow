@@ -43,12 +43,17 @@ def _default_kb_from_args(args: dict) -> str | None:
     return args.get("kb_id")
 
 
+# Plan gate: TTL after which a waiting plan is treated as expired (forces re-plan).
+_PLAN_STATUS_TTL_MS = 3600 * 1000  # 1 hour
+
+
 def require_kb_write(
     *,
     action: str,
     min_role: str = "contributor",
     kb_id_from: Callable[[dict], str | None] = _default_kb_from_args,
     extra_audit_metadata: Callable[[dict, Any, ToolContext], dict] | None = None,
+    plan_gated: bool = True,
 ):
     """所有 doc_ops 写工具共享的装饰器。
 
@@ -57,6 +62,8 @@ def require_kb_write(
     - ``kb_id_from``：从 MCP 入参 dict 里取 kb_id 的 callable；多 kb 场景
       （如 doc_archive 的 source/target）在工具内部**额外**校验
     - ``extra_audit_metadata``：工具返回后把结构化补充信息塞进 audit metadata
+    - ``plan_gated``：Phase 2.6 v0.4 — True（默认）= 受 submit_plan gate 管辖；
+      低风险工具（如 ``doc_create_note``）可设 False 绕过 gate。
 
     被装饰的函数签名固定为 ``async def tool(args: dict) -> dict``（MCP 工具协议）。
     """
@@ -104,6 +111,32 @@ def require_kb_write(
                             f"Need at least {min_role} on {kb_id} to perform "
                             f"{action}; current role = {e.actual or 'none'}."
                         ),
+                    })
+
+            # 1b. Plan gate (Phase 2.6 v0.4)
+            if plan_gated:
+                gate = _plan_gate_check(ctx, action)
+                if gate is not None:
+                    _safe_audit(
+                        AuditLogService,
+                        user_id=user_id,
+                        tenant_id=tenant_id,
+                        action=action,
+                        resource_type="knowledgebase",
+                        resource_id=kb_id,
+                        result="deny",
+                        reason=gate["reason"],
+                        metadata={
+                            "op": action,
+                            "plan_status": gate.get("plan_status"),
+                            "plan_id": gate.get("plan_id"),
+                        },
+                    )
+                    return mcp_json_response({
+                        "error": "plan_gate",
+                        "reason": gate["reason"],
+                        "message": gate["message"],
+                        "plan_status": gate.get("plan_status"),
                     })
 
             # 2. 执行工具
@@ -194,6 +227,110 @@ def _safe_audit(svc, **kw) -> None:
         svc.log(**kw)
     except Exception:
         logger.exception("audit log write failed for %s", kw.get("action"))
+
+
+def _plan_gate_check(ctx: ToolContext, action: str) -> dict | None:
+    """Phase 2.6 v0.4 plan gate.
+
+    Returns None when the write is allowed. Returns a dict
+    ``{reason, message, plan_status, plan_id}`` when the write must be rejected.
+
+    Decision order:
+    1. Per-turn lock: if ``submit_plan`` ran earlier in the same Agent run, block
+       any subsequent write in the same run. The user must see the plan and
+       respond in the next turn.
+    2. Cross-turn session state — read live from DB via ``session_id`` so a
+       subagent's ``submit_plan`` takes effect for the parent immediately.
+       - ``waiting``: block — user hasn't responded yet.
+       - ``rejected`` / ``request_changes``: block — the plan was refused.
+       - ``approved`` or ``None``: allow. (``None`` means no plan was ever
+         required for this session; we rely on the supervisor prompt to require
+         a plan before destructive writes. Strict-mode enforcement is left to
+         v0.5.)
+    3. TTL: a ``waiting`` plan older than ``_PLAN_STATUS_TTL_MS`` is treated as
+       expired. The decorator auto-clears and lets the write through — the
+       agent will need to submit a fresh plan in the next session anyway.
+    """
+    # (1) Per-turn lock — highest priority, doesn't need a DB read
+    if ctx.plan_submitted_this_turn:
+        return {
+            "reason": "plan_submitted_same_turn",
+            "message": (
+                f"submit_plan was called earlier in this turn; {action} and "
+                "any further writes must wait until the user approves in the "
+                "next user message. Stop emitting writes for this turn."
+            ),
+            "plan_status": "waiting",
+            "plan_id": ctx.pending_plan_id,
+        }
+
+    # (2) Live session state. Snapshot from ctx is a fallback when there's
+    # no session_id (unit tests, direct AgentRunner.run without persistence).
+    status: str | None = None
+    plan_id: str | None = None
+    submitted_at: int | None = None
+    if ctx.session_id:
+        try:
+            from api.db.services.agent_v2_service import AgentV2SessionService
+
+            row = AgentV2SessionService.get_pending_plan(ctx.session_id)
+            if row:
+                status = (row.get("pending_plan_status") or "").lower() or None
+                plan_id = row.get("pending_plan_id")
+                submitted_at = row.get("pending_plan_submitted_at")
+        except Exception:
+            logger.exception("plan gate: DB read failed; falling back to ctx snapshot")
+            status = (ctx.pending_plan_status or "").lower() or None
+            plan_id = ctx.pending_plan_id
+    else:
+        status = (ctx.pending_plan_status or "").lower() or None
+        plan_id = ctx.pending_plan_id
+
+    # (3) TTL — a stale "waiting" plan (older than 1h) means the user never
+    # came back. Auto-clear and allow; v0.5 may instead require re-plan.
+    if status == "waiting" and submitted_at and submitted_at > 0:
+        now_ms = int(time.time() * 1000)
+        if now_ms - submitted_at > _PLAN_STATUS_TTL_MS:
+            try:
+                from api.db.services.agent_v2_service import AgentV2SessionService
+
+                AgentV2SessionService.clear_pending_plan(ctx.session_id or "")
+            except Exception:
+                logger.exception("plan gate: TTL clear failed")
+            status = None
+
+    if status == "waiting":
+        return {
+            "reason": "plan_waiting_user_decision",
+            "message": (
+                "A previous plan is still waiting for the user's decision. "
+                f"Wait for [plan approved] before executing {action}."
+            ),
+            "plan_status": status,
+            "plan_id": plan_id,
+        }
+    if status == "rejected":
+        return {
+            "reason": "plan_rejected",
+            "message": (
+                "The user rejected the last plan. Do not execute writes — "
+                "ask the user what they want, or re-plan with a safer scope."
+            ),
+            "plan_status": status,
+            "plan_id": plan_id,
+        }
+    if status == "request_changes":
+        return {
+            "reason": "plan_request_changes",
+            "message": (
+                "The user asked to adjust the last plan. Re-submit an updated "
+                "plan via submit_plan before writing."
+            ),
+            "plan_status": status,
+            "plan_id": plan_id,
+        }
+    # "approved" or None → let it through
+    return None
 
 
 # ────────────────────────────── Idempotency ──────────────────────────────
@@ -317,9 +454,24 @@ def _redis_set(key: str, value: dict, ttl: int) -> bool:
 # ────────────────────────────── 统一 ops 响应格式 ──────────────────────────────
 
 
-def ok(**kw) -> dict:
-    """工具成功响应：``{"status":"ok", ...}``。"""
-    return mcp_json_response({"status": "ok", **kw})
+def ok(*, next_steps: list[str] | None = None, **kw) -> dict:
+    """工具成功响应：``{"status":"ok", ...}``。
+
+    Phase 2.6 v0.4 (U10) — optional ``next_steps`` hint list. When a write
+    completes successfully, the tool can nudge the agent toward the natural
+    follow-up (e.g. "verify via rag_list_docs", "consider doc_reparse to
+    refresh chunks"). Keep these to 1-3 short imperative phrases; longer
+    lists get ignored or hallucinated over.
+    """
+    payload: dict = {"status": "ok", **kw}
+    if next_steps:
+        # Cap to 3 short entries so it stays a hint, not a plan.
+        cleaned = [
+            str(s).strip()[:160] for s in next_steps[:3] if s and str(s).strip()
+        ]
+        if cleaned:
+            payload["next_steps"] = cleaned
+    return mcp_json_response(payload)
 
 
 def err(code: str, message: str, **kw) -> dict:

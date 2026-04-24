@@ -14,6 +14,26 @@ from __future__ import annotations
 from ...prompting import build_supervisor_prompt
 
 
+# Phase 2.6 v0.2 design constraint: supervisor only does "retrieval QA +
+# delegation", no direct write / audit tools. Writes go through sub_archivist,
+# audits / notes go through sub_librarian. Keeps the architectural separation
+# from being bypassed by a loose ``tools="*"`` setting. Declared early so the
+# helpers below can reference it when building annotated prompts.
+SUPERVISOR_TOOLS = [
+    # Read
+    "rag_retrieve",
+    "rag_list_docs",
+    "rag_read_doc",
+    "rag_graph_query",
+    # Cheap health snapshot (<1KB, no side effects)
+    "kb_stats",
+    # Delegation + user interaction
+    "spawn_subagent",
+    "ask_user_question",
+    "submit_plan",
+]
+
+
 def strict_rag_prompt(
     *,
     role: str,
@@ -49,40 +69,5 @@ def strict_rag_prompt(
         role_line=f"You are {role}, answering strictly from the knowledge base.",
         domain_context=domain_context,
         hard_constraints=hard,
+        tool_names_for_annotations=SUPERVISOR_TOOLS,
     )
-
-
-# Phase 2.6 v0.2 设计约束：supervisor 只做「检索 QA + 委派」，不直接持写/审计工具。
-# 拿写工具要去 spawn sub_archivist；做体检 / 写笔记要 spawn sub_librarian。
-# 这样确保 tool-level 架构分离不会被 "tools=*" 绕掉。
-SUPERVISOR_TOOLS = [
-    # Read
-    "rag_retrieve",
-    "rag_list_docs",
-    "rag_read_doc",
-    "rag_graph_query",
-    # Cheap health snapshot (<1KB, no side effects)
-    "kb_stats",
-    # Delegation + user interaction
-    "spawn_subagent",
-    "ask_user_question",
-    "submit_plan",
-]
-
-
-# Phase 2.6 v0.2 设计约束：supervisor 只做「检索 QA + 委派」，不直接持写/审计工具。
-# 拿写工具要去 spawn sub_archivist；做体检 / 写笔记要 spawn sub_librarian。
-# 这样确保 tool-level 架构分离不会被 "tools=*" 绕掉。
-SUPERVISOR_TOOLS = [
-    # 读
-    "rag_retrieve",
-    "rag_list_docs",
-    "rag_read_doc",
-    "rag_graph_query",
-    # 轻量体检（<1KB 响应，supervisor 做 sanity check 之前）
-    "kb_stats",
-    # 委派 + 用户交互
-    "spawn_subagent",
-    "ask_user_question",
-    "submit_plan",
-]

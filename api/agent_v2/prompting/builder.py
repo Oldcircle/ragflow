@@ -104,6 +104,7 @@ SEARCH_HINT_BY_TOOL: dict[str, str] = {
     "kb_stats": "get a quick health snapshot of a knowledge base",
     "kb_audit": "run a structured audit of knowledge base health",
     "doc_list_recent_changes": "list recent audit-log entries for this tenant",
+    "get_pending_plan": "read back the approved plan to execute step by step",
     # Write
     "doc_create_note": "save agent-authored markdown as a new document",
     "doc_tag": "add, remove, or replace document tags",
@@ -164,6 +165,10 @@ _SUPERVISOR_SKELETON = """\
 - `ask_user_question(question, header, options)` — structured 2-4 choice clarifier. Prefer this over free-text questions when the user's answer is a pick from a small set.
 - `submit_plan(title, steps, risk_level, ...)` — use when you yourself are about to take several read steps, and the user benefits from seeing the plan first. For write plans, let the archivist submit.
 
+# Tool cost hints
+
+{tool_annotations}
+
 # Output format
 
 {output_rules}
@@ -179,6 +184,7 @@ def build_supervisor_prompt(
     hard_constraints: Iterable[str] | None = None,
     output_rules: Iterable[str] | None = None,
     domain_extras: str = "",
+    tool_names_for_annotations: Iterable[str] | None = None,
 ) -> str:
     """Assemble a full supervisor system prompt.
 
@@ -189,16 +195,24 @@ def build_supervisor_prompt(
     `output_rules` replaces baseline RETRIEVAL_OUTPUT_RULES when you need
     different behavior (e.g. agents that must not emit [N] citations).
     `domain_extras` is raw markdown appended at the end.
+    `tool_names_for_annotations` (Phase 2.6 v0.4) restricts the cost-hint
+    table to specific tool names; ``None`` lists every registered tool.
     """
     hc = list(STRICT_RAG_CONSTRAINTS) + list(hard_constraints or [])
     hard = "\n".join(f"- {line}" for line in hc)
     outr = output_rules if output_rules is not None else RETRIEVAL_OUTPUT_RULES
     out = "\n".join(f"- {line}" for line in outr)
     domain_ctx = domain_context.strip() or "General knowledge base."
+    from ..annotations import annotations_summary_for_prompt
+
+    ann = annotations_summary_for_prompt(
+        list(tool_names_for_annotations) if tool_names_for_annotations is not None else None
+    )
     return _SUPERVISOR_SKELETON.format(
         role_line=role_line.strip(),
         domain_context=domain_ctx,
         hard_constraints=hard,
+        tool_annotations=ann or "(no annotated tools registered)",
         output_rules=out,
         domain_extras=("\n" + domain_extras.strip() + "\n") if domain_extras else "",
     )
@@ -228,6 +242,10 @@ _SUBAGENT_SKELETON = """\
 
 {tool_rules}
 
+# Tool cost hints
+
+{tool_annotations}
+
 # Output format
 
 {output_rules}
@@ -242,6 +260,7 @@ def build_subagent_prompt(
     workflow_steps: Iterable[str],
     tool_rules: Iterable[str],
     output_rules: Iterable[str] | None = None,
+    tool_names_for_annotations: Iterable[str] | None = None,
 ) -> str:
     """Assemble a subagent system prompt.
 
@@ -254,12 +273,18 @@ def build_subagent_prompt(
     tr = "\n".join(f"- {line}" for line in tool_rules)
     outr = output_rules if output_rules is not None else RETRIEVAL_OUTPUT_RULES
     out = "\n".join(f"- {line}" for line in outr)
+    from ..annotations import annotations_summary_for_prompt
+
+    ann = annotations_summary_for_prompt(
+        list(tool_names_for_annotations) if tool_names_for_annotations is not None else None
+    )
     return _SUBAGENT_SKELETON.format(
         role_line=role_line.strip(),
         mission=mission.strip(),
         hard_rules=hr,
         workflow_steps=ws,
         tool_rules=tr,
+        tool_annotations=ann or "(no annotated tools registered)",
         output_rules=out,
     )
 

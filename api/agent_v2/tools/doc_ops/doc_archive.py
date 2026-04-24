@@ -203,6 +203,10 @@ async def doc_archive(args: dict) -> dict:
         chunks_moved=moved_chunks,
         embedding=src_embd,
         reason=args.get("reason"),
+        next_steps=[
+            f"Verify with rag_list_docs(kb_id='{target_kb_id}', keywords='{old_name[:40]}')",
+            f"Confirm source emptied via rag_list_docs(kb_id='{source_kb_id}', keywords='{old_name[:40]}')",
+        ],
     )
 
 

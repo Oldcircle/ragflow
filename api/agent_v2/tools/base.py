@@ -73,6 +73,18 @@ class ToolContext:
     - ``("sub_a", "sub_b")``：只允许这些名字的 subagent
     """
 
+    # ────────── Phase 2.6 v0.4 — plan gating ──────────
+    pending_plan_status: str | None = None
+    """进入本轮时 session 上的 plan 状态快照（waiting / approved / rejected /
+    request_changes / None）。@require_kb_write 用它判断写工具是否放行。"""
+
+    pending_plan_id: str | None = None
+    """当前 waiting/approved plan 的 pending_id；仅作审计引用用。"""
+
+    plan_submitted_this_turn: bool = False
+    """本次 Agent run 内 submit_plan 是否已调过。只要为 True，同轮后续写工具
+    必须被拒——不能 submit_plan 之后立刻接着执行，必须等下一轮用户批。"""
+
     extra: dict = field(default_factory=dict)
 
 

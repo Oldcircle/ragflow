@@ -313,6 +313,10 @@ async def doc_upload_from_url(args: dict) -> dict:
         source_url=url,
         status="queued_for_parse",
         reason=args.get("reason"),
+        next_steps=[
+            f"Wait ~1-2 min, then rag_retrieve(kb_ids=['{kb_id}'], query=...) to check the content indexed",
+            "Do NOT re-call doc_upload_from_url with the same URL — the content hash will dedup",
+        ],
     )
 
 

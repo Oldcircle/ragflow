@@ -83,6 +83,8 @@ class AgentRunner:
         depth: int = 0,
         citation_enforce_level: str = "warn",
         citation_numeric_strict: bool = True,
+        pending_plan_status: str | None = None,
+        pending_plan_id: str | None = None,
     ):
         if not tenant_id:
             raise AgentError("tenant_id is required")
@@ -107,6 +109,10 @@ class AgentRunner:
         # Phase 2.5.1 — citation validator
         self.citation_enforce_level = citation_enforce_level or "warn"
         self.citation_numeric_strict = bool(citation_numeric_strict)
+
+        # Phase 2.6 v0.4 — plan gate runtime state
+        self.pending_plan_status = pending_plan_status
+        self.pending_plan_id = pending_plan_id
 
         # 子发事件会 emit 到这个 queue，父在 run() loop 里把它们穿插进自己的 SDK 流
         self._event_bus: asyncio.Queue[ev.Event] | None = None
@@ -229,6 +235,9 @@ class AgentRunner:
             subagent_count_this_turn=0,
             event_emitter=emit,
             current_tool_call_id=None,
+            pending_plan_status=self.pending_plan_status,
+            pending_plan_id=self.pending_plan_id,
+            plan_submitted_this_turn=False,
         )
         token = set_ctx(ctx)
 
@@ -422,13 +431,25 @@ class AgentRunner:
                     continue
                 idx += 1
                 content = (m.get("content") or "").strip()
-                if not content:
+                # Phase 2.6 v0.5 — render tool calls that the assistant ran
+                # as part of this history entry. Claude Code keeps the full
+                # tool_use/tool_result blocks in history; the SDK's
+                # query(prompt=...) interface only accepts a string, so we
+                # render a compact text version into <conversation-history>.
+                if role == "assistant":
+                    tool_calls = m.get("tool_calls") or []
+                    tool_lines = _format_tool_calls_for_history(tool_calls)
+                else:
+                    tool_lines = []
+                if not content and not tool_lines:
                     continue
                 # 对 assistant 消息保留但截断——太长的历史回答对追问不相关的细节
                 # 反而是噪音，压到 1200 字内够识别 topic + 引用编号
                 if role == "assistant" and len(content) > 1200:
                     content = content[:1200] + " …（已截断）"
-                lines.append(f"[#{idx}] {role}: {content}")
+                lines.append(f"[#{idx}] {role}: {content or '(tool activity only)'}")
+                for tl in tool_lines:
+                    lines.append(f"      {tl}")
             if lines:
                 parts.append(
                     "<conversation-history>\n"
@@ -529,6 +550,59 @@ class AgentRunner:
                     parts.append(str(p))
             return "\n".join(parts)
         return str(content)
+
+
+_TOOL_CALL_ARG_CHARS = 180
+_TOOL_CALL_RESULT_CHARS = 320
+_TOOL_CALL_MAX_PER_TURN = 6
+
+
+def _format_tool_calls_for_history(tool_calls: list[dict]) -> list[str]:
+    """Render a compact ``[tool] name(args) → result`` text line per call.
+
+    Phase 2.6 v0.5 — called by ``_build_prompt_with_history`` when the
+    history dict carries ``tool_calls``. Keeps size tight: args and result
+    truncated to ~200/320 chars each, at most 6 calls per turn (beyond that,
+    replaced by a ``… (k more)`` line). If the LLM wants the full
+    result it can always re-call the tool.
+    """
+    if not tool_calls:
+        return []
+    import json
+
+    lines: list[str] = []
+    for i, t in enumerate(tool_calls[:_TOOL_CALL_MAX_PER_TURN]):
+        name = t.get("tool_name") or "unknown"
+        args = t.get("args") or {}
+        if isinstance(args, (dict, list)):
+            args_str = json.dumps(args, ensure_ascii=False, separators=(",", ":"), default=str)
+        else:
+            args_str = str(args)
+        if len(args_str) > _TOOL_CALL_ARG_CHARS:
+            args_str = args_str[:_TOOL_CALL_ARG_CHARS] + "…"
+
+        status = (t.get("status") or "unknown").lower()
+        if status == "error":
+            outcome = f"ERROR: {str(t.get('error') or '')[:_TOOL_CALL_RESULT_CHARS]}"
+        else:
+            result = t.get("result")
+            if result is None or result == "":
+                outcome = "(no output)"
+            else:
+                if isinstance(result, (dict, list)):
+                    result_str = json.dumps(result, ensure_ascii=False, default=str)
+                else:
+                    result_str = str(result)
+                if len(result_str) > _TOOL_CALL_RESULT_CHARS:
+                    result_str = result_str[:_TOOL_CALL_RESULT_CHARS] + "…"
+                outcome = result_str
+        duration = t.get("duration_ms") or 0
+        lines.append(f"[tool] {name}({args_str}) → {outcome} ({duration}ms)")
+
+    remaining = len(tool_calls) - _TOOL_CALL_MAX_PER_TURN
+    if remaining > 0:
+        lines.append(f"[tool] … {remaining} more call(s) omitted")
+    return lines
 
 
 _SENTINEL_SDK_DONE = object()

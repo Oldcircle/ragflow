@@ -30,6 +30,7 @@ from api.utils.api_utils import (
     validate_request,
 )
 from api.agent_v2.model_resolver import list_available_chat_models, resolve_model
+from api.agent_v2.plan_decision import parse_plan_decision
 from api.agent_v2.registry import ALL_TOOLS, list_tool_names
 from api.agent_v2.runner import AgentRunner, ModelConfig
 from api.agent_v2.templates import list_templates
@@ -353,6 +354,34 @@ async def send_message():
     if not session or session.tenant_id != current_user.id or session.status != "active":
         return get_data_error_result(message="session not found or inactive")
 
+    # Phase 2.6 v0.4 — parse plan decision prefix before storing the message.
+    # Supported prefixes (case-insensitive, with or without brackets):
+    #   [plan approved]         — user approves the pending plan
+    #   [plan rejected]         — user rejects it
+    #   [plan request changes]  — user wants an adjusted plan
+    # The prefix is stripped from ``user_message`` so downstream code (LLM +
+    # message log) sees the clean text. Plan state transitions are written
+    # before the runner starts so ``@require_kb_write`` reads fresh state.
+    user_message, plan_decision = parse_plan_decision(user_message)
+    if plan_decision:
+        try:
+            AgentV2SessionService.transition_plan_status(session_id, plan_decision)
+        except Exception:
+            logger.exception("failed to transition plan status to %s", plan_decision)
+
+    # Snapshot plan state for the runner so @require_kb_write can gate writes.
+    plan_row = None
+    try:
+        plan_row = AgentV2SessionService.get_pending_plan(session_id)
+    except Exception:
+        logger.exception("failed to read pending plan status for session %s", session_id)
+    plan_status_at_turn_start = (
+        (plan_row or {}).get("pending_plan_status") if plan_row else None
+    )
+    plan_id_at_turn_start = (
+        (plan_row or {}).get("pending_plan_id") if plan_row else None
+    )
+
     # 登记 user 消息（保留 id 以便 2.5.2 拉 history 时排除本条）
     user_msg = AgentV2MessageService.append(
         session_id=session_id, role="user", content=user_message
@@ -392,6 +421,7 @@ async def send_message():
         limit=max(2, history_turn_limit * 2),  # 每轮 user+assistant，所以 ×2
         exclude_message_id=user_msg_id,
         since_create_time=since_ct,
+        include_tool_calls=True,  # v0.5 — keep prior tool activity in history
     )
 
     runner = AgentRunner(
@@ -406,6 +436,8 @@ async def send_message():
         session_id=session.id,  # Phase 2.3: 让 spawn_subagent 能引用父 session
         citation_enforce_level=session.citation_enforce_level or "warn",
         citation_numeric_strict=bool(session.citation_numeric_strict),
+        pending_plan_status=plan_status_at_turn_start,
+        pending_plan_id=plan_id_at_turn_start,
     )
 
     async def stream():
@@ -487,6 +519,22 @@ async def send_message():
                     cost_usd=float(usage.get("total_cost_usd") or 0.0),
                     subagent_spawns=subagent_spawns,
                 )
+
+            # Phase 2.6 v0.4 — clear stale plan state at end of turn.
+            # If the turn started with status=approved/rejected/request_changes,
+            # the agent has had its chance to act on it; leaving the row dirty
+            # would make the NEXT turn think there's still a pending decision.
+            # A fresh submit_plan this turn re-creates the row as waiting, so
+            # we only clear when the DB shows the same non-waiting status we
+            # started with.
+            if plan_status_at_turn_start in ("approved", "rejected", "request_changes"):
+                with contextlib.suppress(Exception):
+                    current = AgentV2SessionService.get_pending_plan(session_id)
+                    current_status = (
+                        (current or {}).get("pending_plan_status") if current else None
+                    )
+                    if current_status == plan_status_at_turn_start:
+                        AgentV2SessionService.clear_pending_plan(session_id)
 
             # Phase 2.5.2 — 触发 compact（fire-and-forget，不阻塞 SSE 收尾）
             # 用 run_compact_safely 而非 maybe_compact_session：前者保证任何内部

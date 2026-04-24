@@ -1383,6 +1383,39 @@ class AgentV2Session(DataBaseModel):
         help_text="摘要已覆盖到第几条消息（按 create_time 排序的 1-based 下标）",
     )
 
+    # Phase 2.6 v0.4 — real plan gating（nullable → 向后兼容老 session）
+    #
+    # ``pending_plan_status`` 的合法值：
+    #   - NULL / ""       — 无待审批计划（默认）
+    #   - "waiting"       — submit_plan 已 emit，等用户回复
+    #   - "approved"      — 用户回复 [plan approved]，下一轮的写工具可以直接跑
+    #   - "rejected"      — 用户回复 [plan rejected]，写工具继续被拒
+    #   - "request_changes" — 用户要求调整；agent 应 re-plan
+    #
+    # ``pending_plan_id`` 是 submit_plan 返回的 pending_id（uuid hex，无 FK 关系）。
+    # 只要 pending_plan_status 不是 NULL / approved，@require_kb_write 就会拒绝。
+    pending_plan_id = CharField(
+        max_length=32, null=True, default=None, index=True,
+        help_text="Current submit_plan pending_id awaiting user decision.",
+    )
+    pending_plan_status = CharField(
+        max_length=24, null=True, default=None, index=True,
+        help_text="waiting | approved | rejected | request_changes | null",
+    )
+    pending_plan_submitted_at = BigIntegerField(
+        null=True, default=None,
+        help_text="submit_plan 提交时的 ms timestamp；用于 TTL 过期判断",
+    )
+
+    # Phase 2.6 v0.6 — 保存 submit_plan 的**完整 payload**（title / steps /
+    # affected_resources / risk_level / reversible / reversible_hint / ...），
+    # 这样下一轮 Agent 批准后能用新工具 `get_pending_plan` 读回原计划逐步执行，
+    # 而不是只能从 tool_call 历史里间接重建（见 `PLAN-doc-ops.md §G7`）。
+    pending_plan_body = JSONField(
+        null=True, default=None,
+        help_text="Full submit_plan payload; cleared together with pending_plan_status",
+    )
+
     class Meta:
         db_table = "agent_v2_session"
 

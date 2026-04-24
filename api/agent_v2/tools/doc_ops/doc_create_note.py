@@ -124,6 +124,7 @@ def _extra_audit(args: dict, result: Any, _ctx) -> dict:
     min_role="contributor",
     kb_id_from=_resolve_kb_id,
     extra_audit_metadata=_extra_audit,
+    plan_gated=False,  # librarian 写笔记属于观察总结，低风险、可删，不强制 plan
 )
 async def doc_create_note(args: dict) -> dict:
     ctx = get_ctx(require=["tenant_id"])
@@ -249,6 +250,10 @@ async def doc_create_note(args: dict) -> dict:
         tags_applied=tags_applied,
         status_note="queued_for_parse",
         reason=args.get("reason"),
+        next_steps=[
+            f"Wait ~30s, then rag_retrieve(kb_ids=['{kb_id}'], query='{(args.get('title') or '')[:40]}') to confirm the note was indexed",
+            "Do NOT recreate the same note — doc_create_note dedups by (kb_id, title, content_hash)",
+        ],
     )
 
 

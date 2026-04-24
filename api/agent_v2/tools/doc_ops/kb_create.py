@@ -219,6 +219,10 @@ async def kb_create(args: dict) -> dict:
         parser_id=built.get("parser_id"),
         embd_id=built.get("embd_id"),
         permission=permission,
+        next_steps=[
+            f"Populate it: doc_upload_from_url(kb_id='{built['id']}', url=...) or have the user upload documents",
+            f"Sanity-check with kb_stats(kb_id='{built['id']}')",
+        ],
     )
 
 

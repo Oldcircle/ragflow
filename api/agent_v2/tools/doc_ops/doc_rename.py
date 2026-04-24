@@ -165,4 +165,7 @@ async def doc_rename(args: dict) -> dict:
         requested_name=new_name,
         auto_suffixed=(deduped != new_name),
         reason=args.get("reason"),
+        next_steps=[
+            f"Verify via rag_list_docs(kb_id='{kb_id}', keywords='{deduped[:40]}')",
+        ],
     )

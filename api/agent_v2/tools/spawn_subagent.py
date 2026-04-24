@@ -218,13 +218,14 @@ async def spawn_subagent(args: dict) -> dict:
     else:
         child_budget = base_budget
 
-    # ── 5) 模型继承 ──
-    model = ctx.model_config
-    if model is None:
+    # ── 5) 模型继承 / 覆盖（Phase 2.6 v0.5） ──
+    parent_model = ctx.model_config
+    if parent_model is None:
         return mcp_json_response({
             "error": "no_model_config",
             "message": "Parent agent has no model config; cannot spawn child.",
         })
+    model = _resolve_child_model(parent_model, definition)
 
     # ── 6a) 配额（Phase 3.1b）：hard_enforce 超限直接拒 ──
     try:
@@ -300,6 +301,11 @@ async def spawn_subagent(args: dict) -> dict:
             depth=ctx.depth + 1,
             citation_enforce_level=child_enforce,
             citation_numeric_strict=child_numeric_strict,
+            # Phase 2.6 v0.4 — propagate plan gate state to child so a
+            # subagent that receives an approved plan can actually execute,
+            # and one launched under a waiting plan stays blocked.
+            pending_plan_status=ctx.pending_plan_status,
+            pending_plan_id=ctx.pending_plan_id,
         )
 
         text_parts: list[str] = []
@@ -438,3 +444,40 @@ def _all_registered_tool_names() -> list[str]:
     """懒引用以避免 registry→tools→registry 循环。"""
     from ..registry import ALL_TOOLS
     return [n for n in ALL_TOOLS if n != "spawn_subagent"]
+
+
+def _resolve_child_model(parent_model, definition):
+    """Phase 2.6 v0.5 — honor per-subagent model override.
+
+    Precedence:
+    - ``definition is None`` or ``definition.model == "inherit"`` → parent as-is
+    - ``definition.model = ModelRef(model=X)`` without ``base_url`` → swap the
+      model name on the parent's config; auth_token stays (same provider)
+    - ``definition.model = ModelRef(model=X, base_url=Y)`` → swap both. The
+      caller's responsibility to ensure parent's auth_token works against Y;
+      we log a warning since different provider → different key usually.
+    - ``fallback_model`` follows the same merge rule: override if set, else
+      keep parent's fallback.
+
+    Returns a fresh ``ModelConfig``; parent is untouched.
+    """
+    if definition is None:
+        return parent_model
+    defn_model = getattr(definition, "model", "inherit")
+    if defn_model == "inherit":
+        return parent_model
+
+    from dataclasses import replace
+
+    overrides: dict = {"model": defn_model.model}
+    if defn_model.base_url is not None and defn_model.base_url != parent_model.base_url:
+        overrides["base_url"] = defn_model.base_url
+        logger.warning(
+            "spawn_subagent: definition %r overrides base_url to %s; "
+            "parent auth_token reused — ensure it works against the new endpoint.",
+            getattr(definition, "name", "?"),
+            defn_model.base_url,
+        )
+    if defn_model.fallback_model is not None:
+        overrides["fallback_model"] = defn_model.fallback_model
+    return replace(parent_model, **overrides)

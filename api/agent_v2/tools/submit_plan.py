@@ -155,6 +155,36 @@ async def submit_plan(args: dict) -> dict:
 
     pending_id = uuid.uuid4().hex
 
+    # ── Phase 2.6 v0.4 — runtime gate ───────────────────────────────
+    # Per-turn flag: subsequent writes in the same Agent run must reject.
+    # Cross-turn: persist on the session so @require_kb_write sees it.
+    ctx.plan_submitted_this_turn = True
+    ctx.pending_plan_id = pending_id
+    ctx.pending_plan_status = "waiting"
+
+    # v0.6 — persist the full plan payload so get_pending_plan can read it back
+    # after approval. Keep it compact enough to survive in a JSONField.
+    plan_body = {
+        "pending_id": pending_id,
+        "title": title,
+        "steps": steps,
+        "affected_resources": affected[:30],
+        "risk_level": risk,
+        "estimated_cost_usd": est_cost,
+        "reversible": reversible,
+        "reversible_hint": reversible_hint,
+    }
+
+    if ctx.session_id:
+        try:
+            from api.db.services.agent_v2_service import AgentV2SessionService
+
+            AgentV2SessionService.set_pending_plan(
+                ctx.session_id, pending_id, plan_body=plan_body,
+            )
+        except Exception:
+            logger.exception("submit_plan: set_pending_plan failed (not fatal)")
+
     # Emit to SSE
     try:
         await emit_event(
