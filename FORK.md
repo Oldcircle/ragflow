@@ -166,10 +166,10 @@ graspologic = { git = "https://github.com/infiniflow/graspologic.git", rev = "38
 
 | 文件 / 目录 | 性质 | 冲突风险 |
 |---|---|---|
-| `api/agent_v2/` 整个目录（runner/event/errors/registry + tools/*） | 新增 7 文件 | 无 |
-| `api/apps/agent_v2_app.py` | 新增（自动注册到 `/v1/agent_v2`） | 无 |
-| `api/db/db_models.py` | 文末加 3 张表（AgentV2Session/Message/ToolCall） | 低 |
-| `api/db/services/agent_v2_service.py` | 新增 CRUD | 无 |
+| `api/agent_v2/` 整个目录（runner/event/errors/registry + tools/* + prompting/ + annotations.py + plan_decision.py + validators/ + compactor.py + definitions/） | 新增大量文件（P2.5+P2.6） | 无 |
+| `api/apps/agent_v2_app.py` | 新增（自动注册到 `/v1/agent_v2`）；P2.6 v0.4 起在入口解析 plan 前缀 + 管 session 级 plan 状态 | 无 |
+| `api/db/db_models.py` | 文末加 Agent v2 相关表（Session/Message/ToolCall/SubagentTrace）；P2.6 v0.4 起 `AgentV2Session` +3 列 `pending_plan_*`（nullable，向后兼容） | 低 |
+| `api/db/services/agent_v2_service.py` | 新增 CRUD；P2.6 v0.4 起 `AgentV2SessionService.{set,transition,clear,get}_pending_plan` | 无 |
 | `pyproject.toml` | + `claude-agent-sdk>=0.1.64` + graspologic github 源 | 中 |
 
 #### 前端（已落地，采用 Claude Design「知源」设计语言）
@@ -374,3 +374,5 @@ from .agent_v2_app import manager as agent_v2_manager  # 保留我们的
 | 2026-04-21 | v0.1 | 初始 Fork；记录环境/pyproject/macOS 适配改动 |
 | 2026-04-22 | v0.2 | Phase 1 全部完成（M1.1-M1.6）；Phase 1.7 前端产品化重构 |
 | 2026-04-23 | v0.3 | Phase 2 (RBAC/bot/multi-agent) + Phase 3.1 (审计/配额/限流) + Phase 3.2 (Cron 触发器) + Phase 2.5 (citation validator / 多轮 / Agent Definition) 全数落地 |
+| 2026-04-24 | v0.4 | Phase 2.6 v0.1/v0.2/v0.3：17 MCP 工具（含 doc_ops 10 个写/自省工具）+ 4 subagent（+ sub_archivist / sub_librarian）+ 全面英文化 8 段式 prompt + `AUDIT-claude-code-alignment.md` 20 维度对齐 |
+| 2026-04-23 | v0.5 | Phase 2.6 v0.4：真 `submit_plan` runtime gate（`AgentV2Session` +3 列 + `@require_kb_write` 两层 gate）+ `api/agent_v2/annotations.py` 工具元数据 + 7 写工具 `next_steps` 提示。+31 测试（229 pass / 8 skip） |

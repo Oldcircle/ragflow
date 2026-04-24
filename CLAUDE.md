@@ -35,18 +35,20 @@ RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on d
 - **Tools**: External API integrations (Tavily, Wikipedia, SQL execution, etc.)
 
 ### Agent v2（本 fork 的核心差异化，`/api/agent_v2/`）
-- **Runner**: `api/agent_v2/runner.py` — Claude Agent SDK 适配层；P2.5.2 起支持 `history=` / `summary_text=` 多轮参数，P2.5.bugfix 起开 `include_partial_messages=True` 真流式
+- **Runner**: `api/agent_v2/runner.py` — Claude Agent SDK 适配层；P2.5.2 起支持 `history=` / `summary_text=` 多轮参数，P2.5.bugfix 起开 `include_partial_messages=True` 真流式，Phase 2.6 v0.4 起接 `pending_plan_status/id` 并注入 `ToolContext` 供 gate 使用；v0.5 加 `_format_tool_calls_for_history` 把 tool 往返渲染成 `[tool] name(args) → result` 紧凑行插到 `<conversation-history>`，追问"刚才那个 kb_audit 结果"时不用重跑
 - **Event**: `api/agent_v2/event.py` — 统一 SSE 事件；P2.3 / P2.5.1 加了 `subagent_*` / `citation_warning`；Phase 2.6 加了 `ask_user_question` / `plan_submitted`
-- **Tools**: `api/agent_v2/tools/` — 17 个 MCP 工具：4 读（rag_retrieve / rag_list_docs / rag_read_doc / rag_graph_query）+ spawn_subagent + 6 写（doc_tag / doc_rename / doc_archive / doc_reparse / doc_upload_from_url / kb_create）+ 4 自省（Phase 2.6 v0.2：doc_create_note / kb_audit / kb_stats / doc_list_recent_changes）+ 2 交互（ask_user_question / submit_plan）
+- **Tools**: `api/agent_v2/tools/` — 18 个 MCP 工具：4 读（rag_retrieve / rag_list_docs / rag_read_doc / rag_graph_query）+ spawn_subagent + 6 写（doc_tag / doc_rename / doc_archive / doc_reparse / doc_upload_from_url / kb_create）+ 4 自省（Phase 2.6 v0.2：doc_create_note / kb_audit / kb_stats / doc_list_recent_changes）+ 3 交互 / plan（ask_user_question / submit_plan / **get_pending_plan** v0.6）
+- **Annotations** (Phase 2.6 v0.4 / v0.5): `api/agent_v2/annotations.py` — 每个工具的 `ToolAnnotation(is_read_only, is_idempotent, cost_class, avg_latency_ms, side_effects)`；v0.4 通过 `annotations_summary_for_prompt` 渲染进 supervisor / subagent system prompt 的 **Tool cost hints** 段；v0.5 `registry._decorate_for_mcp` 还把它投影成 MCP 协议原生的 `readOnly/destructive/openWorld` annotations，并把 `SEARCH_HINT_BY_TOOL` 里的 3-10 词祈使句贴到 MCP description 首行作 `[intent]` 前缀
+- **Plan gate** (Phase 2.6 v0.4): `api/agent_v2/plan_decision.py::parse_plan_decision` 剥用户消息前缀 `[plan approved\|rejected\|request changes]`（中文：`[计划批准\|拒绝\|修改]`）；`AgentV2Session` 表新增 `pending_plan_id/status/submitted_at` 3 列 + `AgentV2SessionService.{set,transition,clear,get}_pending_plan`；`@require_kb_write` 的 `plan_gated=True`（默认开）里两层 gate（ctx.plan_submitted_this_turn + DB live read），1h TTL。只有 `doc_create_note` 以 `plan_gated=False` 跳过（低风险可删）
 - **Validators** (P2.5.1): `api/agent_v2/validators/` — EvidenceIndex + CitationValidator（三规则 missing_chunk / number_unsupported / no_citation_for_numeric）+ `rewrite.py` strict-mode 一次性重写
 - **Compactor** (P2.5.2): `api/agent_v2/compactor.py` — 历史摘要压缩；`run_compact_safely` 入口把任何异常写进 access_audit_log（action=`agent_v2.compact`），fire-and-forget 不再静默失败
-- **Definitions** (P2.5.3 + P2.6 v0.2): `api/agent_v2/definitions/` — 声明式 AgentDefinition schema + 6 supervisor + 4 subagent（sub_policy_researcher / sub_evidence_checker / sub_archivist / sub_librarian）。**sub_archivist = 动手改**，**sub_librarian = 看+想+写笔记**，Claude Code 风格一 subagent = 一心智模式
-- **doc_ops** (Phase 2.6 + v0.2): `api/agent_v2/tools/doc_ops/` — 10 个工具共享 `@require_kb_write` 装饰器 + `ok/err` 响应形状：
-  - 6 写（tag / rename / archive / reparse / upload_from_url / kb_create）→ `sub_archivist` 专用
+- **Definitions** (P2.5.3 + P2.6 v0.2 / v0.4): `api/agent_v2/definitions/` — 声明式 AgentDefinition schema + 6 supervisor + 4 subagent（sub_policy_researcher / sub_evidence_checker / sub_archivist / sub_librarian）。**sub_archivist = 动手改**（v0.4 升 v1.2.0，hard rules 点名 runtime gate），**sub_librarian = 看+想+写笔记**，Claude Code 风格一 subagent = 一心智模式
+- **doc_ops** (Phase 2.6 + v0.2 + v0.4): `api/agent_v2/tools/doc_ops/` — 10 个工具共享 `@require_kb_write` 装饰器 + `ok/err` 响应形状：
+  - 6 写（tag / rename / archive / reparse / upload_from_url / kb_create）→ `sub_archivist` 专用；v0.4 成功路径加 `next_steps` 提示
   - 4 自省 / 总结（create_note / kb_audit / kb_stats / list_recent_changes）→ `sub_librarian` 专用
   - supervisor 默认都拿不到写或运营工具；必须通过 `spawn_subagent(subagent_type=...)` 显式派 archivist 或 librarian
 - **Bot Channels** (P2.2): `api/bot_channels/` — 飞书 webhook adapter（签名 + 会话映射）
-- **HTTP App**: `api/apps/agent_v2_app.py` — 注册 `/v1/agent_v2/*` blueprint
+- **HTTP App**: `api/apps/agent_v2_app.py` — 注册 `/v1/agent_v2/*` blueprint；v0.4 起在 `send_message` 入口解析 plan 前缀 / 落 DB / 注入 runner ctx / 在 turn 收尾清 stale 状态
 
 ### Frontend (`/web/`)
 - React/TypeScript with UmiJS framework
@@ -188,7 +190,7 @@ cd web && nohup npm run dev > ../logs/frontend.log 2>&1 &
 - `PLAN-multi-agent.md` — P2.3 Multi-Agent subagent 详细设计
 - `PLAN-agent-runtime-maturity.md` — Phase 2.5 Agent Runtime 成熟化（Citation validator / 多轮上下文 / Agent definition manifest，参考 `~/Opensource/vendor/claude-code-ref/`）
 - `PLAN-doc-ops.md` — Phase 2.6 文档运营工具（doc_tag / doc_rename / doc_archive / doc_reparse / doc_upload_from_url / kb_create + ask_user_question / submit_plan + sub_archivist）
-- `AUDIT-claude-code-alignment.md` — Phase 2.6 v0.3：20 维度对齐 Claude Code 设计哲学，10 个用户没提到的发现，P0/P1/P2 分档
+- `AUDIT-claude-code-alignment.md` — Phase 2.6 v0.3/v0.4：20 维度对齐 Claude Code 设计哲学，10 个用户没提到的发现（U1–U10），P0/P1/P2 分档；v0.4 §5-b 记录 runtime plan gate + tool annotations + next_steps 三项 T10-T14 落地
 - `FINDINGS-phase-26-v02-live.md` — Phase 2.6 v0.2 活体测试的 3 个架构级 bug 修复记录
 - `PRODUCT-UI-PLAN.md` — Phase 1.7 企业知识库前端产品化重构计划（已完成）
 - `STATUS.md` — 会话交接，当前进度快照

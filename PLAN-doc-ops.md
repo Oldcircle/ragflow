@@ -236,7 +236,28 @@ Supervisor 侧：`supervisor_baozhang` / `supervisor_generic_policy` / `supervis
 3. 用户：Approve / Reject / Request Changes
 4. 响应回流，Agent 根据结果继续/终止/调整
 
-**gating 规则**：session 里设 `plan_approval_required_for=["archive", "reparse", "upload", "kb_create"]` 列表；这些工具**调用前**强制先调 `submit_plan` + 收到 approve 才能调。违反即工具自动 deny。v1 的 gating 由 `sub_archivist` 的 system prompt 自律；v2 做成运行时强制。
+**gating 规则**（Phase 2.6 v0.4 已落地 ✅）：
+
+实际实现比原计划更保守——**全部** `@require_kb_write` 装饰的写工具默认受 gate
+管辖（除低风险 `doc_create_note` 显式 `plan_gated=False`），不再按工具类别开列表。
+
+两层 gate：
+
+1. **同轮锁** — `ctx.plan_submitted_this_turn`。Agent 在一轮内调过 `submit_plan`
+   之后，同轮后续任何写都立刻被拒（防止 Agent 提完计划就自作主张动手）
+2. **跨轮状态** — `AgentV2Session.pending_plan_status` 列（`waiting` /
+   `approved` / `rejected` / `request_changes` / NULL）。状态由 HTTP 端点
+   解析用户消息前缀 `[plan approved\|rejected\|request changes]`（中文：
+   `[计划批准\|拒绝\|修改]`）自动 transition。只有 `approved` 或 NULL 放行；其他
+   态写工具返 `error: plan_gate` + 审计写 deny。1h TTL 自动清
+
+相关代码：
+- `api/db/db_models.py::AgentV2Session` — 3 列 nullable schema（向后兼容老 session）
+- `api/db/services/agent_v2_service.py::AgentV2SessionService.{set,transition,clear,get}_pending_plan`
+- `api/agent_v2/plan_decision.py::parse_plan_decision` — 前缀识别（语言无关）
+- `api/agent_v2/tools/doc_ops/_common.py::_plan_gate_check` — gate 本体
+- `api/agent_v2/tools/submit_plan.py` — 发 plan 时同步落 DB + 设 ctx flag
+- `api/apps/agent_v2_app.py::send_message` — 入口解析前缀 / 注入 runner / 收尾清 stale
 
 ---
 
@@ -291,7 +312,7 @@ Supervisor 侧：`supervisor_baozhang` / `supervisor_generic_policy` / `supervis
 | `doc_upload_from_url` SSRF（内网探测） | URL scheme 只允 http/https；resolve 到 IP 时 block RFC1918 / link-local / localhost；`Content-Length` 硬上限；`X-Forwarded-For` 不 forward |
 | Agent 在多轮同 session 里重复调 `doc_archive` 把同一个 doc 跨 KB 来回倒 | idempotency key（`(op, doc_id, target_kb)` 90s 内哈希）+ 审计看得到 |
 | `ask_user_question` / `submit_plan` 阻塞 SSE 太久 | 60s 超时后工具返 `cancelled`；Agent system prompt 里写明"超时请改降级"|
-| `sub_archivist` 绕开 `submit_plan` 直接调破坏工具 | v1 靠 system prompt 自律 + `citation_enforce=off` 不帮倒忙；v2 加运行时 gating |
+| `sub_archivist` 绕开 `submit_plan` 直接调破坏工具 | **v0.4 已修**：`@require_kb_write` 跑时 gate，ctx + DB 双层校验，绕不过（详见 §8）|
 | 和上游 RAGFlow merge 冲突 | 所有新代码都放在 `api/agent_v2/tools/doc_ops/` 独立目录；DB 不改上游 schema |
 
 ---
@@ -322,7 +343,7 @@ Supervisor 侧：`supervisor_baozhang` / `supervisor_generic_policy` / `supervis
 | G4 | 反思自己操作的能力弱 | Agent 做完批量后要能核对；当前只能依赖用户去审计页看 | `TaskGetTool` / `TaskOutputTool` — 读自己的 task history |
 | G5 | 工具 `searchHint` 缺失 | 决定**何时**用哪个工具，不是 what；当前 description 大多只写 what | Claude Code 每个工具都有 `searchHint` 字段 |
 | G6 | 没有跨 session memory | "我上周整理过这个 KB，已经打了 archive 标签" 这种持久性知识 | Claude Code `memdir/` persistent memory |
-| G7 | `submit_plan` 审批后没有批量执行闭环 | 批准后 Agent 只是"继续做"，没有"按 plan 逐步执行 + 每步回报 + 最后总结" | `WorkflowTool` / Plan execution feedback loop |
+| ~~G7~~ | ~~`submit_plan` 审批后没有批量执行闭环~~ | **v0.6 已落地**：`AgentV2Session.pending_plan_body` + 新工具 `get_pending_plan` + sub_archivist v1.3.0 的 `[step K/N done]` 标记 | — |
 
 ### Tier 1 — 本次要做（最小支撑愿景的 4 个新工具）
 

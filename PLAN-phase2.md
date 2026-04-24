@@ -34,10 +34,20 @@
 | **P2.2** | 飞书机器人 | 新表 `bot_channel` / `bot_conversation_map`，webhook 适配器，前端"渠道"页 | ✅ 完成 |
 | **P2.3** | Multi-Agent | 新工具 `spawn_subagent`，新表 `agent_v2_subagent_trace`，前端子 Agent 可视化 | ✅ 完成 |
 | **P2.5** | Agent Runtime 成熟化 | Citation validator + 多轮上下文 + Agent definition manifest；参考 `vendor/claude-code-ref` | ✅ 完成（2026-04-23） |
+| **P2.6** | 文档运营工具 + 自维护 KB Agent | 18 MCP 工具 / 6 supervisor + 4 subagent / AUDIT-claude-code-alignment 对齐 / runtime plan gate（v0.4）+ 执行闭环（v0.6） | ✅ v0.6 完成（2026-04-23） |
 
 每一阶段都是自成闭环的，不依赖后一阶段。
 
 **Phase 2.5 为什么单列**：Phase 2.1/2.2/2.3 做完后，外部评审指出三个结构性缺口（答案可信度没有硬保障、session 模型侧实际无状态、Agent/Tool 定义硬编码），决定能否从"内部 demo"走到"付费客户能买"。详见 `PLAN-agent-runtime-maturity.md`。
+
+**Phase 2.6 后续迭代**：v0.1 首发 6 写工具 + 2 交互工具 + sub_archivist；v0.2
+加 4 自省 / 总结工具 + sub_librarian（Agent 能自维护 KB 而非只执行用户命令）；
+v0.3 全面对齐 Claude Code 设计哲学（8 段式英文 prompt / 工具 description 英文化
+/ supervisor `tools=SUPERVISOR_TOOLS` 死锁架构分离）；v0.4 真 runtime plan
+gate + 工具元数据注解 + 写工具 `next_steps` 提示；v0.5 searchHint + MCP 协议
+原生 annotations + 历史保留 tool_use/tool_result + per-subagent 模型路由；
+v0.6 plan 执行闭环（`get_pending_plan` 工具 + `[step K/N done]` 标记）。
+详见 `PLAN-doc-ops.md` + `AUDIT-claude-code-alignment.md`。
 
 **Phase 2.5 落地 commits**：
 - P2.5.1 Citation Validator — `540bfb91f`
@@ -80,6 +90,9 @@
 | `PLAN-bot-channels.md` | P2.2 IM 机器人渠道详细设计 |
 | `PLAN-multi-agent.md` | P2.3 Multi-Agent 详细设计 |
 | `PLAN-agent-runtime-maturity.md` | P2.5 Agent Runtime 成熟化详细设计 |
+| `PLAN-doc-ops.md` | P2.6 文档运营工具 + 自维护 KB Agent 设计 |
+| `AUDIT-claude-code-alignment.md` | P2.6 v0.3/v0.4 对齐 Claude Code 的 20 维度审计 + 10 个未提发现 |
+| `FINDINGS-phase-26-v02-live.md` | P2.6 v0.2 活体测试的 3 个架构级 bug 修复记录 |
 | `STATUS.md` | 会话交接文档，实时进度 |
 | `DESIGN.md` | Phase 1 Agent v2 架构（稳定，不再改）|
 | `FORK.md` | 与上游的差异 |

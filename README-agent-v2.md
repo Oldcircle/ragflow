@@ -3,16 +3,25 @@
 > Agent-first 企业知识库助手，基于 Claude Agent SDK + RAGFlow 的 RAG 引擎。
 > 原 RAGFlow Dialog 功能并存不替换，本页只覆盖 Agent v2。
 >
-> **截至 Phase 2.5 完成（2026-04-23）**：基础 RAG Agent + 数据集 RBAC + IM 机器人渠道 + Multi-Agent + 引用校验 + 多轮上下文 + Agent Definition manifest。
+> **截至 Phase 2.6 v0.6 完成（2026-04-23）**：基础 RAG Agent + 数据集 RBAC +
+> IM 机器人渠道 + Multi-Agent + 引用校验 + 多轮上下文 + Agent Definition
+> manifest + **文档运营工具**（18 MCP 工具）+ **自维护 KB 能力**（sub_librarian
+> 体检 + 写笔记）+ **真 runtime plan gate**（破坏性写操作硬审批）+ **plan 执行
+> 闭环**（get_pending_plan + `[step K/N done]` 进度标记）。
 
 ## 一、它是什么
 
-**一句话**：把 RAG 作为 Agent 可调用的工具，而不是"每轮强制拼进 prompt"。
+**一句话**：把 RAG 作为 Agent 可调用的工具，而不是"每轮强制拼进 prompt"；
+Agent 不仅能答问题，还能按用户要求**维护 KB 的形态**（打标签、重命名、归档、
+重解析、从 URL 入库、新建 KB、写调研笔记）。
 - LLM 自主决定何时检索（事实相关问题必查、闲聊不查）
 - 多轮迭代（查不到换关键词再查）
 - 输出**自动核对证据链**：数字、年限、金额、引用编号必须有原文支撑，否则提示用户
 - **真正的多轮记忆**：追问场景能识别「刚才」「上面那条」的指代关系
-- 支持 Multi-Agent：主 Agent 可以派**命名 subagent**（如政策研究员、证据审核员）做聚焦任务
+- 支持 Multi-Agent：主 Agent 可以派**命名 subagent**（archivist / librarian /
+  policy_researcher / evidence_checker）做聚焦任务
+- **破坏性操作受硬审批管辖**（Phase 2.6 v0.4）：批量 / 跨 KB 等都必须先
+  `submit_plan`，用户消息前缀 `[plan approved]` 才能执行
 - 支持 DeepSeek / Claude 等模型
 
 和 RAGFlow 原版 Dialog 的区别：
@@ -21,13 +30,13 @@
 |---|---|---|
 | 检索策略 | 每轮强制一次 | 模型自主，可多轮换关键词 |
 | 防幻觉 | 依赖 prompt + 引用插入 | System Prompt 严格约束 + **后置 Citation Validator 校验数字 / [N] 脚注** |
-| 工具链 | 单 RAG 工具 | 5 个工具：retrieve / graph_query / list_docs / read_doc / spawn_subagent |
+| 工具链 | 单 RAG 工具 | **18 个工具**：4 读 + spawn_subagent + 6 写 + 4 自省/总结 + 3 交互 / plan（详见 §四） |
 | 多轮上下文 | 只发送当前 user message | **完整 history + compact summary**，追问场景不失忆 |
 | Multi-Agent | ❌ | ✅ 主 Agent 可派独立 context 的子 Agent（含命名 `subagent_type`） |
-| 访问控制 | 只有 me / team 两档 | **完整 RBAC**（VIEWER / CONTRIBUTOR / ADMIN / OWNER 四角色 + 审计日志） |
+| 访问控制 | 只有 me / team 两档 | **完整 RBAC**（VIEWER / CONTRIBUTOR / ADMIN / OWNER 四角色 + 审计日志 + v0.4 runtime plan gate） |
 | IM 渠道 | iframe embed | **飞书机器人**（webhook + 签名 + 会话映射） |
 | 可观测性 | 日志为主 | 前端右侧实时展示每次工具调用的 args + result，子 Agent trace 可下钻 |
-| 扩展 | 不易 | Python `@tool` 注册即可；Agent/subagent 走声明式 `AgentDefinition` manifest |
+| 扩展 | 不易 | Python `@tool` 注册即可；Agent/subagent 走声明式 `AgentDefinition` manifest；工具注解集中在 `api/agent_v2/annotations.py` |
 
 ## 二、快速开始
 
@@ -89,37 +98,100 @@
 - 用训练知识补充原文未说的内容
 ```
 
-## 四、工具清单（5 个）
+## 四、工具清单（18 个，Phase 2.6 v0.6）
 
-| 工具 | 用途 | Agent 调用时机 |
+按分层列出。Supervisor 默认只拿 8 个（全部读 + 轻量体检 + 委派 + 用户交互），
+写/审计/总结/plan-execution 工具必须**通过 `spawn_subagent` 派到对应 subagent**
+才能用——这条架构分离在 v0.3 把 supervisor `tools=SUPERVISOR_TOOLS` 写死后
+不可绕过。
+
+### Supervisor 直接可调（8）
+
+| 工具 | 用途 |
+|---|---|
+| `rag_retrieve` | 语义检索（向量+BM25 融合）。KB 问答默认入口 |
+| `rag_list_docs` | 列 KB 文档元数据，可 keywords 过滤 |
+| `rag_read_doc` | 按 doc_id 读整份文档（分页） |
+| `rag_graph_query` | GraphRAG 实体/关系查询（KB 须启用 KG） |
+| `kb_stats` | 轻量体检：文档数 / chunk 数 / 最近改动时间。<1KB 响应，<100ms |
+| `spawn_subagent` | 派一个独立 context 的子 Agent，可选 `subagent_type` 命名路由 |
+| `ask_user_question` | 2-4 选项结构化澄清；SSE 卡片交互 |
+| `submit_plan` | 提交执行计划等用户审批；Phase 2.6 v0.4 起触发真运行时 gate |
+
+### 通过 `spawn_subagent` 才能用（9）
+
+都在 `api/agent_v2/tools/doc_ops/`，共享 `@require_kb_write` 装饰器
+（RBAC + 审计 + idempotency + v0.4 plan gate）。
+
+**写 / 命令式运营**（sub_archivist 专用，6 个）：
+
+| 工具 | 用途 | 是否受 plan gate |
 |---|---|---|
-| `rag_retrieve` | 语义检索相关片段（向量+BM25 融合） | 问题涉及 KB 内容时必调 |
-| `rag_list_docs` | 列出 KB 里的所有文档元数据 | 问"有哪些文件""一共几份"时 |
-| `rag_read_doc` | 按 doc_id 读整份文档（分页） | 需要完整上下文时 |
-| `rag_graph_query` | GraphRAG 实体/关系查询 | 需要跨文档链式推理时（KB 须启用 KG） |
-| `spawn_subagent` | 派一个独立 context 的子 Agent 做聚焦任务 | 复杂任务要分治时；**可选 `subagent_type` 命名路由**（Phase 2.5.3） |
+| `doc_tag` | 加 / 删 / 设文档标签 | ✅ |
+| `doc_rename` | 改文档显示名（自动保扩展名） | ✅ |
+| `doc_archive` | 跨 KB 移动（自动校 embedding 一致） | ✅ |
+| `doc_reparse` | 清 chunk 重建索引 | ✅ |
+| `doc_upload_from_url` | 从 URL 拉内容入库（SSRF / Content-Length 硬防护） | ✅ |
+| `kb_create` | 新建 KB（授予 caller OWNER） | ✅ |
 
-### spawn_subagent 的命名路由
+**自省 / 总结 / 写笔记**（sub_librarian 专用，3 个 + 1 个跳 gate 的写）：
 
-`spawn_subagent` 接受可选的 `subagent_type` 参数指定要派哪种角色的子 Agent：
+| 工具 | 用途 | 是否受 plan gate |
+|---|---|---|
+| `kb_audit` | 跑一次 KB 体检：陈旧文档、重复、空洞覆盖面 | — (只读) |
+| `doc_list_recent_changes` | 最近 N 小时的 audit log 流水 | — (只读) |
+| `doc_create_note` | 把调研结果写成 markdown 笔记存回 KB（自动 tag、dedup） | **❌ 显式 plan_gated=False**，低风险可删 |
+
+**plan 执行闭环**（sub_archivist 专用，1 个；Phase 2.6 v0.6 新增）：
+
+| 工具 | 用途 | 是否受 plan gate |
+|---|---|---|
+| `get_pending_plan` | 批准之后读回完整 plan payload（title / steps / affected_resources / risk），archivist 据此逐步执行并 emit `[step K/N done: ...]` 进度标记 | — (只读) |
+
+### 两个 supervisor / 两个 subagent 的架构分离（Phase 2.6 v0.2 起）
+
+- **supervisor**（6 种内置定义：保障房 / 通用政策 / 合同法务 / 研究 / 客服 / wiki）
+  只做检索 QA + 委派；不能直接写
+- **sub_archivist**（v1.2.0）专注**动手改**；system prompt 明确 runtime
+  plan gate 规则
+- **sub_librarian** 专注**看 + 想 + 写笔记**；发现 KB 问题会自己调 `kb_audit`
+  → 用 `doc_create_note` 写成笔记入库
+- **sub_policy_researcher / sub_evidence_checker**（Phase 2.5.3）保留做深度
+  条款研读 / 引用核对
 
 ```
 spawn_subagent(
-    description="研读保障房政策第 3 条",
-    prompt="对比旧版和新版对户籍要求的差异",
-    subagent_type="sub_policy_researcher"  # 可选；省略 = 通用子
+    description="给合同-2026 做季度体检",
+    prompt="跑 kb_audit 找陈旧合同；把发现写成 markdown 笔记入库",
+    subagent_type="sub_librarian"  # 必填，否则派出的是通用子、拿不到体检工具
 )
 ```
 
-目前内置 2 种 subagent 定义（都在 `api/agent_v2/definitions/built_in/`）：
+### submit_plan 审批流程（v0.4 起硬约束，v0.6 闭环）
 
-- `sub_policy_researcher` — 深入研读单一政策，回答其细节条款、生效时间、适用范围等
-- `sub_evidence_checker` — 对一份答复逐句核对原文证据，重写缺证据的句子（配合 Citation Validator 的 strict 模式）
+对批量 ≥3、跨 KB 移动、外部 URL 入库、新建 KB 等场景，archivist 会先调
+`submit_plan` emit 计划卡片；前端用户点 Approve / Reject / Request Changes；
+下一轮用户消息以对应前缀（`[plan approved]` / `[plan rejected]` /
+`[plan request changes]`，中文同样生效：`[计划批准]` / `[计划拒绝]` /
+`[计划修改]`）回来即可。端点自动剥前缀、落 DB、调度 Agent 继续。
 
-每种定义带自己的 system_prompt、工具白名单（如 evidence_checker 只能用 rag_retrieve + rag_read_doc）、max_turns、budget。
+**没批之前**，任何受 gate 管辖的写调用都会返 `error: plan_gate` + 写 deny 审计。
+1h 没回复自动 TTL 过期。
 
-**新增工具**：在 `api/agent_v2/tools/` 放一个 `@tool` 装饰的 async 函数 → 注册到 `registry.py` → 前端会自动在会话里可用。
-**新增 subagent 定义**：在 `api/agent_v2/definitions/built_in/` 加一个 `.py` 文件，export `DEFINITION = AgentDefinition(...)`。
+**批准之后**（v0.6）：supervisor 再次派 archivist，后者第一件事是调
+`get_pending_plan` 读回完整 steps，然后逐步执行。每步执行完 emit 一行
+`[step K/N done: <verb> <resource>]` 让用户追踪；失败则 `[step K/N FAILED:
+<reason>]` + 停止批量。最后一行汇总 `N succeeded, M failed`。
+`pending_plan_body` 在 turn 收尾自动清，下一轮重新需要 plan 则再走一次
+`submit_plan`。
+
+**新增工具**：在 `api/agent_v2/tools/` 放 `@tool` 装饰的 async 函数 → 注册到
+`registry.py` → 在 `api/agent_v2/annotations.py::ANNOTATIONS` 补一条
+`ToolAnnotation`（`test_annotations.py` 有 parity 断言，忘了会挂）→ 前端自动可见。
+
+**新增 subagent 定义**：在 `api/agent_v2/definitions/built_in/` 加 `.py`
+文件 export `DEFINITION = AgentDefinition(...)`；`tools` 字段列工具短名；
+`citation_enforce` 决定是否强制 [N] 脚注。
 
 ## 五、后端端点
 
@@ -135,7 +207,7 @@ spawn_subagent(
 | GET | `/v1/agent_v2/tool` | 列所有工具 |
 | GET | `/v1/agent_v2/model` | 列用户 TenantLLM 中的 Chat 模型 |
 | GET | `/v1/agent_v2/template` | 列 6 个预置 Agent 模板（M1.6，硬编码；逐步迁到 /definition） |
-| GET | `/v1/agent_v2/definition?kind=supervisor\|subagent` | **Phase 2.5.3** — 列 `AgentDefinition` 清单（8 个：6 supervisor + 2 subagent） |
+| GET | `/v1/agent_v2/definition?kind=supervisor\|subagent` | **Phase 2.5.3 / 2.6 v0.2** — 列 `AgentDefinition` 清单（10 个：6 supervisor + 4 subagent） |
 | POST | `/v1/agent_v2/conversation` | 发消息（SSE 流式） |
 
 ### 周边能力（Phase 2 + 3.1 + 3.2）
@@ -164,6 +236,8 @@ spawn_subagent(
 | `subagent_start` | `{trace_id, description, parent_tool_call_id, allowed_tools, max_turns, max_budget_usd}` | 子 Agent 派发开始（P2.3） |
 | `subagent_end` | `{trace_id, status, result_preview, cost_usd, duration_ms, token_usage}` | 子 Agent 结束 |
 | `citation_warning` | `{issues, level}` | **Phase 2.5.1** — 答复里 [N] / 数字断言未通过校验 |
+| `ask_user_question` | `{pending_id, header, question, options, multi_select}` | **Phase 2.6** — Agent 想要用户结构化选一个 / 几个；前端渲染为选项卡片 |
+| `plan_submitted` | `{pending_id, title, steps, affected_resources, risk_level, estimated_cost_usd, reversible, reversible_hint}` | **Phase 2.6** — Agent 提交执行计划等审批；前端渲染审批卡片，用户下一轮用 `[plan approved\|rejected\|request changes]` 前缀回复 |
 | `error` | `{code, message}` | 流式错误（非致命） |
 | `end` | `{usage}` | 流结束，带 token/cost/duration 用量 |
 
@@ -291,9 +365,9 @@ DEFINITION = AgentDefinition(
 
 **路由**：`spawn_subagent({..., subagent_type: "sub_policy_researcher"})` → 查 registry → 检查 `ctx.allowed_subagent_types` 白名单 → 用 definition 的 tools / max_turns / budget / prompt 组装子 runner。
 
-内置 8 个定义：
-- **Supervisor（6）**：sz-baojian-house / generic-policy / legal-contract / research-analyst / customer-support / internal-wiki（从 M1.6 的硬编码模板平移）
-- **Subagent（2）**：sub_policy_researcher / sub_evidence_checker
+内置 10 个定义：
+- **Supervisor（6）**：sz-baojian-house / generic-policy / legal-contract / research-analyst / customer-support / internal-wiki（从 M1.6 的硬编码模板平移；v0.3 全部改成 8 段式英文 prompt）
+- **Subagent（4）**：sub_policy_researcher / sub_evidence_checker / sub_archivist（**Phase 2.6 写操作专责**，v1.2.0 含 runtime plan gate 规则）/ sub_librarian（**Phase 2.6 v0.2 新增**：KB 体检 + 写调研笔记）
 
 ## 八、性能 & 成本（实测）
 

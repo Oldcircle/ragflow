@@ -4,6 +4,122 @@
 
 ---
 
+## 最近更新：2026-04-23（Phase 2.6 v0.6：plan 执行闭环 G7）
+
+**触发**：v0.4 做了 gate / v0.5 让工具元数据透出 MCP 协议；但批准之后的"按
+plan 逐步执行"闭环还没有——archivist 只能从自己的 tool_call 历史里**猜**原
+plan 内容，步间进度也看不见。v0.6 做成真正的闭环。
+
+**关键产物**：
+- **DB 加列**：`AgentV2Session.pending_plan_body` (JSONField) 保存 submit_plan
+  完整 payload（title / steps / affected_resources / risk_level / reversible /
+  reversible_hint）。`clear_pending_plan` 同时清
+- **Service 升级**：`set_pending_plan(plan_body=...)` + `get_pending_plan(include_body=True)`
+  可选加载 body，gate check 仍只查 status 省 I/O
+- **新工具 `get_pending_plan`** (`api/agent_v2/tools/get_pending_plan.py`)：read-only，
+  返 `{status, plan_status, plan_id, plan: {…}, hint}` 给 archivist 执行用
+- **sub_archivist v1.3.0**：workflow 加第 3 步"approved 后先调
+  `get_pending_plan`"；output rules 要求每步 `[step K/N done: ...]` 标记，失败
+  `[step K/N FAILED: ...]` 停止
+- **registry + annotations + SEARCH_HINT_BY_TOOL** 同步加 `get_pending_plan`
+  （18 个工具，以前 17 个）
+
+**测试覆盖**：
+- `test_plan_execution_loop.py` 新增 14 case：工具 shape × no-plan × no-session
+  × DB-error × waiting 透传 × service 签名 × archivist tool parity × 工作流
+  prompt 引用 × submit_plan 传 body
+- 全量 **272 passed / 8 skipped**（v0.5 结束 258，新增 14）
+
+**下一步入口**：
+1. commits + 同步 AUDIT §5-d + 版本记录（任务 #48）
+2. live 验证 approval → re-spawn → get_pending_plan → 分步执行 → 汇总
+   （任务 #47）
+3. 剩余的 v0.7 候选：G6 跨-session memory（大）/ U9 前端 icon 改 Lucide
+   （前端依赖）/ 维度 4 `isConcurrencySafe` 到并发调度（暂无并发场景）
+
+---
+
+## 最近更新：2026-04-23（Phase 2.6 v0.5：searchHint + tool_call 历史 + 子 Agent 模型路由）
+
+**触发**：v0.4 后的 AUDIT 里还有 P1 延后的 U3（tool searchHint）/ U7（多轮
+历史丢 tool_use 细节）/ #42（子 Agent 模型独立）。单独的三件但都是"让 Agent
+选工具 + 多轮连续性 + 成本控制"的基础设施。
+
+**关键产物**：
+- **`api/agent_v2/registry.py::_decorate_for_mcp`**：build MCP server 时给
+  每个工具自动注入 `[intent] <搜索提示>\n\n<原描述>` 前缀 + MCP 协议原生的
+  `readOnly`/`destructive`/`openWorld` annotations。non-destructive、
+  idempotent、源工具 description 不受污染
+- **`AgentV2MessageService.list_for_runner(include_tool_calls=True)`**：反查
+  每条 assistant message 关联的 `AgentV2ToolCall` 并按原调用顺序归位
+- **`AgentRunner._build_prompt_with_history` + `_format_tool_calls_for_history`**：
+  把 tool 往返渲染成 `[tool] name(args) → result (Nms)` 紧凑行插到
+  `<conversation-history>`。args ≤ 180 字符，result ≤ 320 字符，单 assistant
+  turn 最多 6 条，超出标注 `… N more call(s) omitted`
+- **`spawn_subagent._resolve_child_model`**：subagent definition 上的
+  `ModelRef(model=X, base_url=Y?, fallback_model=Z?)` 覆盖父模型；`"inherit"`
+  保持老行为。覆盖 base_url 时 log warning（auth_token 要复用）
+- 端点 `send_message` 自动传 `include_tool_calls=True`
+
+**测试覆盖**：
+- `test_registry.py` +8 case（searchHint 前缀 / annotations / idempotent /
+  parity）
+- `test_history_tool_calls.py` +12 case（紧凑渲染 / 截断 / error / 空结果 /
+  6 条上限 / 向后兼容）
+- `test_subagent_model_routing.py` +9 case（inherit / 同 base_url / 不同
+  base_url 警告 / fallback override / parent 不可变 / ModelRef 序列化）
+- 合计 **258 passed / 8 skipped**（v0.4 结束时 229，新增 29）
+
+**下一步入口**：
+1. commits + 同步 AUDIT / PLAN / CLAUDE 文档（任务 #48）
+2. live A1/A2/A3 重跑验证 searchHint 是否影响 Agent 选工具（任务 #47）
+3. AUDIT 里还剩 U9 icon 转 Lucide key + G6 跨 session memory + G7 plan 执行
+   闭环（下版本 v0.6 候选）
+
+**里程 commits**（待打）：
+- feat(v0.5): searchHint prefix + MCP annotations via registry decoration
+- feat(v0.5): preserve tool_use/tool_result in history breadcrumbs
+- feat(v0.5): per-subagent ModelRef override in spawn_subagent
+- test(v0.5): +29 cases across registry / history / model routing
+
+---
+
+## 最近更新：2026-04-23（Phase 2.6 v0.4：真 submit_plan runtime gate + 工具元数据）
+
+**触发**：v0.3 的 submit_plan 审批是**假的**——只靠 prompt 自律，写工具依然能在
+没批的情况下跑。v0.4 把 gate 做真，同时把 U8（工具估算成本 / 时延注解）、
+U10（写工具响应里的 next_steps 提示）落地。
+
+**关键产物**：
+- **DB schema**：`AgentV2Session` 加 3 列 `pending_plan_id` / `pending_plan_status` / `pending_plan_submitted_at`
+- **Session service**：`set_pending_plan` / `transition_plan_status` / `clear_pending_plan` / `get_pending_plan` 方法
+- **Plan decision parser**：`api/agent_v2/plan_decision.py::parse_plan_decision` 剥掉用户消息前缀 `[plan approved|rejected|request changes]`（中文 `[计划批准|拒绝|修改]` 同样生效）
+- **Runtime gate**：`@require_kb_write` 加 `plan_gated` 参数；每次写调用先看 `ctx.plan_submitted_this_turn`（同轮锁）再读 DB 状态（跨轮 + 跨 subagent），命中就返 `error: plan_gate` + 审计写 deny
+- **`ok()` helper** 加 `next_steps: list[str] | None` 参数，写工具（tag/rename/archive/reparse/upload_from_url/kb_create/doc_create_note）都带上了
+- **`api/agent_v2/annotations.py`**（新）：17 个工具的 `ToolAnnotation(is_read_only, is_idempotent, cost_class, avg_latency_ms, side_effects)`；`annotations_summary_for_prompt` 渲染进 supervisor + subagent system prompt 的新 **Tool cost hints** 段
+- **sub_archivist v1.2.0**：hard rules 点名 runtime gate，workflow 步骤 3 改为"检查 `plan_gate` 错误才决定是否继续"
+
+**两层 gate 机制**：
+- 同轮锁（`ctx.plan_submitted_this_turn`）：submit_plan 跑过之后本轮任何写都拒
+- 跨轮状态（DB `pending_plan_status`）：user 回复 `[plan approved]` 才放行；`rejected`/`request_changes`/`waiting` 都拒。TTL 1 小时过期自动清
+
+**测试覆盖**：
+- `test_doc_ops_common.py` — 7 个 plan gate 用例 + 8 个 decision parse 用例
+- `test_annotations.py`（新，16 用例）— 注册表 parity / one-liner 格式 / `next_steps` 裁剪与空值处理
+- 合计 `test/agent_v2/` 229 passed / 8 skipped（RBAC 跨租户 + service DB 需本地 MySQL）
+
+**下一步入口**：
+1. A1 / A2 / A3 live 场景重跑，确认 gate 在真实 LLM 轨迹里能正确阻断 / 放行（任务 #47）
+2. 提交 commits + 同步 CLAUDE.md 活跃文档清单（任务 #48）
+3. P2 列表里剩余的 `T9. model-routing per subagent` + extended thinking 研究（任务 #42）留给 v0.5
+
+**里程 commits**（待打）：
+- feat: AgentV2Session + session service + plan_decision + runtime gate
+- feat: tool annotations registry + next_steps in ok() + subagent prompt cost-hints
+- test: plan gate / plan decision / annotation parity (31 new cases)
+
+---
+
 ## 最近更新：2026-04-24（Phase 2.6 v0.3：Claude-Code 对齐 + 英文 prompt 系统重写）
 
 **触发**：用户要求 **整体对齐 Claude Code 的设计哲学**——tool design / prompt

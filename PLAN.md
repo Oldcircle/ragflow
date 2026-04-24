@@ -168,9 +168,9 @@
 
 ---
 
-### Phase 2.6 — 文档运营工具 + 交互工具（✅ 完成 2026-04-24）
+### Phase 2.6 — 文档运营工具 + 交互工具（✅ v0.4 完成 2026-04-23）
 
-**目标**：Agent 从"只读 KB 顾问"升级到"能做语义级文档运营"。不做 bash，不做 POSIX 文件操作；所有工具走 RAGFlow 已有 service 层语义。
+**目标**：Agent 从"只读 KB 顾问"升级到"能做语义级文档运营"，再到"自维护 / 自总结 / 审批安全"的通用 KB Agent。不做 bash，不做 POSIX 文件操作；所有工具走 RAGFlow 已有 service 层语义。
 
 | 分层 | 工具 | audit action |
 |---|---|---|
@@ -295,4 +295,7 @@
 | 2026-04-24 | v0.3 | 插入 Phase 2.6（文档运营工具）：6 写工具 + 2 交互工具 + sub_archivist subagent + 前端卡片渲染；Agent 正式从 KB-QA 升级到可做语义级文档运营 |
 | 2026-04-24 | v0.4 | Phase 2.6 v0.2：+4 自省工具（doc_create_note / kb_audit / kb_stats / doc_list_recent_changes）+ `sub_librarian` subagent；Agent 能自体检 KB、写报告笔记入库、自省操作记录；Claude Code 设计哲学对齐（【WHEN】描述 / status 字段 / noop 检测 / reversible_hint）|
 | 2026-04-24 | v0.5 | Phase 2.6 v0.3：系统对齐 Claude Code；10 个 AgentDefinition 的 system_prompt 改英文 + 八段式（Role / Domain / Hard rules / Workflow / Delegation / Tool rules / Output）；17 个 tool description 改英文 + "Use this tool when" 风格；supervisor `tools=SUPERVISOR_TOOLS` 死锁架构分离；`spawn_subagent` 不再父子交集（命名 subagent 可拿父没有的工具）；详见 `AUDIT-claude-code-alignment.md` |
+| 2026-04-23 | v0.6 | Phase 2.6 v0.4：**真** submit_plan runtime gate（U6）——`AgentV2Session` 加 `pending_plan_id/status/submitted_at` 3 列 + `@require_kb_write` 两层 gate（同轮锁 + DB live read，1h TTL），写工具在未批 / rejected / waiting 态下直接返 `error: plan_gate`；`[plan approved\|rejected\|request changes]` 前缀自动识别（`api/agent_v2/plan_decision.py`）。工具元数据注解（U8）+ 写工具 `next_steps` 提示（U10）：新 `api/agent_v2/annotations.py`（17 工具 `ToolAnnotation`）渲染进 supervisor + subagent system prompt 的 **Tool cost hints** 段；7 个写工具 `ok()` 带 `next_steps` 导航后续。+31 测试用例全绿（229 pass / 8 skip）|
+| 2026-04-23 | v0.7 | Phase 2.6 v0.5：U3 searchHint 前缀 + MCP 协议原生 annotations（`readOnly`/`destructive`/`openWorld`）通过 `registry._decorate_for_mcp` 注入；U7 多轮历史保留 tool_use/tool_result breadcrumbs（`list_for_runner(include_tool_calls=True)` + `_format_tool_calls_for_history`）；per-subagent 模型路由（#42）`AgentDefinition.model: ModelRef` 生效。+29 测试（258 pass / 8 skip）|
+| 2026-04-23 | v0.8 | Phase 2.6 v0.6：G7 plan 执行闭环。`AgentV2Session.pending_plan_body` 保存完整 plan payload；新 read-only 工具 `get_pending_plan` 让 archivist 在 approved 状态下读回 title/steps/affected_resources 逐步执行；sub_archivist v1.3.0 要求 `[step K/N done: ...]` 标记；工具总数 17 → 18。+14 测试（272 pass / 8 skip）|
 | 2026-04-23 | v0.3 | Phase 2.5 全部完成（commits `540bfb91f` / `86fb8e867` / `c921ea729`）；Phase 2 + 3.1 + 3.2 + 2.5 全数落地，下一批为 Phase 3.3 企业管理台或 P3.2c 钉钉/企微 |

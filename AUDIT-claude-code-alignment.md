@@ -129,7 +129,48 @@ prompts 改为英文；建立后续改进 checklist。
 | Permission mode 状态机 | Claude Code 的 plan/bypass/acceptEdits 对 KB 场景不直接映射；保持 bypass + submit_plan 组合 |
 | ContentReplacementState / snippet store | KB 场景没大文件 + 有 chunk 截断；暂不需要 |
 | Subagent 全 transcript 落库 | 存储成本；`result_preview` 够诊断 |
-| 会话级 `pending_approval` 强约束（U6） | 需要改 AgentV2Session schema；v1 靠 prompt 软约束先观察 |
+| ~~会话级 `pending_approval` 强约束（U6）~~ | **v0.4 已落地**：改了 `AgentV2Session` schema + `@require_kb_write` 加两层 gate |
+
+---
+
+## 五-b. Phase 2.6 v0.4 追加（2026-04-23）
+
+**目标**：把 v0.3 遗留的"软性 gate / 没有 cost metadata / 写操作无 next hint"
+三个痛点一次收齐。属 AUDIT §3 的 U6 / U8 / U10。
+
+| 任务 | 对应发现 | 产物 |
+|---|---|---|
+| **T10. 真 submit_plan runtime gate** | U6 | `AgentV2Session` 加 3 列 + `AgentV2SessionService.{set,transition,clear,get}_pending_plan` + `api/agent_v2/plan_decision.py::parse_plan_decision` + `@require_kb_write` gate + 2 层校验（ctx.plan_submitted_this_turn + DB live read）+ 1h TTL + sub_archivist v1.2.0 prompt |
+| **T11. 工具元数据注解** | U8 | `api/agent_v2/annotations.py`：17 工具的 `ToolAnnotation`；`annotations_summary_for_prompt` 注入 supervisor + subagent system prompt 的新 **Tool cost hints** 段 |
+| **T12. 写工具 next_steps 提示** | U10 | `ok()` 加 `next_steps` 参数（限 3 条 × 160 字符）；doc_tag / doc_rename / doc_archive / doc_reparse / doc_upload_from_url / kb_create / doc_create_note 成功路径都填了 |
+| **T13. 测试 + 回归** | 全部 | 31 新 case：`test_doc_ops_common.py`（+15）+ `test_annotations.py`（+16）；全量 `test/agent_v2/` 229 pass / 8 skip |
+| **T14. 文档同步** | — | STATUS + AUDIT + CLAUDE 活跃文档清单 |
+
+---
+
+## 五-c. Phase 2.6 v0.5 追加（2026-04-23）
+
+**目标**：收尾 v0.4 没做的 P1 — U3（searchHint）/ U7（历史里保留 tool_use/
+tool_result）+ 本轮扩展到 #42（per-subagent 模型路由）。全部非侵入式实现。
+
+| 任务 | 对应发现 | 产物 |
+|---|---|---|
+| **T15. SearchHint 前缀 + MCP 协议 annotations** | U3 + 维度 4 | `registry._decorate_for_mcp` 在 build MCP server 时把 `[intent] <3-10 词祈使句>` 贴到每工具 description 首行；顺带把 `ToolAnnotation` 投影成 MCP 协议的 `readOnly/destructive/openWorld` 布尔位。idempotent、non-destructive（源工具对象不动） |
+| **T16. 历史保留 tool 往返** | U7 | `AgentV2MessageService.list_for_runner(include_tool_calls=True)` + `_format_tool_calls_for_history` 渲染 `[tool] name(args) → result` 紧凑行，args 180 / result 320 字符截断，单 turn 最多 6 条 |
+| **T17. Per-subagent 模型路由** | 维度 11 / #42 | `spawn_subagent._resolve_child_model`：`AgentDefinition.model: ModelRef` 覆盖父；auth_token 继承，base_url 不同 → warning 警告 |
+| **测试 + 回归** | 全部 | +29 case：`test_registry.py`（+8）/`test_history_tool_calls.py`（+12）/`test_subagent_model_routing.py`（+9）；全量 258 pass / 8 skip |
+
+---
+
+## 五-d. Phase 2.6 v0.6 追加（2026-04-23）
+
+**目标**：填掉 `PLAN-doc-ops.md §G7` 留的坑——plan 批准之后的"按 step 执行 +
+每步回报 + 最后总结"闭环。
+
+| 任务 | 对应发现 | 产物 |
+|---|---|---|
+| **T18. Plan 执行闭环** | G7 | `AgentV2Session` 加 `pending_plan_body` JSONField；`set_pending_plan(plan_body=...)` / `get_pending_plan(include_body=True)` / `clear_pending_plan` 三个 service 方法都认这列；submit_plan 落 body；新 read-only 工具 `get_pending_plan` 让 archivist 批准后读回完整 payload；sub_archivist v1.3.0 workflow 要求 `[step K/N done: ...]` / `[step K/N FAILED: ...]` 标记；ALL_TOOLS 从 17 到 18，annotations / SEARCH_HINT_BY_TOOL / archivist.tools 四处同步 |
+| **测试 + 回归** | 全部 | +14 case：`test_plan_execution_loop.py` 覆盖 shape / no-plan / no-session / DB-error / waiting 透传 / service 签名 / parity / prompt 引用 / submit_plan 传 body；全量 272 pass / 8 skip |
 
 ---
 
@@ -161,3 +202,7 @@ prompts 改为英文；建立后续改进 checklist。
 | 日期 | 版本 | 决策 |
 |---|---|---|
 | 2026-04-24 | v0.1 | 基于 `/tmp/architectural-synthesis.md` 的 Claude Code 深读，列出全部 20 个维度 + 10 个用户没提的点，定 P0 范围 |
+| 2026-04-24 | v0.3 | T1-T9 落地：prompting/ 模块 + 8 段式 system prompt + 17 工具英文 description + AUDIT 文档发布 |
+| 2026-04-23 | v0.4 | T10-T14 落地：**真** runtime plan gate（U6）+ tool annotations（U8）+ next_steps 写响应（U10）+ 31 新测试。gate 机制从"prompt 软约束"升级到"数据库 + ctx 两层硬约束" |
+| 2026-04-23 | v0.5 | T15-T17 落地：U3 searchHint 前缀 + MCP 协议原生 annotations（`readOnly`/`destructive`/`openWorld`）、U7 历史保留 tool_use/tool_result breadcrumbs、per-subagent 模型路由（#42）+29 测试。工具元数据从"prompt 段里的 Tool cost hints"进化到"MCP 协议层正式声明"，LLM 得到的是结构化信号 |
+| 2026-04-23 | v0.6 | T18 落地：G7 plan 执行闭环。`AgentV2Session.pending_plan_body` 保存完整 payload；新工具 `get_pending_plan` 让 approved 状态下 archivist 读回 title/steps/affected_resources；sub_archivist v1.3.0 workflow 要求 `[step K/N done: ...]` 标记。+14 测试，工具总数从 17 → 18 |
