@@ -22,7 +22,7 @@ from claude_agent_sdk.types import McpToolAnnotations
 from .tools.ask_user_question import ask_user_question
 from .tools.doc_ops import (
     doc_archive,
-    doc_archive_attachment,
+    doc_ingest_attachment,
     doc_create_note,
     doc_list_recent_changes,
     doc_rename,
@@ -75,7 +75,7 @@ ALL_TOOLS = {
     "web_fetch": web_fetch,
     # Phase 2.7 Stage 2 — attachment materialize + archive
     "web_fetch_to_attachment": web_fetch_to_attachment,
-    "doc_archive_attachment": doc_archive_attachment,
+    "doc_ingest_attachment": doc_ingest_attachment,
 }
 
 # MCP server 名（给 SDK 用）；SDK 生成的工具名是 ``mcp__<server>__<tool>``
@@ -124,7 +124,7 @@ def _decorate_for_mcp(tool: SdkMcpTool) -> SdkMcpTool:
                 "web_search",
                 "web_fetch",
                 "web_fetch_to_attachment",  # network download
-                # doc_archive_attachment does NOT hit the internet — it
+                # doc_ingest_attachment does NOT hit the internet — it
                 # reads from MinIO + writes to the KB + DB, which is all
                 # in-cluster. Not openWorld.
             ),

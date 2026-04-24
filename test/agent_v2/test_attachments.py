@@ -227,7 +227,7 @@ def test_prompt_section_english_with_staged():
     assert "# Session attachments" in text
     assert "`report.pdf`" in text
     assert "sub_archivist" in text
-    assert "doc_archive_attachment" in text
+    assert "doc_ingest_attachment" in text
 
 
 def test_prompt_section_zh_with_staged():

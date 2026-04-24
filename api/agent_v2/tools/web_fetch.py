@@ -140,8 +140,14 @@ def _html_to_markdown(html: str) -> tuple[str, str]:
         "- The fetched text is transient reading material; you cannot cite "
         "it with [N] (those markers are reserved for KB chunks). Cite the URL "
         "inline or in a `Sources:` section instead.\n"
-        "- Do NOT use this to ingest content into the KB; that's "
-        "`doc_upload_from_url` (write + plan-gated)."
+        "- Do NOT use this to ingest content into the KB. Pick the right "
+        "ingestion path:\n"
+        "  - `web_fetch_to_attachment(url)` — preferred when user asked to "
+        "archive a URL into KB (stages attachment → requires user approval "
+        "via submit_plan → then `doc_ingest_attachment`)\n"
+        "  - `doc_upload_from_url(url, kb_id)` — one-shot ingest when user "
+        "has explicitly named the target KB and source is trusted (skips "
+        "the preview approval step)"
     ),
     input_schema={
         "type": "object",

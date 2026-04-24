@@ -3,7 +3,7 @@
 Separation from ``web_fetch`` (`api/agent_v2/tools/web_fetch.py`)：
 - ``web_fetch`` = transient read; Agent gets bytes, does not persist
 - ``web_fetch_to_attachment`` = materialize as ``AgentV2Attachment`` row with
-  ``origin=web_fetch``, ``status=staged``; pairs with ``doc_archive_attachment``
+  ``origin=web_fetch``, ``status=staged``; pairs with ``doc_ingest_attachment``
   for the two-phase "download → plan approval → archive" flow
 
 Why two tools instead of a ``persist=true`` flag on ``web_fetch``:
@@ -38,7 +38,7 @@ logger = logging.getLogger("ragflow.agent_v2.web_fetch_to_attachment")
 
 
 # Size cap matches the attachment upload path (50 MB) so the subsequent
-# ``doc_archive_attachment`` doesn't reject our own output.
+# ``doc_ingest_attachment`` doesn't reject our own output.
 _MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024
 _DEFAULT_TIMEOUT_S = 30.0
 _DEDUP_TTL_MS = 24 * 60 * 60 * 1000  # 24h per-tenant URL dedupe
@@ -56,7 +56,7 @@ _DEDUP_TTL_MS = 24 * 60 * 60 * 1000  # 24h per-tenant URL dedupe
         "2. Call `submit_plan` with the preview (so the user sees what will "
         "be archived)\n"
         "3. After the user replies `[plan approved]`, call "
-        "`doc_archive_attachment(attachment_id, kb_id=...)` to persist\n\n"
+        "`doc_ingest_attachment(attachment_id, kb_id=...)` to persist\n\n"
         "Security (same as `web_fetch`):\n"
         "- Public http(s) only; SSRF-protected\n"
         "- 50 MB cap; streaming cut off past the limit\n"
@@ -156,7 +156,7 @@ async def web_fetch_to_attachment(args: dict) -> dict:
                 "existing staged attachment.",
                 (
                     "Proceed to submit_plan(preview=...) then "
-                    "doc_archive_attachment(attachment_id, kb_id=...)."
+                    "doc_ingest_attachment(attachment_id, kb_id=...)."
                     if dedupe_hit.status == "staged"
                     else f"Attachment is already {dedupe_hit.status}; "
                     "no further archive action needed."
@@ -303,7 +303,7 @@ async def web_fetch_to_attachment(args: dict) -> dict:
             "duration_ms": int((time.perf_counter() - start) * 1000),
             "next_steps": [
                 "Content matches an existing attachment by hash; reusing.",
-                "Proceed to submit_plan + doc_archive_attachment as normal.",
+                "Proceed to submit_plan + doc_ingest_attachment as normal.",
             ],
         })
 
@@ -362,7 +362,7 @@ async def web_fetch_to_attachment(args: dict) -> dict:
             ),
             (
                 "After [plan approved], call "
-                f"doc_archive_attachment(attachment_id='{row.id}', kb_id=...)"
+                f"doc_ingest_attachment(attachment_id='{row.id}', kb_id=...)"
             ),
         ],
     })

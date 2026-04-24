@@ -75,6 +75,8 @@ ANNOTATIONS: dict[str, ToolAnnotation] = {
         is_idempotent=True,
         cost_class="normal",
         avg_latency_ms=400,
+        # chunks carry doc_id → natural next_step is rag_read_doc or doc_tag
+        supports_next_steps=True,
     ),
     "rag_list_docs": ToolAnnotation(
         name="rag_list_docs",
@@ -82,6 +84,7 @@ ANNOTATIONS: dict[str, ToolAnnotation] = {
         is_idempotent=True,
         cost_class="cheap",
         avg_latency_ms=80,
+        supports_next_steps=True,
     ),
     "rag_read_doc": ToolAnnotation(
         name="rag_read_doc",
@@ -89,6 +92,7 @@ ANNOTATIONS: dict[str, ToolAnnotation] = {
         is_idempotent=True,
         cost_class="cheap",
         avg_latency_ms=120,
+        supports_next_steps=True,
     ),
     "rag_graph_query": ToolAnnotation(
         name="rag_graph_query",
@@ -96,6 +100,7 @@ ANNOTATIONS: dict[str, ToolAnnotation] = {
         is_idempotent=True,
         cost_class="normal",
         avg_latency_ms=350,
+        supports_next_steps=True,
     ),
     # ── Delegation ──────────────────────────────────────────────────────
     "spawn_subagent": ToolAnnotation(
@@ -275,8 +280,8 @@ ANNOTATIONS: dict[str, ToolAnnotation] = {
         ),
         supports_next_steps=True,
     ),
-    "doc_archive_attachment": ToolAnnotation(
-        name="doc_archive_attachment",
+    "doc_ingest_attachment": ToolAnnotation(
+        name="doc_ingest_attachment",
         is_read_only=False,
         # Idempotent: same attachment_id archives to same KB → status=
         # already_archived with the existing doc_id, no duplicate write.

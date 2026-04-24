@@ -66,7 +66,7 @@ class ToolContext:
     Read-only view populated by ``agent_v2_app.send_message`` at turn boundary.
     Tools that need to access full attachment content or mutate status go
     through ``AgentV2AttachmentService`` — this tuple is just for prompt
-    display + targeted tool lookup (e.g. ``doc_archive_attachment(id=...)``).
+    display + targeted tool lookup (e.g. ``doc_ingest_attachment(id=...)``).
     """
 
     event_emitter: Callable[[Any], Awaitable[None]] | None = None

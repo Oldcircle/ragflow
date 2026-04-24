@@ -66,10 +66,10 @@ ref `src/constants/apiLimits.ts` 的关键常量：
 - `deepdoc/vision/` 有完整 OCR pipeline
 - 但 `FileService.upload_document` 对直接上传的 `.jpg/.png` **只生成缩略图**、**不 OCR 入库**（上游只对 PDF 内嵌图片 OCR）—— 我们要补这条路径
 
-**实施策略**（放在 Stage 2 `doc_archive_attachment` 里）：
+**实施策略**（放在 Stage 2 `doc_ingest_attachment` 里）：
 1. 上传阶段（Stage 1）：图片正常存 MinIO，status=staged，**不做 OCR**
 2. Preview 阶段（Stage 1）：图片的 `preview_text` 字段先存"[image, OCR pending]"
-3. Archive 阶段（Stage 2 `doc_archive_attachment`）：
+3. Archive 阶段（Stage 2 `doc_ingest_attachment`）：
    - 检测 `mime_type.startswith("image/")` 时分流
    - 调 `PaddleOCRParser` 抽文本（同步，通常 <3s）
    - 创建 **markdown Document**（内容 = OCR 文本 + 顶部元信息 "[source: 原始文件名.jpg, hash=xxx]"）
@@ -148,7 +148,7 @@ ref `src/constants/apiLimits.ts` 的关键常量：
   │                      ├──────────────────────>│                     │
   │                      │                       │ plan_gated unlock   │
   │                      │                       ├────────────────────>│
-  │                      │                       │   doc_archive_attachment(
+  │                      │                       │   doc_ingest_attachment(
   │                      │                       │     attachment_id, kb_id)
   │                      │                       │   → FileService.upload_document
   │                      │                       │   → status=archived
@@ -183,12 +183,12 @@ ref `src/constants/apiLimits.ts` 的关键常量：
   │ "[plan approved]"           │                                │
   ├────────────────────────────>│                                │
   │                             │ get_pending_plan               │
-  │                             │ doc_archive_attachment(        │
+  │                             │ doc_ingest_attachment(        │
   │                             │   att_id, kb_id) →             │
   │                             │ 复用 scenario 1 入库路径       │
 ```
 
-**关键**：场景 2 **不需要**新入库工具——`web_fetch_to_attachment` 材化成 attachment 后，**和场景 1 共用** `doc_archive_attachment` 入库。一套代码两个场景。
+**关键**：场景 2 **不需要**新入库工具——`web_fetch_to_attachment` 材化成 attachment 后，**和场景 1 共用** `doc_ingest_attachment` 入库。一套代码两个场景。
 
 ---
 
@@ -282,7 +282,7 @@ class AttachmentInfo:
         "into the knowledge base. It downloads the page, stores it as a staged "
         "attachment on the current session, and returns a preview — but does "
         "NOT archive to the KB yet. The user must approve via submit_plan "
-        "before calling doc_archive_attachment.\n\n"
+        "before calling doc_ingest_attachment.\n\n"
         "Usage notes:\n"
         "- Public HTTP(S) only; SSRF-protected (same three-stage defense as "
         "web_fetch).\n"
@@ -297,11 +297,11 @@ class AttachmentInfo:
 )
 ```
 
-#### 新 `doc_archive_attachment`（sub_archivist 专用，plan_gated）
+#### 新 `doc_ingest_attachment`（sub_archivist 专用，plan_gated）
 
 ```python
 @tool(
-    name="doc_archive_attachment",
+    name="doc_ingest_attachment",
     description=(
         "Use this tool to archive a staged session attachment into a "
         "knowledge base. The attachment must be in status='staged' and the "
@@ -370,14 +370,14 @@ class AttachmentInfo:
 
 **工时**：2-3h
 
-- `doc_archive_attachment.py` — 走 `@require_kb_write(plan_gated=True)`
+- `doc_ingest_attachment.py` — 走 `@require_kb_write(plan_gated=True)`
 - `web_fetch_to_attachment.py` — 复用 `web_fetch` 的 SSRF / httpx / markdownify
 - 注册到 `ALL_TOOLS` + annotations + prompting hints
-- `sub_archivist` definition 加 `doc_archive_attachment`；`sub_librarian` definition 加 `web_fetch_to_attachment`
+- `sub_archivist` definition 加 `doc_ingest_attachment`；`sub_librarian` definition 加 `web_fetch_to_attachment`
 - `sub_archivist` system prompt 加"检查 ctx.attachments 是否有 staged 的 → 必要时 submit_plan 归档"工作流
 
 **测试**：
-- `test_doc_archive_attachment.py` — 入库成功 / 已归档返 existing / plan gate 拒 / RBAC 拒
+- `test_doc_ingest_attachment.py` — 入库成功 / 已归档返 existing / plan gate 拒 / RBAC 拒
 - `test_web_fetch_to_attachment.py` — SSRF / 拒绝非 HTTP / dedup on same URL / preview 生成
 
 ### Stage 3 — submit_plan preview 字段 + 前端卡片
@@ -476,7 +476,7 @@ class AttachmentInfo:
 - 自动归档白名单（受信 URL 不走 plan gate）
 - 附件到附件的转换（PDF 拆章节 → N 个 markdown 附件）
 - 跨 session 附件复用（已有 tenant 级 dedup，只需 UI 暴露）
-- `doc_archive_attachment_batch` 批量归档
+- `doc_ingest_attachment_batch` 批量归档
 - Agent 自主上传（从 spawn_subagent 递归场景）
 
 ---
@@ -498,5 +498,5 @@ class AttachmentInfo:
 |---|---|---|
 | 2026-04-25 | 对齐 claude-code-ref attachment-as-message pattern，不用 content block | ref `attachments.ts:3675`；60+ 子类型已验证扩展性 |
 | 2026-04-25 | 复用 `submit_plan + plan_gate` 作 staging 机制，不另起 PendingQueue | ref 全库无 PendingEdit 抽象；我们的 plan gate 是 ExitPlanMode 等价物 |
-| 2026-04-25 | 场景 1 + 场景 2 共用 `doc_archive_attachment`；`web_fetch_to_attachment` 只管 materialize | 两场景最后一步都是"把 staged attachment 入 KB"，没必要两条路径 |
+| 2026-04-25 | 场景 1 + 场景 2 共用 `doc_ingest_attachment`；`web_fetch_to_attachment` 只管 materialize | 两场景最后一步都是"把 staged attachment 入 KB"，没必要两条路径 |
 | 2026-04-25 | 50 MB 单文件 / 20 个 session / 24h TTL | 与 `doc_upload_from_url` 对齐；ref API_MAX_MEDIA_PER_REQUEST=100 不适合 KB 场景 |

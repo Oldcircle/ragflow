@@ -54,7 +54,11 @@ logger = logging.getLogger("ragflow.agent_v2.rag_retrieve")
             "similarity_threshold": {
                 "type": "number",
                 "description": (
-                    "Drop chunks below this similarity score. Default 0.15."
+                    "Drop chunks with hybrid similarity below this score "
+                    "(0-1; combines cosine vector sim + BM25 term score). "
+                    "Typical useful range 0.10-0.30; values > 0.5 are too "
+                    "strict and often return empty. Default 0.15 works for "
+                    "most Chinese policy KBs."
                 ),
                 "default": 0.15,
                 "minimum": 0.0,

@@ -27,7 +27,7 @@ from common import settings
 from ..base import get_ctx, tool
 from ._common import err, ok, require_kb_write
 
-logger = logging.getLogger("ragflow.agent_v2.doc_ops.doc_archive_attachment")
+logger = logging.getLogger("ragflow.agent_v2.doc_ops.doc_ingest_attachment")
 
 
 def _resolve_kb_id(args: dict) -> str | None:
@@ -62,7 +62,7 @@ def _extra_audit(args: dict, result: Any, _ctx) -> dict:
 
 
 @tool(
-    name="doc_archive_attachment",
+    name="doc_ingest_attachment",
     description=(
         "Use this tool when the user has attached a staged file to this "
         "session and asked you to archive it into a specific knowledge base. "
@@ -140,7 +140,7 @@ def _extra_audit(args: dict, result: Any, _ctx) -> dict:
     kb_id_from=_resolve_kb_id,
     extra_audit_metadata=_extra_audit,
 )
-async def doc_archive_attachment(args: dict) -> dict:
+async def doc_ingest_attachment(args: dict) -> dict:
     ctx = get_ctx(require=["tenant_id"])
     tenant_id = ctx.tenant_id
     attachment_id = str(args.get("attachment_id") or "").strip()
@@ -208,7 +208,7 @@ async def doc_archive_attachment(args: dict) -> dict:
         blob = settings.STORAGE_IMPL.get(bucket, key)
     except Exception as exc:  # noqa: BLE001
         logger.exception(
-            "doc_archive_attachment: blob fetch failed: %s", exc
+            "doc_ingest_attachment: blob fetch failed: %s", exc
         )
         return err(
             "blob_unavailable",
@@ -272,7 +272,7 @@ async def doc_archive_attachment(args: dict) -> dict:
         file_obj = _FakeFileUpload(doc_name, blob)
         err_list, files = FileService.upload_document(kb, [file_obj], user_id)
     except Exception as exc:  # noqa: BLE001
-        logger.exception("doc_archive_attachment upload failed: %s", exc)
+        logger.exception("doc_ingest_attachment upload failed: %s", exc)
         return err("upload_failed", f"{type(exc).__name__}: {exc}")
 
     if err_list:
@@ -306,7 +306,7 @@ async def doc_archive_attachment(args: dict) -> dict:
                 )
                 applied_tags = merged
         except Exception as exc:  # noqa: BLE001
-            logger.warning("doc_archive_attachment: tag apply failed: %s", exc)
+            logger.warning("doc_ingest_attachment: tag apply failed: %s", exc)
 
     # ─── 7) Flip attachment row status ───
     AgentV2AttachmentService.mark_archived(

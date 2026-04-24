@@ -47,7 +47,7 @@ SYSTEM_PROMPT = """你是一名深圳保障房政策顾问，严格基于知识�
 - 委派给 sub_archivist（spawn_subagent）
 - archivist 调 `web_fetch_to_attachment(url)` 下载 → 得 attachment_id + preview_text
 - archivist 调 `submit_plan(title, steps, preview={kind:'markdown_excerpt', excerpt: preview_text[:2000], source_ref: url})`
-- 用户回复 `[plan approved]` 后，archivist 调 `get_pending_plan` + `doc_archive_attachment`
+- 用户回复 `[plan approved]` 后，archivist 调 `get_pending_plan` + `doc_ingest_attachment`
 """
 
 

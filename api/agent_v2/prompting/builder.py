@@ -115,8 +115,8 @@ SEARCH_HINT_BY_TOOL: dict[str, str] = {
     "ask_user_question": "ask the user a multiple-choice clarifying question",
     "submit_plan": "submit a plan for user approval before executing a batch",
     # Reflect / observe
-    "kb_stats": "get a quick health snapshot of a knowledge base",
-    "kb_audit": "run a structured audit of knowledge base health",
+    "kb_stats": "get quick KB metrics (doc count, chunks, embed coverage, <1KB)",
+    "kb_audit": "deep KB audit with stale / duplicate / unparsed samples",
     "doc_list_recent_changes": "list recent audit-log entries for this tenant",
     "get_pending_plan": "read back the approved plan to execute step by step",
     # Write
@@ -132,7 +132,7 @@ SEARCH_HINT_BY_TOOL: dict[str, str] = {
     "web_fetch": "fetch the full text of a specific web page",
     # Attachments (Phase 2.7)
     "web_fetch_to_attachment": "download a url into a staged session attachment",
-    "doc_archive_attachment": "archive a staged session attachment into a knowledge base",
+    "doc_ingest_attachment": "commit a staged session attachment into a knowledge base",
 }
 
 

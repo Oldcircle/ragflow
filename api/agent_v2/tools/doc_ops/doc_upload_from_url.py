@@ -71,8 +71,15 @@ def _extra_audit(args: dict, result: Any, _ctx) -> dict:
 @tool(
     name="doc_upload_from_url",
     description=(
-        "Use this tool when the user supplied a public http/https URL and "
-        "asked to ingest the file into a specific KB.\n\n"
+        "Use this tool when the user supplied a public http/https URL AND "
+        "has explicitly named the target KB AND wants one-shot ingest "
+        "without a preview approval step.\n\n"
+        "When to prefer `web_fetch_to_attachment + doc_ingest_attachment` "
+        "instead (two-step flow):\n"
+        "- User wants to **see the content** before it lands in the KB\n"
+        "- Source URL is untrusted / new domain / user is unsure\n"
+        "- There are other operations bundled in the same plan (batch move, "
+        "tag, etc.) — the two-step path reuses submit_plan naturally\n\n"
         "Hard security constraints:\n"
         "- http / https scheme only (file://, ftp:// etc. are refused).\n"
         "- Hosts resolving to private / loopback / link-local IPs are "

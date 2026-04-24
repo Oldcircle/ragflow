@@ -7,7 +7,7 @@ archive request, and confirm:
 - Agent spawns sub_archivist
 - sub_archivist submits a plan with preview
 - (optional with AGENT_V2_SMOKE_APPROVE=1) next turn with [plan approved]
-  → doc_archive_attachment call → attachment status flipped to archived
+  → doc_ingest_attachment call → attachment status flipped to archived
 
 **Does NOT exercise the HTTP layer** (multipart upload endpoint) — that's
 covered by the manual test checklist. This script targets the backend

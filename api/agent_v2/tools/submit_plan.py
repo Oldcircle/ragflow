@@ -105,7 +105,7 @@ _MAX_STEPS = 10
             # Phase 2.7 Stage 3 — 内容预览（向后兼容：省略则 plan card 仅展示
             # 步骤元信息）。主要场景：
             # 1. `web_fetch_to_attachment` 抓了一份政策 → 用户审批前要看内容
-            # 2. `doc_archive_attachment` 归档前让用户确认附件正文
+            # 2. `doc_ingest_attachment` 归档前让用户确认附件正文
             # 3. `doc_rename` / `doc_archive` 可能附 diff-style preview
             "preview": {
                 "type": "object",

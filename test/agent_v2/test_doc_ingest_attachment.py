@@ -1,4 +1,4 @@
-"""Phase 2.7 Stage 2 — doc_archive_attachment tool unit tests.
+"""Phase 2.7 Stage 2 — doc_ingest_attachment tool unit tests.
 
 Focus on entry validation, state-machine invariants, and tenant/KB isolation.
 Happy-path (real MinIO + FileService + task_executor) stays in the smoke
@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from api.agent_v2.tools.base import ToolContext, reset_ctx, set_ctx
-from api.agent_v2.tools.doc_ops import doc_archive_attachment
+from api.agent_v2.tools.doc_ops import doc_ingest_attachment
 
 
 def _call(tool, args: dict) -> dict:
@@ -79,10 +79,10 @@ def _mock_kb(**kw):
 
 def test_requires_attachment_id_and_kb_id(in_ctx):
     with _patch_rbac_allow():
-        out = _parse(_call(doc_archive_attachment, {"kb_id": "kb1"}))
+        out = _parse(_call(doc_ingest_attachment, {"kb_id": "kb1"}))
     assert out["error"] == "invalid_input"
     with _patch_rbac_allow():
-        out = _parse(_call(doc_archive_attachment, {"attachment_id": "x"}))
+        out = _parse(_call(doc_ingest_attachment, {"attachment_id": "x"}))
     assert out["error"] == "invalid_input"
 
 
@@ -92,7 +92,7 @@ def test_attachment_not_found(in_ctx):
         return_value=None,
     ):
         out = _parse(_call(
-            doc_archive_attachment,
+            doc_ingest_attachment,
             {"attachment_id": "ghost", "kb_id": "kb1"},
         ))
     assert out["error"] == "not_found"
@@ -105,7 +105,7 @@ def test_cross_tenant_attachment_rejected(in_ctx):
         return_value=att,
     ):
         out = _parse(_call(
-            doc_archive_attachment,
+            doc_ingest_attachment,
             {"attachment_id": "att1", "kb_id": "kb1"},
         ))
     assert out["error"] == "out_of_scope"
@@ -124,7 +124,7 @@ def test_already_archived_to_same_kb_is_idempotent(in_ctx):
         return_value=att,
     ):
         out = _parse(_call(
-            doc_archive_attachment,
+            doc_ingest_attachment,
             {"attachment_id": "att1", "kb_id": "kb1"},
         ))
     assert out["status"] == "already_archived"
@@ -140,7 +140,7 @@ def test_archived_to_different_kb_is_error(in_ctx):
         return_value=att,
     ):
         out = _parse(_call(
-            doc_archive_attachment,
+            doc_ingest_attachment,
             {"attachment_id": "att1", "kb_id": "kb_NEW"},
         ))
     assert out["error"] == "already_archived_elsewhere"
@@ -154,7 +154,7 @@ def test_rejected_state_cannot_be_archived(in_ctx):
         return_value=att,
     ):
         out = _parse(_call(
-            doc_archive_attachment,
+            doc_ingest_attachment,
             {"attachment_id": "att1", "kb_id": "kb1"},
         ))
     assert out["error"] == "invalid_state"
@@ -167,7 +167,7 @@ def test_expired_state_cannot_be_archived(in_ctx):
         return_value=att,
     ):
         out = _parse(_call(
-            doc_archive_attachment,
+            doc_ingest_attachment,
             {"attachment_id": "att1", "kb_id": "kb1"},
         ))
     assert out["error"] == "invalid_state"
@@ -186,7 +186,7 @@ def test_target_kb_not_found(in_ctx):
         return_value=(False, None),
     ):
         out = _parse(_call(
-            doc_archive_attachment,
+            doc_ingest_attachment,
             {"attachment_id": "att1", "kb_id": "ghost_kb"},
         ))
     assert out["error"] == "not_found"
@@ -203,7 +203,7 @@ def test_cross_tenant_kb_rejected(in_ctx):
         return_value=(True, kb),
     ):
         out = _parse(_call(
-            doc_archive_attachment,
+            doc_ingest_attachment,
             {"attachment_id": "att1", "kb_id": "kb1"},
         ))
     assert out["error"] == "out_of_scope"
@@ -223,7 +223,7 @@ def test_blob_path_malformed(in_ctx):
         return_value=(True, kb),
     ):
         out = _parse(_call(
-            doc_archive_attachment,
+            doc_ingest_attachment,
             {"attachment_id": "att1", "kb_id": "kb1"},
         ))
     assert out["error"] == "blob_path_malformed"
@@ -244,7 +244,7 @@ def test_blob_fetch_failure_returns_clean_error(in_ctx):
         return_value=(True, kb),
     ), patch("common.settings.STORAGE_IMPL", storage):
         out = _parse(_call(
-            doc_archive_attachment,
+            doc_ingest_attachment,
             {"attachment_id": "att1", "kb_id": "kb1"},
         ))
     assert out["error"] == "blob_unavailable"
@@ -266,7 +266,7 @@ def test_empty_blob_rejected(in_ctx):
         return_value=(True, kb),
     ), patch("common.settings.STORAGE_IMPL", storage):
         out = _parse(_call(
-            doc_archive_attachment,
+            doc_ingest_attachment,
             {"attachment_id": "att1", "kb_id": "kb1"},
         ))
     assert out["error"] == "blob_empty"
@@ -305,7 +305,7 @@ def test_dedup_existing_doc_in_kb(in_ctx):
         mark_archived,
     ):
         out = _parse(_call(
-            doc_archive_attachment,
+            doc_ingest_attachment,
             {"attachment_id": "att1", "kb_id": "kb1"},
         ))
 
@@ -350,7 +350,7 @@ def test_happy_path_queues_for_parse(in_ctx):
         mark_archived,
     ):
         out = _parse(_call(
-            doc_archive_attachment,
+            doc_ingest_attachment,
             {"attachment_id": "att1", "kb_id": "kb1"},
         ))
 
@@ -391,7 +391,7 @@ def test_image_mime_emits_ocr_hint(in_ctx):
         return_value=True,
     ):
         out = _parse(_call(
-            doc_archive_attachment,
+            doc_ingest_attachment,
             {"attachment_id": "att1", "kb_id": "kb1"},
         ))
 
@@ -408,20 +408,20 @@ def test_registered_and_annotated():
     from api.agent_v2.prompting import SEARCH_HINT_BY_TOOL
     from api.agent_v2.registry import ALL_TOOLS
 
-    assert "doc_archive_attachment" in ALL_TOOLS
-    assert "doc_archive_attachment" in ANNOTATIONS
-    assert "doc_archive_attachment" in SEARCH_HINT_BY_TOOL
+    assert "doc_ingest_attachment" in ALL_TOOLS
+    assert "doc_ingest_attachment" in ANNOTATIONS
+    assert "doc_ingest_attachment" in SEARCH_HINT_BY_TOOL
     # Sub_archivist should have access; others should not.
     from api.agent_v2.definitions.built_in.sub_archivist import ARCHIVIST_TOOLS
     from api.agent_v2.definitions.built_in.sub_librarian import LIBRARIAN_TOOLS
-    assert "doc_archive_attachment" in ARCHIVIST_TOOLS
-    assert "doc_archive_attachment" not in LIBRARIAN_TOOLS
+    assert "doc_ingest_attachment" in ARCHIVIST_TOOLS
+    assert "doc_ingest_attachment" not in LIBRARIAN_TOOLS
 
 
 def test_annotation_metadata_sanity():
     from api.agent_v2.annotations import ANNOTATIONS
 
-    ann = ANNOTATIONS["doc_archive_attachment"]
+    ann = ANNOTATIONS["doc_ingest_attachment"]
     assert ann.is_read_only is False
     assert ann.is_idempotent is True  # same attachment → same doc
     assert ann.cost_class == "expensive"

@@ -341,8 +341,8 @@ def render_attachments_prompt_section(
                 "归档工作流（严格按顺序）：\n"
                 "1. 调用 `spawn_subagent(subagent_type='sub_archivist')`，在 prompt 里说明用户意图\n"
                 "2. sub_archivist 检查 `ctx.attachments` 后调 `submit_plan(preview=...)` 把预览展示给用户\n"
-                "3. 用户回复 `[plan approved]` 后，sub_archivist 调 `doc_archive_attachment(attachment_id, kb_id)` 入库\n"
-                "**不要**自己直接调 `doc_archive_attachment`（supervisor 不持有写工具）。\n"
+                "3. 用户回复 `[plan approved]` 后，sub_archivist 调 `doc_ingest_attachment(attachment_id, kb_id)` 入库\n"
+                "**不要**自己直接调 `doc_ingest_attachment`（supervisor 不持有写工具）。\n"
                 "**不要**虚构附件（本清单是唯一来源——只能引用这些 `id` 值）。"
             )
         if archived:
@@ -369,8 +369,8 @@ def render_attachments_prompt_section(
             "2. The archivist inspects `ctx.attachments`, then calls `submit_plan(preview=...)` "
             "to show the user the preview\n"
             "3. Once the user replies `[plan approved]`, the archivist calls "
-            "`doc_archive_attachment(attachment_id, kb_id)` to persist to KB\n"
-            "Do NOT call `doc_archive_attachment` directly (supervisors don't hold write tools). "
+            "`doc_ingest_attachment(attachment_id, kb_id)` to persist to KB\n"
+            "Do NOT call `doc_ingest_attachment` directly (supervisors don't hold write tools). "
             "Do NOT fabricate attachments — the IDs above are the ONLY valid references."
         )
     if archived:
