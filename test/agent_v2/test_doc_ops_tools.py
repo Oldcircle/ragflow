@@ -346,6 +346,29 @@ class TestDocReparse:
             reset_ctx(token)
         assert _parse(resp)["error"] == "not_found"
 
+    def test_success_next_steps_handoff_to_user(self):
+        doc = MagicMock(kb_id="kb1", name="policy.pdf", parser_id="naive")
+        doc.to_dict.return_value = {"id": "d1", "kb_id": "kb1", "name": "policy.pdf"}
+        token = set_ctx(_ctx())
+        try:
+            with _patch_rbac_allow(), _patch_audit(), patch(
+                "api.db.services.document_service.DocumentService.get_by_id",
+                return_value=(True, doc),
+            ), patch(
+                "api.db.services.document_service.DocumentService.update_by_id",
+            ), patch(
+                "api.db.services.document_service.DocumentService.clear_chunk_num_when_rerun",
+            ), patch(
+                "api.db.services.document_service.DocumentService.run",
+            ):
+                resp = _call(doc_reparse, {"doc_id": "d1"})
+        finally:
+            reset_ctx(token)
+        payload = _parse(resp)
+        assert payload["status"] == "queued"
+        assert "check progress" in payload["next_steps"][0]
+        assert "rag_list_docs" in payload["next_steps"][0]
+
 
 # ───────── doc_upload_from_url ─────────
 

@@ -167,7 +167,10 @@ async def doc_reparse(args: dict) -> dict:
         ),
         reason=args.get("reason"),
         next_steps=[
-            f"Wait ~30-60s, then rag_list_docs(kb_id='{kb_id}') to confirm new chunk_count",
+            (
+                "Ask the user to send 'check progress' in the next message; "
+                f"then call rag_list_docs(kb_id='{kb_id}') to confirm new chunk_count"
+            ),
             "Do NOT re-queue the same document — that duplicates parsing work",
         ],
     )

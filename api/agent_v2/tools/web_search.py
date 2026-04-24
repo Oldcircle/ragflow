@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from typing import Any
 
 from .base import get_ctx, mcp_json_response, tool
@@ -71,7 +72,10 @@ def _resolve_tavily_key(tenant_id: str) -> str | None:
         "- Do NOT use this to fetch a URL the user provided — that's what "
         "`web_fetch` is for.\n"
         "- Web results are NOT citable with the [N] markers reserved for "
-        "KB chunks. When quoting a web result, cite the URL inline."
+        "KB chunks.\n"
+        "- CRITICAL: when you use web_search results in the final answer, "
+        "include a `Sources:` section with markdown links to every relevant "
+        "web URL. Never mix web URLs into KB [N] citations."
     ),
     input_schema={
         "type": "object",
@@ -140,17 +144,31 @@ async def web_search(args: dict) -> dict:
         JSON payload:
           - query: echoed query
           - provider: "tavily"
+          - duration_ms: int
           - total: int
           - results: [{title, url, snippet, score, published_date?}, ...]
-          - error?: str (only on failure)
+          - error?: str, error_code?: str (only on failure)
     """
+    start = time.perf_counter()
+
+    def fail(error_code: str, message: str, **extra) -> dict:
+        return mcp_json_response(
+            {
+                "error": message,
+                "error_code": error_code,
+                "duration_ms": int((time.perf_counter() - start) * 1000),
+                **extra,
+            }
+        )
+
     ctx = get_ctx()
     query = str(args.get("query", "")).strip()
     if not query:
-        return mcp_json_response({"error": "query must be non-empty"})
+        return fail("validation_error", "query must be non-empty")
     if len(query) > 400:
-        return mcp_json_response(
-            {"error": "query too long (>400 chars); split into sub-queries"}
+        return fail(
+            "validation_error",
+            "query too long (>400 chars); split into sub-queries",
         )
 
     max_results = min(max(int(args.get("max_results", 6)), 1), 20)
@@ -162,23 +180,31 @@ async def web_search(args: dict) -> dict:
     blocked_domains = [
         d.strip() for d in (args.get("blocked_domains") or []) if str(d).strip()
     ]
+    if allowed_domains and blocked_domains:
+        return fail(
+            "domain_filter_conflict",
+            "allowed_domains and blocked_domains cannot both be set",
+            query=query,
+        )
 
     api_key = _resolve_tavily_key(ctx.tenant_id)
     if not api_key:
-        return mcp_json_response(
-            {
-                "error": (
-                    "no_tavily_api_key: set TAVILY_API_KEY env var or "
-                    "configure 'Tavily' in Tenant LLM settings"
-                )
-            }
+        return fail(
+            "no_tavily_api_key",
+            (
+                "no_tavily_api_key: set TAVILY_API_KEY env var or "
+                "configure 'Tavily' in Tenant LLM settings"
+            ),
+            query=query,
         )
 
     try:
         from tavily import TavilyClient
     except ImportError:
-        return mcp_json_response(
-            {"error": "tavily_sdk_missing: `uv pip install tavily-python`"}
+        return fail(
+            "dependency_missing",
+            "tavily_sdk_missing: `uv pip install tavily-python`",
+            query=query,
         )
 
     client = TavilyClient(api_key=api_key)
@@ -199,8 +225,10 @@ async def web_search(args: dict) -> dict:
         res = client.search(**payload)
     except Exception as e:
         logger.warning("web_search Tavily error: %s", e)
-        return mcp_json_response(
-            {"error": f"tavily_error: {type(e).__name__}: {e}", "query": query}
+        return fail(
+            "provider_error",
+            f"tavily_error: {type(e).__name__}: {e}",
+            query=query,
         )
 
     raw_results = res.get("results") if isinstance(res, dict) else []
@@ -220,7 +248,13 @@ async def web_search(args: dict) -> dict:
         {
             "query": query,
             "provider": "tavily",
+            "duration_ms": int((time.perf_counter() - start) * 1000),
             "total": len(normalized),
             "results": normalized,
+            "citation_policy": (
+                "If using these web results in the final answer, include a "
+                "`Sources:` section with markdown links. Do not use KB [N] "
+                "citation markers for web sources."
+            ),
         }
     )

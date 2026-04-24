@@ -4,6 +4,49 @@
 
 ---
 
+## 最近更新：2026-04-24（Phase 2.6 v0.7.2：Web 工具硬化 + 异步任务显式交接）
+
+**触发**：v0.7 加了 `web_search` / `web_fetch`，但只达到最小可用；同时
+真机里模型尝试用 SDK 原生 `ScheduleWakeup` 承诺"稍后自己回来检查解析进度"。
+复盘后确认：禁用 `ScheduleWakeup` 是对的，但应该把产品语义讲清楚——当前
+Agent v2 是 HTTP/SSE 请求-响应，不是 Claude Code 长驻 REPL/daemon，没有后台
+输入队列能承接自唤醒。
+
+**关键产物**：
+- `PLAN-doc-ops.md` 新增两段决策：异步任务不伪唤醒；Web Search/Fetch 第一批
+  Claude Code 风格安全与可信度契约
+- `sub_archivist` prompt 增加硬规则：异步解析 / 入库只做显式 handoff，要求用户
+  下一条发"check progress"，不能暗示自动 scheduled follow-up
+- `doc_reparse` / `doc_upload_from_url` / `doc_create_note` 的 `next_steps` 改成
+  "用户下一条消息再查进度"，不再写成模型自己等 30-60 秒
+- `web_search`：
+  - `allowed_domains` 与 `blocked_domains` 互斥，返回 `error_code`
+  - 返回 `duration_ms` 和 `citation_policy`
+  - description 强制要求最终回答用 `Sources:` markdown links，不混用 KB `[N]`
+- `web_fetch`：
+  - `http://` 自动升级 `https://`
+  - 关闭自动重定向；只允许同 host / `www.` 增删的安全重定向，跨域返回
+    `redirect_blocked`
+  - HTML 转 Markdown 改用 `markdownify`，保留标题 / 列表 / 链接等结构
+  - 返回 `duration_ms` / `error_code` / `citation_policy`，截断正文追加 marker
+
+**测试覆盖**：
+- `test_web_tools.py` 扩展到 26 case：domain 互斥、Sources 策略、HTTPS 升级、
+  跨域重定向阻断、同域重定向跟随、Markdown 结构保留
+- `test_sub_archivist.py` 增加 prompt 契约断言
+- `test_doc_ops_tools.py::TestDocReparse` 增加 next_steps handoff 断言
+- 相关测试：**45 passed**
+- 全量 `test/agent_v2/`：**329 passed / 8 skipped**
+- ruff：clean（改动文件定向检查）
+
+**下一步入口**：
+1. 真机重跑 v0.7 web 场景，观察模型是否稳定输出 `Sources:`
+2. 真机重跑 `doc_reparse` / URL 入库，确认不再出现 ScheduleWakeup 幻觉
+3. 后续如要做真正后台 one-shot follow-up，另起 Phase 2.7/3.3 设计，不在 v0.7
+   内继续铺基础设施
+
+---
+
 ## 最近更新：2026-04-23（Phase 2.6 v0.6：plan 执行闭环 G7）
 
 **触发**：v0.4 做了 gate / v0.5 让工具元数据透出 MCP 协议；但批准之后的"按

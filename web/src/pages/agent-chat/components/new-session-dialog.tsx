@@ -53,6 +53,10 @@ interface Props {
     model_config: { llm_name: string; factory: string };
     max_turns: number;
     max_budget_usd: number;
+    // Phase 2.6 v0.8 — 让模板的工具组合流通到 create_session。undefined = 随
+    // 后端默认 (SUPERVISOR_TOOLS)；非空数组 = 覆盖为这个列表。研究模板会带上
+    // web_search / web_fetch，保障房等策略模板保持 KB-only。
+    tool_names?: string[];
   }) => void;
 }
 
@@ -81,6 +85,11 @@ export const NewSessionDialog = memo(function NewSessionDialog({
   const [maxTurns, setMaxTurns] = useState('20');
   const [maxBudget, setMaxBudget] = useState('0.5');
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+  // Phase 2.6 v0.8 — 跟随模板的工具清单。null = 用后端默认（SUPERVISOR_TOOLS）；
+  // 非空数组 = 模板指定的工具集（例如 research-analyst 含 web_search）。
+  const [suggestedToolNames, setSuggestedToolNames] = useState<string[] | null>(
+    null,
+  );
 
   const applyTemplate = (tpl: AgentV2Template) => {
     setName(tpl.name);
@@ -88,6 +97,9 @@ export const NewSessionDialog = memo(function NewSessionDialog({
     setMaxTurns(String(tpl.default_max_turns));
     setMaxBudget(String(tpl.default_max_budget_usd));
     setSelectedTemplateId(tpl.id);
+    // 把模板的工具建议带过来，handleSubmit 时作为 tool_names 提交；null 表示
+    // 没提示，走后端默认
+    setSuggestedToolNames(tpl.suggested_tool_names ?? null);
     // KB 不自动填，让用户自己根据 kb_hints 挑
   };
 
@@ -129,6 +141,7 @@ export const NewSessionDialog = memo(function NewSessionDialog({
         Number.isFinite(parsedTurns) && parsedTurns > 0 ? parsedTurns : 20,
       max_budget_usd:
         Number.isFinite(parsedBudget) && parsedBudget > 0 ? parsedBudget : 0.5,
+      tool_names: suggestedToolNames ?? undefined,
     });
   };
 
@@ -175,6 +188,22 @@ export const NewSessionDialog = memo(function NewSessionDialog({
                       >
                         {tpl.description}
                       </div>
+                      {tpl.suggested_tool_names &&
+                        tpl.suggested_tool_names.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            {tpl.suggested_tool_names.includes('web_search') ||
+                            tpl.suggested_tool_names.includes('web_fetch') ? (
+                              <span className="inline-flex items-center gap-1 rounded bg-accent-primary/15 px-1.5 py-0.5 text-[10px] text-accent-primary">
+                                {t('agentV2.templateWebEnabled')}
+                              </span>
+                            ) : null}
+                            <span className="text-[10px] text-text-disabled">
+                              {t('agentV2.templateToolCount', {
+                                count: tpl.suggested_tool_names.length,
+                              })}
+                            </span>
+                          </div>
+                        )}
                     </button>
                   );
                 })}

@@ -6,7 +6,6 @@ import pytest
 
 from api.agent_v2.annotations import (
     ANNOTATIONS,
-    ToolAnnotation,
     annotations_summary_for_prompt,
 )
 

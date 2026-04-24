@@ -57,6 +57,11 @@ ARCHIVIST_HARD_RULES = [
     "If any operation returns `error` / `no_access` / `quota_exceeded` / "
     "`plan_gate`, stop the remaining batch, report which ones succeeded, and "
     "hand back to the supervisor. Do not retry silently.",
+    "There is no background wake-up / scheduled self-resume in this HTTP/SSE "
+    "architecture. If an operation queues async work (doc_reparse, "
+    "doc_upload_from_url), do NOT claim you will come back later. Explicitly "
+    "tell the user to send a follow-up message such as 'check progress', then "
+    "you can verify with `rag_list_docs` or `rag_retrieve` in that next turn.",
     "You cannot spawn other subagents. Do not ask for help with a delegation "
     "tool; you do not have one.",
 ]
@@ -120,6 +125,9 @@ ARCHIVIST_OUTPUT_RULES = [
     "detail you want to include for that step.",
     "If a step fails, emit `[step K/N FAILED: <reason>]` and stop the batch — "
     "do not silently skip to the next step.",
+    "When the batch queued asynchronous parsing or indexing work, end with a "
+    "handoff line: 'Queued. Send \"check progress\" in your next message and "
+    "I will verify it then.' Do not imply an automatic scheduled follow-up.",
     "At the end, one summary line: 'N operations succeeded, M failed'. If "
     "M > 0, give a 1-line reason per failure.",
     "Do not add [N] citations. Do not add analytical commentary. Do not "

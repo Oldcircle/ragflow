@@ -189,6 +189,8 @@ export default {
       startFromTemplate: '从模板开始（可选）',
       templateHint:
         '模板预置经过打磨的 System Prompt 和默认参数，KB/模型还是你自己选。',
+      templateWebEnabled: '🌐 可联网',
+      templateToolCount: '{{count}} 个工具',
       systemPrompt: 'System Prompt',
       maxTurns: '最大 Agent 轮数',
       maxBudget: '预算上限（美元）',

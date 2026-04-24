@@ -55,6 +55,21 @@ def test_web_search_rejects_long_query(in_ctx):
     out = _parse(_call(web_search, {"query": "x" * 401}))
     assert "error" in out
     assert "too long" in out["error"]
+    assert out["error_code"] == "validation_error"
+
+
+def test_web_search_rejects_domain_filter_conflict(in_ctx):
+    out = _parse(
+        _call(
+            web_search,
+            {
+                "query": "深圳 保障房",
+                "allowed_domains": ["gov.cn"],
+                "blocked_domains": ["spam.example"],
+            },
+        )
+    )
+    assert out["error_code"] == "domain_filter_conflict"
 
 
 def test_web_search_reports_missing_key(in_ctx, monkeypatch):
@@ -103,7 +118,6 @@ def test_web_search_happy_path(in_ctx, monkeypatch):
                     "query": "深圳 保障房",
                     "max_results": 5,
                     "allowed_domains": ["gov.cn"],
-                    "blocked_domains": ["noisy.com"],
                     "topic": "news",
                     "search_depth": "advanced",
                 },
@@ -119,12 +133,36 @@ def test_web_search_happy_path(in_ctx, monkeypatch):
     assert kwargs["query"] == "深圳 保障房"
     assert kwargs["max_results"] == 5
     assert kwargs["include_domains"] == ["gov.cn"]
-    assert kwargs["exclude_domains"] == ["noisy.com"]
+    assert "exclude_domains" not in kwargs
     assert kwargs["topic"] == "news"
     assert kwargs["search_depth"] == "advanced"
     # These are always forced off:
     assert kwargs["include_images"] is False
     assert kwargs["include_raw_content"] is False
+    assert out["duration_ms"] >= 0
+    assert "Sources:" in out["citation_policy"]
+
+
+def test_web_search_blocked_domains_passed_to_provider(in_ctx):
+    fake_client = MagicMock()
+    fake_client.search.return_value = {"results": []}
+    with patch(
+        "api.agent_v2.tools.web_search._resolve_tavily_key",
+        return_value="fake-key",
+    ), patch(
+        "tavily.TavilyClient",
+        return_value=fake_client,
+    ):
+        _parse(
+            _call(
+                web_search,
+                {
+                    "query": "深圳 保障房",
+                    "blocked_domains": ["noisy.com"],
+                },
+            )
+        )
+    assert fake_client.search.call_args.kwargs["exclude_domains"] == ["noisy.com"]
 
 
 def test_web_search_propagates_client_error(in_ctx):
@@ -262,6 +300,141 @@ def test_web_fetch_happy_html(in_ctx):
     # script stripped
     assert "evil" not in out["content"]
     assert out["truncated"] is False
+    assert out["duration_ms"] >= 0
+    assert "Sources:" in out["citation_policy"]
+
+
+def test_web_fetch_preserves_basic_markdown_structure(in_ctx):
+    fake_response = MagicMock()
+    fake_response.status_code = 200
+    fake_response.headers = {"content-type": "text/html; charset=utf-8"}
+    fake_response.content = (
+        b"<html><head><title>Docs</title></head><body><main>"
+        b"<h1>Heading</h1><ul><li>One</li></ul>"
+        b"<p><a href='https://example.com/a'>Link</a></p>"
+        b"</main></body></html>"
+    )
+    fake_response.encoding = "utf-8"
+    fake_response.url = "https://example.com/docs"
+
+    class _FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, _url):
+            return fake_response
+
+    with patch(
+        "api.agent_v2.tools.web_fetch.socket.getaddrinfo",
+        return_value=[(None, None, None, None, ("93.184.216.34", 443))],
+    ), patch(
+        "httpx.AsyncClient",
+        return_value=_FakeClient(),
+    ):
+        out = _parse(_call(web_fetch, {"url": "https://example.com/docs"}))
+    assert "# Heading" in out["content"]
+    assert "- One" in out["content"]
+    assert "[Link](https://example.com/a)" in out["content"]
+
+
+def test_web_fetch_upgrades_http_to_https(in_ctx):
+    fake_response = MagicMock()
+    fake_response.status_code = 200
+    fake_response.headers = {"content-type": "text/plain"}
+    fake_response.content = b"ok"
+    fake_response.encoding = "utf-8"
+    fake_response.url = "https://example.com/plain"
+    seen_urls = []
+
+    class _FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url):
+            seen_urls.append(url)
+            return fake_response
+
+    with patch(
+        "api.agent_v2.tools.web_fetch.socket.getaddrinfo",
+        return_value=[(None, None, None, None, ("93.184.216.34", 443))],
+    ), patch(
+        "httpx.AsyncClient",
+        return_value=_FakeClient(),
+    ):
+        out = _parse(_call(web_fetch, {"url": "http://example.com/plain"}))
+    assert seen_urls == ["https://example.com/plain"]
+    assert out["upgraded_from_http"] is True
+
+
+def test_web_fetch_blocks_cross_host_redirect(in_ctx):
+    redirect = MagicMock()
+    redirect.status_code = 302
+    redirect.headers = {"location": "https://evil.example/path"}
+    redirect.url = "https://example.com/start"
+
+    class _FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, _url):
+            return redirect
+
+    with patch(
+        "api.agent_v2.tools.web_fetch.socket.getaddrinfo",
+        return_value=[(None, None, None, None, ("93.184.216.34", 443))],
+    ), patch(
+        "httpx.AsyncClient",
+        return_value=_FakeClient(),
+    ):
+        out = _parse(_call(web_fetch, {"url": "https://example.com/start"}))
+    assert out["error_code"] == "redirect_blocked"
+    assert out["redirect_url"] == "https://evil.example/path"
+
+
+def test_web_fetch_follows_same_host_redirect(in_ctx):
+    redirect = MagicMock()
+    redirect.status_code = 302
+    redirect.headers = {"location": "/final"}
+    redirect.url = "https://example.com/start"
+    final = MagicMock()
+    final.status_code = 200
+    final.headers = {"content-type": "text/plain"}
+    final.content = b"done"
+    final.encoding = "utf-8"
+    final.url = "https://example.com/final"
+    responses = [redirect, final]
+    seen_urls = []
+
+    class _FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url):
+            seen_urls.append(url)
+            return responses.pop(0)
+
+    with patch(
+        "api.agent_v2.tools.web_fetch.socket.getaddrinfo",
+        return_value=[(None, None, None, None, ("93.184.216.34", 443))],
+    ), patch(
+        "httpx.AsyncClient",
+        return_value=_FakeClient(),
+    ):
+        out = _parse(_call(web_fetch, {"url": "https://example.com/start"}))
+    assert seen_urls == ["https://example.com/start", "https://example.com/final"]
+    assert out["content"] == "done"
 
 
 def test_web_fetch_http_error_maps_cleanly(in_ctx):

@@ -119,6 +119,153 @@ SEARCH_HINT_BY_TOOL: dict[str, str] = {
 }
 
 
+# ─────────────── Tool availability section (Phase 2.6 v0.8) ───────────────
+#
+# 抄 Claude Code 的 `getUsingYourToolsSection` 做法（src/constants/prompts.ts:
+# 271-316）—— 在 system prompt 里显式枚举"这个会话你可以用哪些工具"。
+# 和 Claude Code 不同之处：我们加**负面枚举**（"你没有 Gmail / Drive / LSP /
+# Skill / Bash 等"），因为 DeepSeek 训练数据里大量提及 Claude 产品线工具，被问
+# "你有什么工具"时会从训练记忆捞工具清单幻觉出来——Claude 官方模型不会有这个
+# 问题，但我们跑的是 DeepSeek，需要更硬的防御。
+
+# 常见被 DeepSeek 幻觉为"自己有"的工具名。这些在 Claude Code / Anthropic 产品
+# 线文档里是存在的，但在我们这个 Python MCP server 里**不存在**。
+_CONFABULATED_TOOLS: list[str] = [
+    # Google workspace（Claude Code 有 MCP adapter，我们没注册）
+    "Gmail",
+    "Google Drive",
+    "Google Calendar",
+    # Claude Code 原生 IDE / dev 工具
+    "Bash", "Shell", "Terminal",
+    "Read", "Write", "Edit", "NotebookEdit",
+    "LS", "Glob", "Grep",
+    "LSP",
+    "Skill",
+    "SlashCommand",
+    "TodoWrite", "Task", "Agent",
+    "WebFetch", "WebSearch",  # Claude Code 的内建版本
+    "ExitPlanMode",
+    "ScheduleWakeup",
+    "ToolSearch",
+]
+
+
+def render_tool_availability_section(
+    tool_names: Iterable[str] | None,
+    *,
+    lang: str = "en",
+) -> str:
+    """Render a standalone "# Available Tools" Markdown section.
+
+    Contract (mirrors Claude Code's ``getUsingYourToolsSection`` but stricter):
+
+    1. **Positive enumeration** — list every tool in ``tool_names`` with its
+       ``SEARCH_HINT_BY_TOOL`` one-liner. Tools outside the hint map fall
+       through with "(no description registered)".
+    2. **Negative enumeration** — explicit "You do NOT have X, Y, Z" over the
+       confabulation-prone names. Deleted from the list if the actual tool is
+       enabled (e.g. ``web_search`` is enabled → strip ``WebSearch`` from the
+       negative list, since the model would rightly get confused).
+    3. **Meta-question handling rule** — tell the model to enumerate ONLY the
+       tools listed above when asked about its own capabilities.
+
+    Args:
+        tool_names: the effective tool name list for THIS session. ``None`` or
+            empty means "no session-level whitelist"; we render all registered
+            tools in that case.
+        lang: ``"en"`` (default) or ``"zh"`` — picks headline / prose lang,
+            the tool names themselves stay English.
+    """
+    from ..registry import ALL_TOOLS
+
+    names = list(tool_names) if tool_names else list(ALL_TOOLS.keys())
+    # Preserve order; dedupe while preserving order
+    seen: set[str] = set()
+    ordered_names: list[str] = []
+    for n in names:
+        if n in seen:
+            continue
+        seen.add(n)
+        ordered_names.append(n)
+
+    positive_lines: list[str] = []
+    for n in ordered_names:
+        hint = SEARCH_HINT_BY_TOOL.get(n, "(no description registered)")
+        positive_lines.append(f"- `{n}` — {hint}")
+
+    # Build negative list by stripping any confabulated name that matches an
+    # actually-enabled tool (case-insensitive, underscore/space insensitive).
+    enabled_normalized = {n.replace("_", "").lower() for n in ordered_names}
+    negative = [
+        name
+        for name in _CONFABULATED_TOOLS
+        if name.replace("_", "").replace(" ", "").lower() not in enabled_normalized
+    ]
+    negative_line = ", ".join(f"`{x}`" for x in negative)
+
+    has_web = any(
+        n in enabled_normalized for n in ("websearch", "webfetch")
+    )
+
+    if lang == "zh":
+        web_line_zh = (
+            "- 本会话**已启用联网工具**（`web_search` / `web_fetch`），被问到"
+            "能否联网时，直接回答「可以」并遵守它们的使用约束（先查 KB，不在 "
+            "[N] 脚注里引用外链）。"
+            if has_web
+            else "- 本会话**未启用联网工具**。被问「能联网吗」「能搜索最新信息吗」"
+            "时，明确回答「本会话未启用联网工具」，不要假装自己能联网。"
+        )
+        return (
+            "# 可用工具\n\n"
+            "本会话你能调用的工具**仅限**以下列表：\n\n"
+            + "\n".join(positive_lines)
+            + "\n\n# 你没有的工具\n\n"
+            "本会话**没有**以下工具（任何客户端 / 产品线里的同名工具不代表你这里也有）：\n\n"
+            f"{negative_line}。\n\n"
+            "# 元问题处理（用户问你的能力 / 工具 / 是否能联网）\n\n"
+            "- 被问「你有什么工具」「你能做什么」「能联网吗」等元问题时，"
+            "**只**根据上面的「可用工具」清单老实回答。\n"
+            f"{web_line_zh}\n"
+            "- **禁止**凭训练记忆编造自己有但实际没注册的工具。\n"
+            "- 若用户说「启动 X 工具」/「开启 Y」，告诉他「工具集由会话配置决定，"
+            "可在新建会话或会话设置里切换模板（例如『研究/尽调』模板带联网工具）」。"
+        )
+
+    web_line_en = (
+        "- This session HAS web tools enabled (`web_search` / `web_fetch`). "
+        "If asked about web access, answer yes and follow the tool rules "
+        "(KB first; web URLs cite inline, not with [N] markers)."
+        if has_web
+        else "- Web access is NOT enabled on this session. If asked \"can you "
+        "browse the web?\" / \"can you search the web?\", say web access is "
+        "not available here. Do not pretend to have `web_search` or Bing/Google."
+    )
+    return (
+        "# Available Tools\n\n"
+        "The ONLY tools you can call in this session are listed below. "
+        "Do not attempt to invoke anything else.\n\n"
+        + "\n".join(positive_lines)
+        + "\n\n# Tools you do NOT have\n\n"
+        "You do NOT have access to any of the following — they may exist in "
+        "other products (Claude Code CLI, Anthropic MCP catalog, etc.) but "
+        "they are not registered on this session:\n\n"
+        f"{negative_line}.\n\n"
+        "# Meta-question handling (capabilities / tools / web access)\n\n"
+        "- When the user asks about your capabilities (\"what tools do you "
+        "have?\", \"can you browse the web?\", \"can you send email?\", etc.), "
+        "enumerate ONLY the tools from the \"Available Tools\" section above. "
+        "Never claim tools from memory of other AI products.\n"
+        f"{web_line_en}\n"
+        "- Never invent Gmail, Drive, Bash, LSP, Skill, or any tool not "
+        "listed above.\n"
+        "- If the user asks to \"enable\" or \"turn on\" a tool, explain that "
+        "the tool set is configured per session — either pick a different "
+        "template at session creation (the \"Research / DD\" template ships "
+        "with web tools), or ask an admin to update the session."
+    )
+
+
 # ──────────────────────────────  Supervisor  ──────────────────────────────
 
 

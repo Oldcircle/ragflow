@@ -397,8 +397,67 @@ Supervisor 侧：`supervisor_baozhang` / `supervisor_generic_policy` / `supervis
 
 ---
 
-## 十四、版本记录
+## 十四、异步任务与后台唤醒决策（2026-04-24）
+
+`doc_reparse` / `doc_upload_from_url` / `doc_create_note` 都只是把解析任务入队，
+真正切片和索引由后台 task executor 完成。Claude Code 的 `ScheduleWakeup` /
+Cron 类工具适配的是长驻 REPL/daemon：工具到点后能把一条 system-generated user
+message 重新塞回同一个 agent 输入队列。
+
+Agent v2 当前是 HTTP/SSE 的请求-响应模型：一轮 `AgentRunner.run()` 结束后
+runner context 就释放，前端 SSE 也关闭。直接放开 `ScheduleWakeup` 会让模型承诺
+"60 秒后我会回来检查"，但系统并没有后台 agent turn 可以承接这条承诺。因此：
+
+- **短期保持禁用**：`ScheduleWakeup` / `CronCreate` / `Monitor` / `PushNotification`
+  继续在 `AgentRunner.disallowed_tools` 中禁用。
+- **短期修复方式**：异步写工具的 `next_steps` 和 `sub_archivist` prompt 必须明确
+  handoff 给用户：任务已入队，用户下一条发"查进度"时 agent 再用 `rag_list_docs`
+  / `rag_retrieve` 核验；禁止暗示 agent 会自行醒来。
+- **不新增 `doc_parse_status`**：现阶段 `rag_list_docs` 已能覆盖文档进度/状态核验；
+  只有当 UI/agent 需要更结构化的 `{progress, chunk_num, error}` 批量状态时再加。
+- **长期候选**：真正 one-shot follow-up 应作为 Phase 2.7/3.3 独立设计，复用
+  AgentTrigger/scheduler 基建，新增 scheduled followup 表、幂等执行、预算扣减、
+  session 并发锁和前端 pending 状态卡片。
+
+这不是"工具没用"，而是"缺长驻输入队列/后台 turn 基础设施"。在补齐基础设施前，
+正确产品语义是显式交接，而不是伪唤醒。
+
+---
+
+## 十五、Web Search / Web Fetch 硬化决策（2026-04-24）
+
+v0.7 的 `web_search` / `web_fetch` 已经能跑，但只是最小可用版。对照
+`vendor/claude-code-ref/packages/builtin-tools/src/tools/WebSearchTool` 与
+`WebFetchTool` 后，短期先补对企业 KB Agent 真正关键的安全与可信度契约：
+
+- `web_search`
+  - `allowed_domains` 与 `blocked_domains` 互斥，非法输入返回结构化错误。
+  - 工具描述和返回结果都必须强调：web 结果不能用 KB 的 `[N]` 脚注，最终回答要用
+    `Sources:` markdown 链接列出 URL。
+  - 返回 `duration_ms`、`error_code`，方便 trace / UI 分流。
+- `web_fetch`
+  - `http://` 自动升级为 `https://` 再抓取。
+  - 禁止自动跨域重定向；只允许同 host（允许 `www.` 增删）的安全重定向，跨域时返回
+    `redirect_blocked`，让 agent/user 显式决定是否抓新 URL。
+  - HTML 转 Markdown 改用 `markdownify` 保留标题、列表、链接、代码块等结构。
+  - 返回 `duration_ms`、`error_code`、`truncated`，内容截断时在正文末尾写明。
+
+暂不做的 Claude Code 能力：
+
+- `WebFetch` 的 preapproved 编程文档域名白名单：RAGFlow 不是代码 CLI，后续应做成
+  tenant 级域名 allow/deny，而不是照搬 130+ 开发者站点。
+- `WebFetch` 的 Haiku 二次处理：需要模型路由、版权策略、额外成本预算，单独设计。
+- `WebSearch` 的 Bing/Brave/API provider factory：当前先保留 Tavily，等出现供应商
+  切换需求再抽 adapter。
+- 真 AbortSignal：Claude Agent SDK MCP handler 当前没有把 abort signal 传入工具；
+  先通过请求 timeout 控制资源消耗。
+
+---
+
+## 十六、版本记录
 
 | 日期 | 版本 | 决策 |
 |---|---|---|
 | 2026-04-24 | v0.1 | 初稿；确定语义工具路径 + 四条默认决策 + 实施顺序 |
+| 2026-04-24 | v0.7.1 | 明确异步解析任务不使用 ScheduleWakeup；短期改为用户 follow-up handoff，长期 one-shot follow-up 单独立项 |
+| 2026-04-24 | v0.7.2 | Web 工具补齐第一批 Claude Code 设计契约：引用 Sources、domain 互斥、重定向安全、HTTPS 升级、结构化错误与 duration |

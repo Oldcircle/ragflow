@@ -10,7 +10,6 @@ Confirms ``_resolve_child_model`` correctly honors ``AgentDefinition.model``:
 
 from __future__ import annotations
 
-import pytest
 
 from api.agent_v2.definitions.schema import AgentDefinition, ModelRef
 from api.agent_v2.runner import ModelConfig

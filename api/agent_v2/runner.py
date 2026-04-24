@@ -134,10 +134,29 @@ class AgentRunner:
             env["ANTHROPIC_AUTH_TOKEN"] = self.model.auth_token
         env.update(self.model.extra_env)
 
+        # Phase 2.6 v0.8 — 在 session.system_prompt 末尾显式追加"可用工具"段。
+        # 抄 Claude Code 的 getUsingYourToolsSection 做法（src/constants/prompts.
+        # ts:271-316）——**不只**靠 tool_use API 的 tools 参数告诉模型有什么工具，
+        # 还在 system prompt 里显式枚举，外加**负面枚举**防 DeepSeek 从训练记忆
+        # 里捞 Gmail/Drive/LSP/Skill/Bash 等 Claude 产品线工具幻觉出来。
+        # lang 基于 system_prompt 含中英文比例粗判（保障房模板是中文老 prompt，
+        # 研究 / 法务等 Phase 2.5+ 模板是英文新 prompt）。
+        from .prompting import render_tool_availability_section
+
+        lang = _guess_prompt_lang(self.system_prompt)
+        tool_section = render_tool_availability_section(
+            self.tool_names, lang=lang
+        )
+        full_system_prompt = (
+            (self.system_prompt or "").rstrip() + "\n\n---\n\n" + tool_section
+            if self.system_prompt
+            else tool_section
+        )
+
         return ClaudeAgentOptions(
             model=self.model.model,
             fallback_model=self.model.fallback_model,
-            system_prompt=self.system_prompt,
+            system_prompt=full_system_prompt,
             mcp_servers={MCP_SERVER_NAME: mcp_server},
             allowed_tools=allowed,
             # **硬禁** Claude Code SDK 的所有内建工具 —— KB Agent 只能用我们 MCP
@@ -679,6 +698,31 @@ class _SdkError:
 
 
 # ────────────────────────────── 2.5.1 helpers ──────────────────────────────
+
+
+def _guess_prompt_lang(system_prompt: str | None) -> str:
+    """Return 'zh' if the prompt is majority CJK, else 'en'.
+
+    Used to pick which language variant of the tool-availability section to
+    append. Templates shipping with Chinese ``_STRICT_RAG_PROMPT_TEMPLATE``
+    (Phase 1, in ``templates.py``) should get the zh section so the whole
+    system prompt reads consistently; English Phase-2.5+ definition prompts
+    get the en variant.
+
+    Heuristic: count CJK characters (U+4E00–U+9FFF main block). If they
+    outnumber ASCII letters, treat as zh. ``None`` / empty falls back to en.
+    """
+    if not system_prompt:
+        return "en"
+    cjk = 0
+    ascii_letters = 0
+    for ch in system_prompt:
+        cp = ord(ch)
+        if 0x4E00 <= cp <= 0x9FFF:
+            cjk += 1
+        elif ("a" <= ch <= "z") or ("A" <= ch <= "Z"):
+            ascii_letters += 1
+    return "zh" if cjk > ascii_letters else "en"
 
 
 def _collect_evidence_from_tool(evidence, tool_name: str, result) -> None:

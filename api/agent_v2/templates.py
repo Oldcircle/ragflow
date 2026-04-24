@@ -1,11 +1,35 @@
 """Agent 模板 — 预置的 Agent 配置，可一键克隆为新会话。
 
-Phase 1 用硬编码清单；Phase 2 再支持用户自建模板 + 市场分享。
+Phase 1 用硬编码清单；Phase 2.6 v0.8 开始给每个模板填 ``suggested_tool_names``，
+让前端挑模板时能**带着工具列表**一起提交给 ``create_session`` ——否则后端会
+回落到 ``SUPERVISOR_TOOLS``（8 个 KB-only 工具），research-analyst 模板的
+``web_search`` / ``web_fetch`` 就用不上。
+
+后续 Phase 3 再支持用户自建模板 + 市场分享。
 """
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+
+# 预定义的工具组合，方便给每个模板挑合适的子集。
+_KB_READ_TOOLS = [
+    "rag_retrieve",
+    "rag_list_docs",
+    "rag_read_doc",
+    "rag_graph_query",
+    "kb_stats",
+]
+_KB_DELEGATION_AND_INTERACTION = [
+    "spawn_subagent",
+    "ask_user_question",
+    "submit_plan",
+]
+# 策略型 supervisor 默认配置（等同于 definitions/_common.py::SUPERVISOR_TOOLS）
+# —— 不直接 import 避免循环依赖，测试里有 parity 检查。
+_POLICY_SUPERVISOR_TOOLS = _KB_READ_TOOLS + _KB_DELEGATION_AND_INTERACTION
+# 研究型 supervisor：+ 公网工具（Phase 2.6 v0.7）
+_RESEARCH_SUPERVISOR_TOOLS = _POLICY_SUPERVISOR_TOOLS + ["web_search", "web_fetch"]
 
 
 @dataclass
@@ -74,6 +98,7 @@ TEMPLATES: list[AgentTemplate] = [
         ),
         default_max_turns=8,
         default_max_budget_usd=0.5,
+        suggested_tool_names=_POLICY_SUPERVISOR_TOOLS,
         kb_hints=["保障房", "住房", "配租", "深圳", "政策"],
     ),
     AgentTemplate(
@@ -90,6 +115,7 @@ TEMPLATES: list[AgentTemplate] = [
             fallback="向业务主管部门确认",
         ),
         default_max_turns=10,
+        suggested_tool_names=_POLICY_SUPERVISOR_TOOLS,
         kb_hints=["政策", "法规", "制度", "规章"],
     ),
     AgentTemplate(
@@ -110,6 +136,7 @@ TEMPLATES: list[AgentTemplate] = [
         ),
         default_max_turns=12,
         default_max_budget_usd=0.8,
+        suggested_tool_names=_POLICY_SUPERVISOR_TOOLS,
         kb_hints=["合同", "法律", "合规", "监管"],
     ),
     AgentTemplate(
@@ -131,6 +158,7 @@ TEMPLATES: list[AgentTemplate] = [
         ),
         default_max_turns=15,
         default_max_budget_usd=1.0,
+        suggested_tool_names=_RESEARCH_SUPERVISOR_TOOLS,
         kb_hints=["研报", "投资", "财报", "行业"],
     ),
     AgentTemplate(
@@ -151,6 +179,7 @@ TEMPLATES: list[AgentTemplate] = [
         ),
         default_max_turns=6,
         default_max_budget_usd=0.3,
+        suggested_tool_names=_POLICY_SUPERVISOR_TOOLS,
         kb_hints=["手册", "FAQ", "产品", "故障"],
     ),
     AgentTemplate(
@@ -167,6 +196,7 @@ TEMPLATES: list[AgentTemplate] = [
             fallback="在工单系统搜索或联系 IT/HR/行政对接人",
         ),
         default_max_turns=8,
+        suggested_tool_names=_POLICY_SUPERVISOR_TOOLS,
         kb_hints=["SOP", "制度", "流程", "手册", "Wiki"],
     ),
 ]

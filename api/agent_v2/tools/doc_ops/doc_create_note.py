@@ -251,7 +251,11 @@ async def doc_create_note(args: dict) -> dict:
         status_note="queued_for_parse",
         reason=args.get("reason"),
         next_steps=[
-            f"Wait ~30s, then rag_retrieve(kb_ids=['{kb_id}'], query='{(args.get('title') or '')[:40]}') to confirm the note was indexed",
+            (
+                "Ask the user to send 'check progress' in the next message; "
+                f"then call rag_retrieve(kb_ids=['{kb_id}'], "
+                f"query='{(args.get('title') or '')[:40]}') to confirm the note was indexed"
+            ),
             "Do NOT recreate the same note — doc_create_note dedups by (kb_id, title, content_hash)",
         ],
     )

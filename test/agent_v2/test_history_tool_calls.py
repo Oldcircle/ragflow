@@ -14,7 +14,6 @@ integration path is exercised indirectly by the endpoint once it's running.
 
 from __future__ import annotations
 
-import pytest
 
 
 class TestFormatToolCallsForHistory:

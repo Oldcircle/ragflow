@@ -17,7 +17,8 @@ from __future__ import annotations
 import ipaddress
 import logging
 import socket
-from urllib.parse import urlparse
+import time
+from urllib.parse import urljoin, urlparse
 
 from .base import get_ctx, mcp_json_response, tool  # noqa: F401 — get_ctx used in future
 
@@ -26,6 +27,8 @@ logger = logging.getLogger("ragflow.agent_v2.web_fetch")
 _ALLOWED_SCHEMES = {"http", "https"}
 _MAX_CONTENT_BYTES = 2 * 1024 * 1024  # 2 MB，给 Agent 阅读，不需要全量
 _DEFAULT_TIMEOUT_S = 15.0
+_MAX_REDIRECTS = 10
+_TRUNCATED_MARKER = "\n\n[Content truncated due to length...]"
 
 
 def _ssrf_check(url: str) -> tuple[bool, str]:
@@ -61,10 +64,40 @@ def _ssrf_check(url: str) -> tuple[bool, str]:
     return True, ""
 
 
+def _upgrade_http_to_https(url: str) -> tuple[str, bool]:
+    parsed = urlparse(url)
+    if parsed.scheme.lower() != "http":
+        return url, False
+    return parsed._replace(scheme="https").geturl(), True
+
+
+def _strip_www(hostname: str) -> str:
+    return hostname[4:] if hostname.startswith("www.") else hostname
+
+
+def _is_permitted_redirect(original_url: str, redirect_url: str) -> bool:
+    """Allow same host redirects, including add/remove ``www.`` only."""
+    try:
+        original = urlparse(original_url)
+        redirect = urlparse(redirect_url)
+    except Exception:
+        return False
+    if original.scheme != redirect.scheme:
+        return False
+    if (original.port or "") != (redirect.port or ""):
+        return False
+    if redirect.username or redirect.password:
+        return False
+    if not original.hostname or not redirect.hostname:
+        return False
+    return _strip_www(original.hostname) == _strip_www(redirect.hostname)
+
+
 def _html_to_markdown(html: str) -> tuple[str, str]:
-    """返回 ``(title, markdown)``。尽量轻量，失败就返原文纯文本。"""
+    """返回 ``(title, markdown)``，尽量保留标题 / 列表 / 链接 / 代码块结构。"""
     try:
         from bs4 import BeautifulSoup
+        from markdownify import markdownify as md
 
         soup = BeautifulSoup(html, "html.parser")
         title = (soup.title.string.strip() if soup.title and soup.title.string else "")
@@ -72,12 +105,16 @@ def _html_to_markdown(html: str) -> tuple[str, str]:
         # 去脚本 / 样式 / 注释
         for tag in soup(["script", "style", "noscript", "header", "footer", "nav"]):
             tag.decompose()
-        # 主要文本
         main = soup.find("main") or soup.find("article") or soup.body or soup
-        text = main.get_text("\n", strip=True)
-        # 折叠多空行
-        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-        return title, "\n".join(lines)
+        markdown = md(
+            str(main),
+            heading_style="ATX",
+            bullets="-",
+            strip=["script", "style", "noscript"],
+        )
+        lines = [ln.rstrip() for ln in markdown.splitlines()]
+        compact = "\n".join(lines).strip()
+        return title, compact
     except Exception as e:
         logger.warning("html_to_markdown fallback due to: %s", e)
         return "", html
@@ -97,9 +134,12 @@ def _html_to_markdown(html: str) -> tuple[str, str]:
         "- Content is truncated to 2 MB — do not assume exhaustive coverage.\n"
         "- Private / loopback / link-local hosts are refused for security "
         "(SSRF defense). Only http(s) on public IPs.\n"
+        "- http:// URLs are upgraded to https://. Cross-host redirects are "
+        "blocked and returned as `redirect_blocked`; fetch the redirected URL "
+        "only after the user explicitly agrees.\n"
         "- The fetched text is transient reading material; you cannot cite "
         "it with [N] (those markers are reserved for KB chunks). Cite the URL "
-        "inline instead.\n"
+        "inline or in a `Sources:` section instead.\n"
         "- Do NOT use this to ingest content into the KB; that's "
         "`doc_upload_from_url` (write + plan-gated)."
     ),
@@ -132,28 +172,44 @@ async def web_fetch(args: dict) -> dict:
       - truncated: bool — whether original was larger than limit
       - error?: str (on failure)
     """
+    start = time.perf_counter()
+
+    def fail(error_code: str, message: str, **extra) -> dict:
+        return mcp_json_response(
+            {
+                "error": message,
+                "error_code": error_code,
+                "duration_ms": int((time.perf_counter() - start) * 1000),
+                **extra,
+            }
+        )
+
     get_ctx()  # enforce Runner context
 
     url = str(args.get("url", "")).strip()
     if not url:
-        return mcp_json_response({"error": "url must be non-empty"})
+        return fail("validation_error", "url must be non-empty")
 
-    ok, reason = _ssrf_check(url)
+    fetch_url, upgraded_from_http = _upgrade_http_to_https(url)
+
+    ok, reason = _ssrf_check(fetch_url)
     if not ok:
-        return mcp_json_response({"error": reason, "url": url})
+        return fail("security_error", reason, url=url)
 
     timeout_s = min(max(float(args.get("timeout_s", _DEFAULT_TIMEOUT_S)), 1.0), 60.0)
 
     try:
         import httpx
     except ImportError:
-        return mcp_json_response(
-            {"error": "httpx_missing: `uv pip install httpx`", "url": url}
+        return fail(
+            "dependency_missing",
+            "httpx_missing: `uv pip install httpx`",
+            url=url,
         )
 
     try:
         async with httpx.AsyncClient(
-            follow_redirects=True,
+            follow_redirects=False,
             timeout=timeout_s,
             headers={
                 "User-Agent": (
@@ -162,21 +218,61 @@ async def web_fetch(args: dict) -> dict:
                 )
             },
         ) as client:
-            resp = await client.get(url)
+            current_url = fetch_url
+            redirect_count = 0
+            while True:
+                resp = await client.get(current_url)
+                if resp.status_code not in (301, 302, 303, 307, 308):
+                    break
+
+                location = resp.headers.get("location")
+                if not location:
+                    return fail(
+                        "redirect_error",
+                        "redirect_missing_location",
+                        url=url,
+                        status_code=resp.status_code,
+                    )
+                next_url = urljoin(str(resp.url or current_url), location)
+                if not _is_permitted_redirect(current_url, next_url):
+                    return fail(
+                        "redirect_blocked",
+                        "redirect_blocked: cross-host redirects require explicit user approval",
+                        url=url,
+                        redirect_url=next_url,
+                        status_code=resp.status_code,
+                    )
+                ok, reason = _ssrf_check(next_url)
+                if not ok:
+                    return fail(
+                        "security_error",
+                        reason,
+                        url=url,
+                        redirect_url=next_url,
+                    )
+                redirect_count += 1
+                if redirect_count > _MAX_REDIRECTS:
+                    return fail(
+                        "redirect_error",
+                        f"too_many_redirects: exceeded {_MAX_REDIRECTS}",
+                        url=url,
+                    )
+                current_url = next_url
     except httpx.TimeoutException:
-        return mcp_json_response({"error": "timeout", "url": url})
+        return fail("timeout", "timeout", url=url)
     except httpx.HTTPError as e:
-        return mcp_json_response(
-            {"error": f"http_error: {type(e).__name__}: {e}", "url": url}
+        return fail(
+            "network_error",
+            f"http_error: {type(e).__name__}: {e}",
+            url=url,
         )
 
     if resp.status_code >= 400:
-        return mcp_json_response(
-            {
-                "error": f"http_{resp.status_code}",
-                "url": url,
-                "status_code": resp.status_code,
-            }
+        return fail(
+            "http_error",
+            f"http_{resp.status_code}",
+            url=url,
+            status_code=resp.status_code,
         )
 
     ctype = resp.headers.get("content-type", "")
@@ -196,21 +292,31 @@ async def web_fetch(args: dict) -> dict:
         title = ""
         content = raw.decode(resp.encoding or "utf-8", errors="replace")
     else:
-        return mcp_json_response(
-            {
-                "error": f"unsupported_content_type: {ctype}",
-                "url": url,
-            }
+        return fail(
+            "unsupported_content_type",
+            f"unsupported_content_type: {ctype}",
+            url=url,
         )
+
+    if truncated:
+        content = content.rstrip() + _TRUNCATED_MARKER
 
     return mcp_json_response(
         {
             "url": str(resp.url),
+            "requested_url": url,
+            "upgraded_from_http": upgraded_from_http,
             "title": title,
             "content": content,
             "length": len(content.encode("utf-8")),
             "truncated": truncated,
             "content_type": ctype,
             "status_code": resp.status_code,
+            "duration_ms": int((time.perf_counter() - start) * 1000),
+            "citation_policy": (
+                "If using this fetched page in the final answer, cite the URL "
+                "inline or in a `Sources:` section. Do not use KB [N] "
+                "citation markers for web sources."
+            ),
         }
     )

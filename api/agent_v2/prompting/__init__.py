@@ -22,6 +22,7 @@ from .builder import (  # noqa: F401
     build_subagent_prompt,
     build_supervisor_prompt,
     build_tool_description,
+    render_tool_availability_section,
 )
 
 __all__ = [
@@ -31,4 +32,5 @@ __all__ = [
     "build_subagent_prompt",
     "build_supervisor_prompt",
     "build_tool_description",
+    "render_tool_availability_section",
 ]

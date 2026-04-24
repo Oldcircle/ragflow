@@ -37,6 +37,12 @@ class TestSubArchivistDefinition:
         assert "ask_user_question" in d.tools
         assert "submit_plan" in d.tools
 
+    def test_prompt_forbids_background_wakeup_for_async_ops(self):
+        d = get_definition("sub_archivist")
+        assert "There is no background wake-up" in d.system_prompt
+        assert "Send \"check progress\" in your next message" in d.system_prompt
+        assert "Do not imply an automatic scheduled follow-up" in d.system_prompt
+
     def test_cannot_spawn_further_subagents(self):
         d = get_definition("sub_archivist")
         assert d.can_spawn_subagents is False

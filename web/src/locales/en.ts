@@ -208,6 +208,8 @@ export default {
       startFromTemplate: 'Start from template (optional)',
       templateHint:
         'Picks a vetted system prompt + sensible defaults. You still choose KB + model.',
+      templateWebEnabled: '🌐 Web enabled',
+      templateToolCount: '{{count}} tools',
       systemPrompt: 'System prompt',
       maxTurns: 'Max agent turns',
       maxBudget: 'Max budget (USD)',
