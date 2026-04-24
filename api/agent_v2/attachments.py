@@ -25,7 +25,10 @@ import xxhash
 logger = logging.getLogger("ragflow.agent_v2.attachments")
 
 
-AGENT_V2_ATTACHMENT_BUCKET = "agent_v2_attachments"
+# Bucket name follows DNS-compliant S3 naming rules (3-63 chars, lowercase,
+# digits / hyphens only, no underscores). Some S3-compatible backends (e.g.
+# stricter MinIO variants) reject underscores at region-lookup time.
+AGENT_V2_ATTACHMENT_BUCKET = "agent-v2-attachments"
 
 # 对齐 PLAN-attachments.md §7 & §一 — 单文件 50 MB；注意 HTTP 层可能会先
 # 命中 Flask/Quart 的 MAX_CONTENT_LENGTH 拒绝，这里做第二道防御。

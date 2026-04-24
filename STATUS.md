@@ -4,6 +4,71 @@
 
 ---
 
+## 最近更新：2026-04-25（Phase 2.7 **v0.10 完整落地** — 附件协议 + 下载-验证-归档）
+
+**当前阶段**：Phase 2.7 全 5 stage 闭环，两个核心用户场景端到端可用。
+
+### 落地总览
+
+| Stage | 内容 | 关键文件 |
+|---|---|---|
+| 1 | DB + HTTP + ToolContext 附件基础设施 | `db_models.AgentV2Attachment` / `AgentV2AttachmentService` / `POST-GET-DELETE /v1/agent_v2/session/<id>/attachments` / `api/agent_v2/attachments.py` |
+| 2 | 2 新 MCP 工具 | `doc_archive_attachment` (sub_archivist, plan_gated) + `web_fetch_to_attachment` (sub_archivist, openWorld) |
+| 3 | `submit_plan.preview` 扩展 | 8KB markdown_excerpt + 前端 `pending-plan-card` 折叠渲染 |
+| 4 | 前端 composer 附件 UI | 📎 按钮 + drag-drop + `AttachmentChip` + `useAttachments` hook |
+| 5 | 真机 smoke + 文档 | 两 smoke 脚本 + G13 8 个人工用例 + FORK.md v0.10 |
+
+### 两个场景端到端
+
+**场景 1 — 用户上传 → Agent 归档**：
+```
+composer 拖 PDF → POST /attachments（MinIO + DB staged 行 + 8KB preview）
+→ 用户："归档到 XX KB" → POST /conversation（send_message 自动扫 staged 附件注入 ctx）
+→ supervisor 看到 "# 会话附件" 段 → spawn_subagent(sub_archivist)
+→ archivist: submit_plan(preview=attachment.preview_text[:2000])
+→ 前端 plan card 弹可折叠预览
+→ 用户批准 → get_pending_plan → doc_archive_attachment → KB
+```
+
+**场景 2 — URL 下载 → 用户验证 → 归档**（与场景 1 共用最后一步）：
+```
+用户："把 https://... 归档" → supervisor spawn sub_archivist
+→ archivist: web_fetch_to_attachment(url)（SSRF 三段防御 + redirect 白名单 + markdownify）
+→ submit_plan(preview={kind:"markdown_excerpt", excerpt, source_ref: url})
+→ 用户批准 → doc_archive_attachment（复用）
+```
+
+### 关键设计决策（对齐 claude-code-ref）
+
+1. **Attachment 作独立 message type** — 对齐 `attachments.ts:3675` 的 60+ 子类型
+2. **复用 submit_plan + plan_gate 作 staging** — ref 全库无 PendingQueue 抽象
+3. **场景 1 / 2 共用 `doc_archive_attachment`** — 两场景最后一步相同
+4. **图片走 OCR 路径**（不走 Vision inline）— 持久可检索；`FileType.VISUAL` 交给上游 PaddleOCR/MinerU
+5. **MinIO bucket 重命名** `agent_v2_attachments` → `agent-v2-attachments`（S3 DNS-compliant naming）
+
+### 验证
+
+- **自动化测试**：`pytest test/agent_v2/` → **452 pass / 8 skip**（376 → +76）
+  - `test_attachments.py` 36 / `test_doc_archive_attachment.py` 17 / `test_web_fetch_to_attachment.py` 11 / `test_submit_plan_preview.py` 12
+- **lint**：`uvx ruff check api/ test/ scripts/` clean
+- **前端**：`npm run lint` clean + `npm run build` 51.6s OK
+- **真机 smoke（DeepSeek）**：
+  - `scripts/smoke_attachment_archive.py` → **PASS ✓**（上传 → staged → supervisor 看到 → spawn archivist）
+  - `scripts/smoke_web_download_archive.py` → **PASS ✓**（URL 归档指令 → supervisor clarify → confirm → spawn archivist）
+- **人工用例**：TEST-MANUAL-v0.4.md 加 G13（8 个用例，P0-P2）
+
+### 工具总数
+
+20 → **22**（新 `doc_archive_attachment` + `web_fetch_to_attachment`）
+
+### 下一步入口
+
+1. （可选）真机手工跑 G13-004 / G13-005 端到端，拿到一份 archive 成功的截图
+2. （可选）子 agent 事件 bubble up 机制完善——smoke 2 无法看到子 archivist 的 `plan_submitted` 事件（spawn_subagent 只 merge text_delta / subagent_start/end，不 merge 所有 tool_call 事件），不影响生产但 smoke 观测度有限
+3. （可选）OCR pipeline 深度集成——当前图片附件走 `FileType.VISUAL` 依赖 tenant 的 PaddleOCR/MinerU 配置；v0.11 可考虑 `doc_archive_attachment` 里同步拉 OCR 并写 markdown 子文档
+
+---
+
 ## 最近更新：2026-04-25（Phase 2.7 立项：附件协议 + 下载-验证-归档，设计定版）
 
 **触发**：用户提了两个场景——

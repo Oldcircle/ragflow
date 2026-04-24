@@ -784,6 +784,110 @@ G1（冒烟 10min）
 
 ---
 
+## G13. 附件归档（Phase 2.7）
+
+两个核心场景——用户拖文件 / Agent 下载 URL —— 都经 `submit_plan(preview=...)`
++ `doc_archive_attachment` 入库。后端已 smoke 通过（`scripts/smoke_attachment_
+archive.py` + `scripts/smoke_web_download_archive.py`）。本组验证 UI + E2E。
+
+### [ ] G13-001 composer 文件选择器上传 — **P1**
+
+- **前置**：登录 + 选一个 session + 该 session kb 有 CONTRIBUTOR 权限
+- **步骤**：
+  1. 进入 `/agent-chat`，选中一个 session
+  2. 点 composer 左下角 📎 按钮
+  3. 选一份 pdf / md / docx 文件
+- **预期**：
+  - 上传进度条 chip 出现（百分比动画）
+  - 上传完成后 chip 变绿 ✓
+  - chip 右上角 × 按钮可点击撤销
+- **备注**：
+
+### [ ] G13-002 drag-drop 附件上传 — **P1**
+
+- **步骤**：
+  1. 从 Finder / 资源管理器拖一份文件到 composer 区域
+  2. 拖入时边框应染 accent 色 + 浮动提示 "松开鼠标上传附件"
+- **预期**：
+  - 边框颜色切换流畅（不闪烁）
+  - 松开鼠标触发上传；chip 出现
+- **备注**：
+
+### [ ] G13-003 大文件 / 非法 MIME 拒绝 — **P1** 🔒 安全
+
+- **步骤**：
+  1. 尝试上传 > 50 MB 文件 → 应 toast "too_large: ..."
+  2. 尝试上传 `.exe` 或 `.dmg` → 应 toast "unsupported_mime: ..."
+  3. 检查 MinIO `agent-v2-attachments` bucket，应**没有**对应 blob
+- **预期**：拒绝即时、toast 文案清楚、blob 零泄漏
+- **备注**：
+
+### [ ] G13-004 场景 1 端到端 — 用户上传 + 归档 — **P0** 🔴 需 LLM
+
+- **前置**：session 有 sub_archivist 可派（保障房 / 研究 等模板都可）
+- **步骤**：
+  1. 拖一份 PDF / md 到 composer
+  2. 输入 "把这份归档到 <KB 名>" → Enter
+  3. 观察 SSE 流：
+     - supervisor 调 `spawn_subagent(subagent_type='sub_archivist', ...)`
+     - plan card 出现，**含可折叠"内容预览"段**
+     - 折叠展开应看到附件前 8KB 文本
+  4. 点"批准" → 触发 `[plan approved]` 下一轮
+  5. sub_archivist 应调 `get_pending_plan` + `doc_archive_attachment`
+  6. 最终 Agent 回"归档完成，doc_id=..."
+- **预期**：
+  - 附件 status 从 `staged` → `archived`
+  - 目标 KB 多出一份新文档
+  - audit_log 有 `agent_v2.attachment_upload` + `kb.doc.archive_attachment` 两条
+- **备注**：
+
+### [ ] G13-005 场景 2 端到端 — URL 下载 + 归档 — **P0** 🔴 需 LLM + 公网
+
+- **前置**：支持联网的 session（research-analyst 或 supervisor 有 spawn_subagent
+  + sub_archivist 能拿 web_fetch_to_attachment）
+- **步骤**：
+  1. 输入 "把 https://example.gov.cn/policy.pdf 归档到 XX KB" → Enter
+  2. 观察：supervisor → spawn sub_archivist
+  3. sub_archivist 调 `web_fetch_to_attachment(url=...)`
+  4. 弹 plan card（preview 节选显示网页头几段）
+  5. 点 批准 → doc_archive_attachment 入库
+- **预期**：
+  - 跨 host redirect 会被挡，chat 里显示 "redirect_blocked" + 新 URL 让用户决定
+  - 无 Tavily API key 时 web_search 拒绝但 **web_fetch_to_attachment 照跑**（两个独立工具）
+- **备注**：
+
+### [ ] G13-006 重复上传 dedup — **P2**
+
+- **步骤**：同一文件拖两次
+- **预期**：
+  - 第二次响应的 attachment_id **与第一次相同**（per-tenant xxh128 dedup）
+  - Chip 列表没重复
+  - MinIO blob 只有 1 份
+- **备注**：
+
+### [ ] G13-007 图片上传占位 — **P2**
+
+- **步骤**：拖一张 .jpg / .png
+- **预期**：
+  - chip 的 preview_text 显示 `[image, OCR pending at archive time]`
+  - plan card preview 段显示同样占位
+  - 归档后：若 tenant 有 PaddleOCR / MinerU 配置，30-60s 后 rag_retrieve 可召回 OCR 文本；否则 next_steps 里 Agent 应警告
+- **备注**：
+
+### [ ] G13-008 24h TTL 过期清理 — **P2**（需时间窗口或手工 SQL）
+
+- **步骤**：
+  1. 上传一份附件但不归档（保持 staged）
+  2. 手工 `UPDATE agent_v2_attachment SET expires_at = <过期 timestamp>`
+  3. 触发 cron（或手调 `AgentV2AttachmentService.mark_expired_stale`）
+- **预期**：
+  - status → `expired`
+  - Composer 下次刷新 session 时 chip 列表不显示该行
+  - MinIO blob 可由 GC 脚本（Phase 3）清理
+- **备注**：
+
+---
+
 ## 已被自动化覆盖可 skip 的
 
 见 `test/agent_v2/`（229 passed / 8 skipped），以下纯逻辑**人工可 skip**：
