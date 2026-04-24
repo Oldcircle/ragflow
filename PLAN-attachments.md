@@ -48,7 +48,38 @@ ref `src/constants/apiLimits.ts` 的关键常量：
 | PDF 页数 | 100 页 | **500 页** | KB 场景常见大政策 |
 | Preview text 大小 | N/A | **8 KB** | Plan card UI 展示上限 |
 
-**MIME 白名单**（更严）：`pdf / docx / doc / xlsx / xls / pptx / ppt / md / txt / csv / json / html`。图片走 OCR 先不接（以后加 `doc_from_image`）。
+**MIME 白名单**（v0.9 决议更新后）：`pdf / docx / doc / xlsx / xls / pptx / ppt / md / txt / csv / json / html` + **图片** `jpg / jpeg / png / webp / gif`（走 OCR 路径，见本节下）。
+
+### 图片支持：走 OCR 不走 Vision
+
+**决策依据**（深扒 `claude-code-ref` + 上游 RAGFlow 得出）：
+
+| 路径 | 做法 | 适用场景 |
+|---|---|---|
+| 🔴 不用 | **Vision inline** — 图片 base64 送 LLM 看像素 | Claude Code 用这个（代码 agent 实时看截图）|
+| 🟢 用 | **OCR 抽文本** — PaddleOCR / MinerU → markdown → 入库可检索 | 我们的 KB 归档场景 |
+
+**理由**：KB 归档 = **持久可检索存储**。Vision 路径每次都要模型看像素（成本高 + 不可 rag_retrieve）；OCR 路径一次抽文本持久化，后续所有查询都走 `rag_retrieve` 廉价。
+
+**RAGFlow 侧现状**：
+- `rag/llm/ocr_model.py` 已集成 **PaddleOCR**（轻量离线）+ **MinerU**（高精度复杂布局）
+- `deepdoc/vision/` 有完整 OCR pipeline
+- 但 `FileService.upload_document` 对直接上传的 `.jpg/.png` **只生成缩略图**、**不 OCR 入库**（上游只对 PDF 内嵌图片 OCR）—— 我们要补这条路径
+
+**实施策略**（放在 Stage 2 `doc_archive_attachment` 里）：
+1. 上传阶段（Stage 1）：图片正常存 MinIO，status=staged，**不做 OCR**
+2. Preview 阶段（Stage 1）：图片的 `preview_text` 字段先存"[image, OCR pending]"
+3. Archive 阶段（Stage 2 `doc_archive_attachment`）：
+   - 检测 `mime_type.startswith("image/")` 时分流
+   - 调 `PaddleOCRParser` 抽文本（同步，通常 <3s）
+   - 创建 **markdown Document**（内容 = OCR 文本 + 顶部元信息 "[source: 原始文件名.jpg, hash=xxx]"）
+   - 把原始图片的 MinIO path 存到 Document.meta_fields.source_blob（审计 / 日后重跑 OCR 用）
+   - status → archived
+4. Tenant 配置：`ocr_engine = paddleocr (默认) | mineru | vision_llm`（后两者按需）
+
+**Size / Count 上限**：图片沿用单文件 50 MB 上限；但**建议用户压缩后再传**（提示"大于 5 MB 可能 OCR 慢"）。
+
+**工作量**：在 Stage 2 加 OCR 分支 **+2h**；Stage 5 smoke 加图片用例 **+0.5h**。总工时从 11-15h → **13.5-17.5h**。
 
 ---
 

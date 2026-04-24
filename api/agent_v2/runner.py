@@ -86,6 +86,7 @@ class AgentRunner:
         citation_numeric_strict: bool = True,
         pending_plan_status: str | None = None,
         pending_plan_id: str | None = None,
+        attachments: tuple = (),
     ):
         if not tenant_id:
             raise AgentError("tenant_id is required")
@@ -115,6 +116,10 @@ class AgentRunner:
         self.pending_plan_status = pending_plan_status
         self.pending_plan_id = pending_plan_id
 
+        # Phase 2.7 — attachments snapshot (tuple[AttachmentInfo, ...]).
+        # Populated by the HTTP layer right before run(); None-safe.
+        self.attachments = tuple(attachments or ())
+
         # 子发事件会 emit 到这个 queue，父在 run() loop 里把它们穿插进自己的 SDK 流
         self._event_bus: asyncio.Queue[ev.Event] | None = None
 
@@ -142,17 +147,27 @@ class AgentRunner:
         # 里捞 Gmail/Drive/LSP/Skill/Bash 等 Claude 产品线工具幻觉出来。
         # lang 基于 system_prompt 含中英文比例粗判（保障房模板是中文老 prompt，
         # 研究 / 法务等 Phase 2.5+ 模板是英文新 prompt）。
+        from .attachments import render_attachments_prompt_section
         from .prompting import render_tool_availability_section
 
         lang = _guess_prompt_lang(self.system_prompt)
         tool_section = render_tool_availability_section(
             self.tool_names, lang=lang
         )
-        full_system_prompt = (
-            (self.system_prompt or "").rstrip() + "\n\n---\n\n" + tool_section
-            if self.system_prompt
-            else tool_section
+
+        # Phase 2.7 — 附件段（仅在 session 有 staged/archived 附件时渲染）。
+        # 对齐 claude-code-ref `getPlanModeAttachments` 的思路：per-turn 一次
+        # 动态注入，保持段落结构稳定、工具清单不随 attachment 变动。
+        attachments_section = render_attachments_prompt_section(
+            self.attachments, lang=lang
         )
+
+        pieces = [self.system_prompt.rstrip() if self.system_prompt else ""]
+        if tool_section:
+            pieces.append("\n---\n\n" + tool_section)
+        if attachments_section:
+            pieces.append("\n---\n" + attachments_section)
+        full_system_prompt = "".join(pieces)
 
         return ClaudeAgentOptions(
             model=self.model.model,
@@ -275,6 +290,7 @@ class AgentRunner:
             pending_plan_status=self.pending_plan_status,
             pending_plan_id=self.pending_plan_id,
             plan_submitted_this_turn=False,
+            attachments=self.attachments,
         )
         token = set_ctx(ctx)
 

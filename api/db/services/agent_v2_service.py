@@ -9,7 +9,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from api.db.db_models import DB, AgentV2Message, AgentV2Session, AgentV2ToolCall
+from api.db.db_models import (
+    DB,
+    AgentV2Attachment,
+    AgentV2Message,
+    AgentV2Session,
+    AgentV2ToolCall,
+)
 from api.db.services.common_service import CommonService
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, datetime_format
@@ -444,3 +450,222 @@ class AgentV2ToolCallService(CommonService):
             .order_by(cls.model.start_time.asc())
         )
         return list(q.dicts())
+
+
+# ────────────────────────────── Attachment (Phase 2.7) ──────────────────────────────
+
+
+# 默认 staged 附件 TTL — 24 小时；cron 扫过期行清 MinIO blob + DB row。
+# 对齐 PLAN-attachments.md §7 "Safety limits" / §11 决策 log。
+_ATTACHMENT_DEFAULT_TTL_MS = 24 * 60 * 60 * 1000
+
+
+class AgentV2AttachmentService(CommonService):
+    model = AgentV2Attachment
+
+    # ─────────── write paths ───────────
+
+    @classmethod
+    @DB.connection_context()
+    def create_staged(
+        cls,
+        *,
+        session_id: str,
+        tenant_id: str,
+        uploaded_by: str,
+        filename: str,
+        mime_type: str,
+        size_bytes: int,
+        hash_xxh128: str,
+        blob_path: str,
+        origin: str = "upload",
+        source_url: str | None = None,
+        preview_text: str | None = None,
+        ttl_ms: int = _ATTACHMENT_DEFAULT_TTL_MS,
+    ) -> AgentV2Attachment:
+        """Insert a new attachment row in status='staged'.
+
+        Caller is responsible for uploading the blob to MinIO **before** this
+        call — on DB failure the blob becomes orphan; the cron sweeper (not
+        yet wired) will GC orphans by scanning MinIO vs DB.
+        """
+        if not all([session_id, tenant_id, uploaded_by, filename, blob_path]):
+            raise ValueError(
+                "session_id / tenant_id / uploaded_by / filename / blob_path "
+                "are all required"
+            )
+        if origin not in ("upload", "web_fetch", "agent_generated"):
+            raise ValueError(f"invalid origin={origin!r}")
+        if size_bytes < 0:
+            raise ValueError(f"negative size_bytes={size_bytes}")
+
+        now = current_timestamp()
+        row = cls.model.create(
+            id=get_uuid(),
+            session_id=session_id,
+            tenant_id=tenant_id,
+            uploaded_by=uploaded_by,
+            filename=filename[:255],
+            mime_type=mime_type[:100],
+            size_bytes=size_bytes,
+            hash_xxh128=hash_xxh128[:32],
+            blob_path=blob_path[:500],
+            origin=origin,
+            source_url=(source_url or "")[:2048] if source_url else None,
+            preview_text=preview_text or "",
+            status="staged",
+            expires_at=now + ttl_ms if ttl_ms > 0 else None,
+            **_now_meta(),
+        )
+        return row
+
+    @classmethod
+    @DB.connection_context()
+    def mark_archived(
+        cls,
+        *,
+        attachment_id: str,
+        doc_id: str,
+        kb_id: str,
+    ) -> bool:
+        """Flip status → archived + record target doc / kb. Idempotent: calling
+        twice with the same doc_id is a noop (returns True)."""
+        row = cls.model.select().where(cls.model.id == attachment_id).first()
+        if not row:
+            return False
+        if row.status == "archived" and row.archived_doc_id == doc_id:
+            return True
+        row.status = "archived"
+        row.archived_doc_id = doc_id
+        row.archived_kb_id = kb_id
+        row.archived_at = current_timestamp()
+        row.expires_at = None  # archived rows never expire
+        row.update_time = current_timestamp()
+        row.update_date = datetime_format(datetime.now())
+        row.save()
+        return True
+
+    @classmethod
+    @DB.connection_context()
+    def reject(cls, *, attachment_id: str) -> bool:
+        """User-initiated rejection; cron will GC the blob. Returns False if
+        row not found or already terminal (archived/rejected/expired)."""
+        row = cls.model.select().where(cls.model.id == attachment_id).first()
+        if not row:
+            return False
+        if row.status in ("archived", "rejected", "expired"):
+            return False
+        row.status = "rejected"
+        row.update_time = current_timestamp()
+        row.update_date = datetime_format(datetime.now())
+        row.save()
+        return True
+
+    @classmethod
+    @DB.connection_context()
+    def mark_expired_stale(cls, *, now_ms: int | None = None) -> int:
+        """Cron entry — flip all staged rows past expires_at to status=expired.
+        Returns count flipped. Caller should separately GC the MinIO blobs
+        (walking expired rows)."""
+        cutoff = now_ms if now_ms is not None else current_timestamp()
+        q = cls.model.update(
+            status="expired",
+            update_time=current_timestamp(),
+            update_date=datetime_format(datetime.now()),
+        ).where(
+            (cls.model.status == "staged")
+            & (cls.model.expires_at.is_null(False))
+            & (cls.model.expires_at < cutoff)
+        )
+        return q.execute()
+
+    # ─────────── read paths ───────────
+
+    @classmethod
+    @DB.connection_context()
+    def get_by_id(cls, attachment_id: str) -> AgentV2Attachment | None:
+        return cls.model.select().where(cls.model.id == attachment_id).first()
+
+    @classmethod
+    @DB.connection_context()
+    def find_by_hash(
+        cls, *, tenant_id: str, hash_xxh128: str, reusable_statuses: tuple[str, ...] = ("staged", "archived")
+    ) -> AgentV2Attachment | None:
+        """Tenant-scoped hash lookup for dedupe. Matches staged (= pending
+        user approval) and archived (= already in KB, same content should not
+        re-upload). Rejected / expired rows are NOT dedupe candidates."""
+        return (
+            cls.model.select()
+            .where(
+                (cls.model.tenant_id == tenant_id)
+                & (cls.model.hash_xxh128 == hash_xxh128)
+                & (cls.model.status.in_(list(reusable_statuses)))
+            )
+            .order_by(cls.model.create_time.desc())
+            .first()
+        )
+
+    @classmethod
+    @DB.connection_context()
+    def find_by_source_url(
+        cls, *, tenant_id: str, source_url: str, ttl_ms: int = 24 * 60 * 60 * 1000
+    ) -> AgentV2Attachment | None:
+        """Dedupe per tenant + URL within TTL window. Used by
+        `web_fetch_to_attachment` to avoid re-downloading the same URL."""
+        cutoff = current_timestamp() - ttl_ms
+        return (
+            cls.model.select()
+            .where(
+                (cls.model.tenant_id == tenant_id)
+                & (cls.model.source_url == source_url)
+                & (cls.model.status.in_(["staged", "archived"]))
+                & (cls.model.create_time >= cutoff)
+            )
+            .order_by(cls.model.create_time.desc())
+            .first()
+        )
+
+    @classmethod
+    @DB.connection_context()
+    def list_by_session(
+        cls,
+        *,
+        session_id: str,
+        statuses: tuple[str, ...] | None = ("staged", "archived"),
+        limit: int = 50,
+    ) -> list[AgentV2Attachment]:
+        """Return attachments for a session, default excluding rejected /
+        expired which are cleanup states. Orders by create_time asc so the
+        UI reads chronologically."""
+        q = cls.model.select().where(cls.model.session_id == session_id)
+        if statuses:
+            q = q.where(cls.model.status.in_(list(statuses)))
+        return list(q.order_by(cls.model.create_time.asc()).limit(limit))
+
+    @classmethod
+    @DB.connection_context()
+    def count_staged_for_session(cls, session_id: str) -> int:
+        return (
+            cls.model.select()
+            .where(
+                (cls.model.session_id == session_id)
+                & (cls.model.status == "staged")
+            )
+            .count()
+        )
+
+    @classmethod
+    @DB.connection_context()
+    def total_staged_bytes_for_session(cls, session_id: str) -> int:
+        from peewee import fn
+
+        row = (
+            cls.model.select(fn.COALESCE(fn.SUM(cls.model.size_bytes), 0).alias("total"))
+            .where(
+                (cls.model.session_id == session_id)
+                & (cls.model.status == "staged")
+            )
+            .dicts()
+            .first()
+        )
+        return int(row.get("total") or 0) if row else 0

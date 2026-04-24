@@ -59,6 +59,16 @@ class ToolContext:
     subagent_count_this_turn: int = 0
     """本次顶层 turn 已派出的子数；用于限流（v1 每 turn 最多 3 个）."""
 
+    # ────────── Phase 2.7 — Attachments ──────────
+    attachments: tuple = ()
+    """Session-scoped attachments snapshot (tuple[AttachmentInfo, ...]).
+
+    Read-only view populated by ``agent_v2_app.send_message`` at turn boundary.
+    Tools that need to access full attachment content or mutate status go
+    through ``AgentV2AttachmentService`` — this tuple is just for prompt
+    display + targeted tool lookup (e.g. ``doc_archive_attachment(id=...)``).
+    """
+
     event_emitter: Callable[[Any], Awaitable[None]] | None = None
     """把事件推回父 SSE 流的回调；None 时默认丢弃."""
 

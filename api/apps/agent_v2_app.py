@@ -18,6 +18,7 @@ from quart import Response, request
 
 from api.apps import current_user, login_required
 from api.db.services.agent_v2_service import (
+    AgentV2AttachmentService,
     AgentV2MessageService,
     AgentV2SessionService,
     AgentV2ToolCallService,
@@ -250,6 +251,262 @@ async def delete_session(session_id: str):
         return server_error_response(e)
 
 
+# ────────────────────────────────────── Attachments (Phase 2.7 Stage 1) ──────────────────────────────────────
+
+
+def _attachment_dict(row) -> dict:
+    """Serialize an AgentV2Attachment row for the HTTP client. Preview is
+    intentionally truncated here even though the DB may hold up to ~8KB —
+    the UI shows a collapsed chip, full preview is rendered on plan card."""
+    return {
+        "id": row.id,
+        "session_id": row.session_id,
+        "filename": row.filename,
+        "mime_type": row.mime_type,
+        "size_bytes": row.size_bytes,
+        "hash_xxh128": row.hash_xxh128,
+        "origin": row.origin,
+        "source_url": row.source_url,
+        "preview_text": row.preview_text,
+        "status": row.status,
+        "archived_doc_id": row.archived_doc_id,
+        "archived_kb_id": row.archived_kb_id,
+        "archived_at": row.archived_at,
+        "expires_at": row.expires_at,
+        "create_time": row.create_time,
+    }
+
+
+@manager.route("/session/<session_id>/attachments", methods=["POST"])  # noqa: F821
+@login_required
+async def upload_session_attachment(session_id: str):
+    """Multipart upload one or more attachments to a session.
+
+    Response shape::
+
+        {"uploaded": [{attachment}, ...], "rejected": [{"filename": ..., "reason": ...}]}
+
+    Dedupe semantics:
+    - Same tenant + same xxh128 hash → returns the existing attachment (status
+      staged or archived). Client sees the same row in ``uploaded``; the
+      frontend chip doesn't distinguish new vs dedup.
+    """
+    from common import settings
+
+    from api.agent_v2.attachments import (
+        AGENT_V2_ATTACHMENT_BUCKET,
+        MAX_ATTACHMENT_SIZE_BYTES,
+        MAX_SESSION_STAGED_BYTES,
+        MAX_SESSION_STAGED_COUNT,
+        MIME_WHITELIST,
+        extract_preview,
+        hash_content,
+        object_key,
+        resolve_mime_type,
+    )
+    from api.db.services.audit_log_service import AuditLogService
+
+    try:
+        session = AgentV2SessionService.get_by_id(session_id)
+        if not session or session.tenant_id != current_user.id:
+            return get_data_error_result(message="session not found")
+
+        files = await request.files
+        file_list = files.getlist("file") if "file" in files else []
+        if not file_list:
+            return get_json_result(
+                code=RetCode.ARGUMENT_ERROR,
+                message="no file part — use multipart form field 'file'",
+            )
+
+        # Quota checks at session level
+        existing_count = AgentV2AttachmentService.count_staged_for_session(session_id)
+        if existing_count >= MAX_SESSION_STAGED_COUNT:
+            return get_json_result(
+                code=RetCode.ARGUMENT_ERROR,
+                message=f"session already has {existing_count} staged attachments "
+                f"(max {MAX_SESSION_STAGED_COUNT}); reject or archive some first",
+            )
+        existing_bytes = AgentV2AttachmentService.total_staged_bytes_for_session(session_id)
+
+        uploaded: list[dict] = []
+        rejected: list[dict] = []
+
+        for file_obj in file_list:
+            filename = (file_obj.filename or "").strip()
+            if not filename:
+                rejected.append({"filename": "", "reason": "empty_filename"})
+                continue
+
+            # Read fully (we need it for hash + preview + size check)
+            blob = file_obj.read()
+            size = len(blob)
+
+            if size == 0:
+                rejected.append({"filename": filename, "reason": "empty_file"})
+                continue
+            if size > MAX_ATTACHMENT_SIZE_BYTES:
+                rejected.append({
+                    "filename": filename,
+                    "reason": f"too_large: {size} > {MAX_ATTACHMENT_SIZE_BYTES}",
+                })
+                continue
+            if existing_bytes + size > MAX_SESSION_STAGED_BYTES:
+                rejected.append({
+                    "filename": filename,
+                    "reason": f"session_quota_exceeded: "
+                              f"{existing_bytes + size} > {MAX_SESSION_STAGED_BYTES}",
+                })
+                continue
+
+            client_mime = (
+                getattr(file_obj, "content_type", None)
+                or getattr(file_obj, "mimetype", None)
+                or ""
+            )
+            mime = resolve_mime_type(client_mime, filename)
+            if not mime:
+                rejected.append({
+                    "filename": filename,
+                    "reason": f"unsupported_mime: client={client_mime!r}; "
+                              f"allowed={sorted(MIME_WHITELIST)}",
+                })
+                continue
+
+            digest = hash_content(blob)
+
+            # Dedupe per tenant+hash — staged or already archived both
+            # qualify. Rejected/expired do NOT (we want a fresh row).
+            existing = AgentV2AttachmentService.find_by_hash(
+                tenant_id=current_user.id, hash_xxh128=digest,
+            )
+            if existing:
+                uploaded.append(_attachment_dict(existing))
+                existing_bytes += 0  # didn't actually consume new bytes
+                continue
+
+            # Write to MinIO first; DB insert is cheap and reversible
+            # via reject/expire if blob upload succeeds.
+            key = object_key(
+                tenant_id=current_user.id,
+                session_id=session_id,
+                attachment_id=digest,  # temporary — real id after DB row
+            )
+            try:
+                settings.STORAGE_IMPL.put(
+                    AGENT_V2_ATTACHMENT_BUCKET, key, blob, current_user.id
+                )
+            except Exception as exc:
+                logger.exception("attachment blob upload failed")
+                rejected.append({
+                    "filename": filename,
+                    "reason": f"storage_error: {type(exc).__name__}: {exc}",
+                })
+                continue
+
+            preview = extract_preview(blob, mime)
+
+            row = AgentV2AttachmentService.create_staged(
+                session_id=session_id,
+                tenant_id=current_user.id,
+                uploaded_by=current_user.id,
+                filename=filename,
+                mime_type=mime,
+                size_bytes=size,
+                hash_xxh128=digest,
+                blob_path=f"{AGENT_V2_ATTACHMENT_BUCKET}/{key}",
+                origin="upload",
+                preview_text=preview,
+            )
+            uploaded.append(_attachment_dict(row))
+            existing_bytes += size
+
+            AuditLogService.allow(
+                user_id=current_user.id,
+                tenant_id=current_user.id,
+                action="agent_v2.attachment_upload",
+                resource_type="agent_v2_attachment",
+                resource_id=row.id,
+                metadata={
+                    "session_id": session_id,
+                    "filename": filename,
+                    "mime": mime,
+                    "size_bytes": size,
+                },
+                request=request,
+            )
+
+        return get_json_result(data={"uploaded": uploaded, "rejected": rejected})
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/session/<session_id>/attachments", methods=["GET"])  # noqa: F821
+@login_required
+async def list_session_attachments(session_id: str):
+    """List attachments on a session (default: staged + archived; add
+    ``?include_rejected=1`` to include terminal states)."""
+    try:
+        session = AgentV2SessionService.get_by_id(session_id)
+        if not session or session.tenant_id != current_user.id:
+            return get_data_error_result(message="session not found")
+
+        include_rejected = request.args.get("include_rejected", "").lower() in ("1", "true", "yes")
+        statuses = (
+            ("staged", "archived", "rejected", "expired")
+            if include_rejected
+            else ("staged", "archived")
+        )
+        rows = AgentV2AttachmentService.list_by_session(
+            session_id=session_id, statuses=statuses,
+        )
+        return get_json_result(data={
+            "attachments": [_attachment_dict(r) for r in rows],
+        })
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/session/<session_id>/attachments/<attachment_id>", methods=["DELETE"])  # noqa: F821
+@login_required
+async def reject_session_attachment(session_id: str, attachment_id: str):
+    """User-initiated rejection → status=rejected. Blob stays in MinIO for
+    7 days audit; the cron sweeper (not wired in Stage 1) removes it after.
+
+    Ownership check: tenant_id must match current user; session_id must match
+    the attachment row (prevents cross-session reject via stale URL)."""
+    from api.db.services.audit_log_service import AuditLogService
+
+    try:
+        session = AgentV2SessionService.get_by_id(session_id)
+        if not session or session.tenant_id != current_user.id:
+            return get_data_error_result(message="session not found")
+
+        row = AgentV2AttachmentService.get_by_id(attachment_id)
+        if not row or row.session_id != session_id or row.tenant_id != current_user.id:
+            return get_data_error_result(message="attachment not found")
+
+        ok = AgentV2AttachmentService.reject(attachment_id=attachment_id)
+        if not ok:
+            return get_json_result(
+                code=RetCode.ARGUMENT_ERROR,
+                message=f"cannot reject: already {row.status}",
+            )
+
+        AuditLogService.allow(
+            user_id=current_user.id,
+            tenant_id=current_user.id,
+            action="agent_v2.attachment_reject",
+            resource_type="agent_v2_attachment",
+            resource_id=attachment_id,
+            metadata={"session_id": session_id, "prev_status": row.status},
+            request=request,
+        )
+        return get_json_result(data={"rejected": True})
+    except Exception as e:
+        return server_error_response(e)
+
+
 # ────────────────────────────────────── Subagent traces (P2.3) ──────────────────────────────────────
 
 
@@ -467,6 +724,19 @@ async def send_message():
 
         effective_runtime_tools = list(SUPERVISOR_TOOLS)
 
+    # Phase 2.7 — snapshot staged/archived attachments for this session so the
+    # supervisor prompt can list them and sub_archivist can reach them by id.
+    # We intentionally load at turn boundary (not per-tool-call) so the prompt
+    # remains stable within a turn.
+    from api.agent_v2.attachments import AttachmentInfo
+
+    attachment_rows = AgentV2AttachmentService.list_by_session(
+        session_id=session.id, statuses=("staged", "archived"),
+    )
+    runtime_attachments = tuple(
+        AttachmentInfo.from_row(r) for r in attachment_rows
+    )
+
     runner = AgentRunner(
         tenant_id=session.tenant_id,
         kb_ids=list(session.kb_ids or []),
@@ -481,6 +751,7 @@ async def send_message():
         citation_numeric_strict=bool(session.citation_numeric_strict),
         pending_plan_status=plan_status_at_turn_start,
         pending_plan_id=plan_id_at_turn_start,
+        attachments=runtime_attachments,
     )
 
     async def stream():

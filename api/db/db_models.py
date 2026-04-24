@@ -1420,6 +1420,65 @@ class AgentV2Session(DataBaseModel):
         db_table = "agent_v2_session"
 
 
+class AgentV2Attachment(DataBaseModel):
+    """Phase 2.7 — Session-scoped attachments pending archive to a KB.
+
+    对齐 ``claude-code-ref/src/utils/attachments.ts`` 的 attachment-as-
+    independent-message pattern（`createAttachmentMessage` 每条独立 uuid），
+    **不**把附件塞进 ``AgentV2Message.content``——这里的数据生命周期（staged
+    → archived / rejected / expired）跟消息本体脱钩。
+
+    归档采用 submit_plan + plan_gate 作 staging 机制（ref 全库无 PendingEdit
+    抽象，我们的 Phase 2.6 v0.4 plan gate 即 ExitPlanMode 等价物）。
+    """
+
+    id = CharField(max_length=32, primary_key=True)
+    session_id = CharField(max_length=32, null=False, index=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    uploaded_by = CharField(
+        max_length=255, null=False, index=True, help_text="user_id"
+    )
+
+    filename = CharField(max_length=255, null=False)
+    mime_type = CharField(max_length=100, null=False, index=True)
+    size_bytes = BigIntegerField(null=False, default=0)
+    # xxhash128 per tenant — 同内容反复上传复用同一 attachment。
+    hash_xxh128 = CharField(max_length=32, null=False, index=True)
+    # MinIO object path；格式 agent_v2/{tenant}/{session}/{attachment_id}
+    blob_path = CharField(max_length=500, null=False)
+
+    origin = CharField(
+        max_length=20, null=False, index=True,
+        help_text="upload | web_fetch | agent_generated",
+    )
+    source_url = CharField(
+        max_length=2048, null=True,
+        help_text="only populated when origin=web_fetch",
+    )
+    preview_text = LongTextField(
+        null=True, default="",
+        help_text="first ~8KB plain text; used in submit_plan.preview card",
+    )
+
+    status = CharField(
+        max_length=16, null=False, default="staged", index=True,
+        help_text="staged | archiving | archived | rejected | expired",
+    )
+    archived_doc_id = CharField(max_length=32, null=True, index=True)
+    archived_kb_id = CharField(max_length=32, null=True, index=True)
+    archived_at = BigIntegerField(
+        null=True, default=None,
+        help_text="ms timestamp when status flipped to archived",
+    )
+    expires_at = BigIntegerField(
+        null=True, default=None, index=True,
+        help_text="ms timestamp; cron sweeps staged rows past this",
+    )
+
+    class Meta:
+        db_table = "agent_v2_attachment"
+
+
 class AgentV2Message(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     session_id = CharField(max_length=32, null=False, index=True)
