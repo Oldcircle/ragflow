@@ -70,6 +70,20 @@ STRICT_RAG_CONSTRAINTS: list[str] = [
     "Never fabricate document names, authority names, section numbers, or dates.",
     "Never generalize a city's policy to a different city, or a version's rule to a "
     "different version.",
+    # Phase 2.6 v0.8.3 — stop-on-empty guard (参照 Claude Code `prompts.ts:235`)
+    # 问题根因：Q13 Agent 被诱导去"解读虚构文件号"，11 次 rag_retrieve / list_docs
+    # / read_doc 循环切关键词无果后 subprocess crash。加一条硬约束让 Agent 主动
+    # 收手，而不是像 general-purpose agent 只说 "multiple search strategies"。
+    "If `rag_retrieve` returns 0 chunks (or all chunks have similarity < 0.2) "
+    "for the same concept on TWO consecutive attempts with different keywords, "
+    "STOP searching and answer 'no direct basis in the knowledge base'. Do not "
+    "keep varying keywords indefinitely — the information is not in the KB. "
+    "Three attempts is the hard maximum; beyond that you waste budget and risk "
+    "subprocess timeout.",
+    "Do not call `rag_list_docs` followed by `rag_read_doc` in a last-ditch "
+    "attempt to find a document the user named by a specific 令号 / 文号 / "
+    "条款号 that retrieval already failed to locate. If retrieval missed it, "
+    "reading unrelated docs will not help — concede the miss clearly.",
 ]
 
 

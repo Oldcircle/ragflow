@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from collections.abc import AsyncIterator
@@ -290,12 +291,19 @@ class AgentRunner:
         evidence = EvidenceIndex()
         text_parts: list[str] = []
         tool_name_by_id: dict[str, str] = {}
+        # Phase 2.6 v0.8.3 — 连续空 rag 结果计数，≥ _EMPTY_RAG_THRESHOLD 时
+        # 强制收尾，防止 Q13 类"诱导编造" scenario 里 Agent 无限换关键词后
+        # subprocess crash。
+        consecutive_empty_rag = 0
+        force_stopped = False
 
         try:
             async for event in _merge_streams(sdk_iter(), self._event_bus):
                 # ── intercept text_delta + tool_call_* for the validator ──
                 if event.type == "text_delta":
                     text_parts.append(event.data.get("text") or "")
+                    # 正常有文本产出，重置空检索计数（Agent 在正常推理而非死循环）
+                    consecutive_empty_rag = 0
                 elif event.type == "tool_call_start":
                     tid = event.data.get("id")
                     tname = event.data.get("name") or ""
@@ -304,11 +312,61 @@ class AgentRunner:
                 elif event.type == "tool_call_end":
                     tid = event.data.get("id")
                     tname = tool_name_by_id.get(tid, "")
-                    _collect_evidence_from_tool(
-                        evidence, tname, event.data.get("result")
-                    )
+                    result = event.data.get("result")
+                    _collect_evidence_from_tool(evidence, tname, result)
 
-                if event.type == "end":
+                    # 空检索计数 — 只对 rag_* 读工具计；其它工具（doc_ops / web_* /
+                    # spawn_subagent / ask_user_question 等）不影响。
+                    if _is_empty_rag_result(tname, result):
+                        consecutive_empty_rag += 1
+                        logger.debug(
+                            "empty rag result #%d (tool=%s)",
+                            consecutive_empty_rag,
+                            tname,
+                        )
+                        if consecutive_empty_rag >= _EMPTY_RAG_THRESHOLD:
+                            # Yield current tool_call_end first so UI shows the
+                            # last call ran to completion, then inject our
+                            # concede text + clean end.
+                            yield event
+                            logger.warning(
+                                "Runner.run: forcing graceful stop after "
+                                "%d consecutive empty rag results "
+                                "(Q13-class scenario)",
+                                consecutive_empty_rag,
+                            )
+                            concede_text = (
+                                "\n\n_(本知识库未查到相关内容。"
+                                "已连续多次检索无果——很可能该信息不在本 KB 范围内。"
+                                "若是具体文件号 / 条款号，请核对后再问；"
+                                "或尝试用主题关键词换个角度提问。)_"
+                            )
+                            text_parts.append(concede_text)
+                            yield ev.text_delta(text=concede_text)
+                            force_stopped = True
+                            # Still run citation validator on the combined
+                            # text before emitting end
+                            if self.citation_enforce_level != "off":
+                                final_text = "".join(text_parts)
+                                issues = validate_citations(
+                                    final_text,
+                                    evidence,
+                                    numeric_strict=self.citation_numeric_strict,
+                                )
+                                if issues:
+                                    async for post_ev in self._handle_citation_issues(
+                                        final_text=final_text,
+                                        issues=issues,
+                                        evidence=evidence,
+                                    ):
+                                        yield post_ev
+                            yield ev.end()
+                            return
+                    else:
+                        # 非空结果 → 重置计数（哪怕只有 1 个低分 chunk 也算有进展）
+                        consecutive_empty_rag = 0
+
+                if event.type == "end" and not force_stopped:
                     # 在 end 之前跑校验 + （strict 模式下）追一次 rewrite
                     if self.citation_enforce_level != "off":
                         final_text = "".join(text_parts)
@@ -698,6 +756,62 @@ class _SdkError:
 
 
 # ────────────────────────────── 2.5.1 helpers ──────────────────────────────
+
+
+# Phase 2.6 v0.8.3 — 连续空检索的硬上限（ref: claude-code-ref prompts.ts:235 +
+# generalPurposeAgent.ts:13，那两处只说"multiple search strategies"而没定上
+# 界，我们的 Q13 测试里 Agent 连 rag_retrieve / list_docs / read_doc 11 次
+# 空结果后 subprocess crash，所以在 runner 层加硬 guard）。
+#
+# 阈值 3 是保守值：允许"正常的 KB 没查到 → 换关键词 → 再没查到 → 换第 3 个关
+# 键词"这种合理试错，但拒绝无限循环。
+_EMPTY_RAG_THRESHOLD = 3
+_EMPTY_RAG_TOOLS = (
+    "rag_retrieve",
+    "rag_list_docs",
+    "rag_read_doc",
+    "rag_graph_query",
+)
+
+
+def _is_empty_rag_result(tool_name: str, result) -> bool:
+    """True if this is a rag_* tool that returned no useful content.
+
+    `rag_retrieve` with 0 chunks or all `similarity < 0.2` → empty.
+    `rag_list_docs` with 0 docs → empty.
+    `rag_read_doc` with no content/chunks → empty.
+    `rag_graph_query` with no entities/relations → empty.
+
+    Unparseable / non-rag tools → False (don't count against threshold).
+    """
+    short = tool_name.rsplit("__", 1)[-1] if tool_name else ""
+    if short not in _EMPTY_RAG_TOOLS:
+        return False
+    if result is None:
+        return True
+    try:
+        data = json.loads(result) if isinstance(result, str) else result
+    except (json.JSONDecodeError, TypeError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    if short == "rag_retrieve":
+        chunks = data.get("chunks") or []
+        if not chunks:
+            return True
+        sims = [
+            float(c.get("similarity") or 0)
+            for c in chunks
+            if isinstance(c, dict)
+        ]
+        return bool(sims) and max(sims) < 0.2
+    if short == "rag_list_docs":
+        return not (data.get("docs") or [])
+    if short == "rag_read_doc":
+        return not (data.get("chunks") or data.get("content"))
+    if short == "rag_graph_query":
+        return not (data.get("entities") or data.get("relations"))
+    return False
 
 
 def _guess_prompt_lang(system_prompt: str | None) -> str:
