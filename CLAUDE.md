@@ -188,6 +188,8 @@ cd web && nohup npm run dev > ../logs/frontend.log 2>&1 &
 - `PLAN-multi-agent.md` — P2.3 Multi-Agent subagent 详细设计
 - `PLAN-agent-runtime-maturity.md` — Phase 2.5 Agent Runtime 成熟化（Citation validator / 多轮上下文 / Agent definition manifest，参考 `~/Opensource/vendor/claude-code-ref/`）
 - `PLAN-doc-ops.md` — Phase 2.6 文档运营工具（doc_tag / doc_rename / doc_archive / doc_reparse / doc_upload_from_url / kb_create + ask_user_question / submit_plan + sub_archivist）
+- `AUDIT-claude-code-alignment.md` — Phase 2.6 v0.3：20 维度对齐 Claude Code 设计哲学，10 个用户没提到的发现，P0/P1/P2 分档
+- `FINDINGS-phase-26-v02-live.md` — Phase 2.6 v0.2 活体测试的 3 个架构级 bug 修复记录
 - `PRODUCT-UI-PLAN.md` — Phase 1.7 企业知识库前端产品化重构计划（已完成）
 - `STATUS.md` — 会话交接，当前进度快照
 - `DESIGN.md` — Phase 1 Agent v2 架构设计（稳定，不再改）

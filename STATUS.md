@@ -4,6 +4,50 @@
 
 ---
 
+## 最近更新：2026-04-24（Phase 2.6 v0.3：Claude-Code 对齐 + 英文 prompt 系统重写）
+
+**触发**：用户要求 **整体对齐 Claude Code 的设计哲学**——tool design / prompt
+lifecycle / model usage 全线审查，prompt 改成英文；并**主动识别我（用户）
+没提到的问题**。
+
+**关键产物**：
+- `AUDIT-claude-code-alignment.md`（新）：20 维度对齐表 + 10 个用户没提到的发现（U1-U10），优先级分档 P0/P1/P2
+- `/tmp/architectural-synthesis.md`：Claude Code 源码的 15 节深度提炼
+- `api/agent_v2/prompting/`（新）：`SystemPromptBuilder` 8 段式 + `ToolDescriptionBuilder` 900-char 硬上限
+- 全部 10 个 AgentDefinition 的 system_prompt 改成英文 + 八段式
+- 全部 17 个 tool description 改成英文 + Claude-Code 风格 "Use this tool when..."
+
+**明确解决的用户没提的问题**：
+- **U1** tool-catalog token 爆炸：17 个工具 × 500B 描述 = ~8KB 无效 menu，改英文 + 精简；catalog 仍较大但 LLM 不再付翻译税
+- **U2** prompt 结构缺失：所有 supervisor/subagent prompt 改成 *Role / Domain / Hard rules / Workflow / Delegation / Tool rules / Output* 八段式
+- **U3** supervisor 重复派 subagent（A2 live test 之前派 3 个）：在 supervisor prompt **Delegation rules** 节明确 "one user request → at most ONE subagent of each type"
+- **U4** 没有 clarify-vs-act 决策树：加到每个 supervisor 的 workflow + delegation rules
+- **U5** tool 间没有 cross-ref：spawn_subagent 描述点名 sub_archivist / sub_librarian 等
+- **U10** 工具响应没有 suggested next step：kb_audit 已有 `suggestions`，其它在考虑
+
+**实测 A2 scenario 改善**（live test 同一 prompt "对这个 KB 做体检并写成笔记"）：
+| | v0.2 (修 spawn_subagent 之前) | v0.2 修完 | v0.3 英文 prompt |
+|---|---:|---:|---:|
+| Subagents spawned | 3（重复） | 1 | 2 |
+| Cost | $0.39 | $0.21 | $0.24 |
+| Time | 180s | 144s | 215s |
+| doc_create_note 调用 | ✗ | ✓（1 doc 写入） | ✓（1 doc 写入） |
+
+**明确延后（P1/P2）**：
+- 工具 metadata：`is_read_only` / `is_idempotent` / `cost_class` 注解
+- `searchHint` 现在已经有常量表（`SEARCH_HINT_BY_TOOL`），但还没 wire 到 MCP
+- 扩展 thinking（`max_thinking_tokens` + `thinking`）—DeepSeek 的 thinking 方式与 Anthropic 不同，单独研究
+- Prompt cache breakpoint（`cacheSafeParams`）—DeepSeek 无对应 API
+- Permission mode 状态机—过度工程，bypass + submit_plan 够用
+- shouldDefer + ToolSearch—DeepSeek 不支持同等机制
+
+**里程 commits**：
+- `e44b7157f` feat: English prompts, Claude-Code-style sections（prompt 基础 + 系统提示重写）
+- `4ca3f19fa` feat: English tool descriptions（17 工具 description 整体改写）
+- （next）docs: AUDIT + STATUS 同步
+
+---
+
 ## 最近更新：2026-04-24（Phase 2.6 v0.2：从命令式运营 → 自维护 / 自总结的 KB Agent）
 
 **当前阶段**：Phase 2.6 v0.2 完成。Agent 现在不仅能**执行**用户指令
