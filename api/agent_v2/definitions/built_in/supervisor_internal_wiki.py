@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ..schema import AgentDefinition
-from ._common import strict_rag_prompt
+from ._common import strict_rag_prompt, SUPERVISOR_TOOLS
 
 
 DEFINITION = AgentDefinition(
@@ -23,7 +23,7 @@ DEFINITION = AgentDefinition(
     ),
     max_turns=8,
     max_budget_usd=0.5,
-    tools="*",
+    tools=SUPERVISOR_TOOLS,
     kb_hints=("SOP", "制度", "流程", "手册", "Wiki"),
     citation_enforce="warn",
     can_spawn_subagents=False,

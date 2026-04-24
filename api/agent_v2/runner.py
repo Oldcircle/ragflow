@@ -134,6 +134,26 @@ class AgentRunner:
             system_prompt=self.system_prompt,
             mcp_servers={MCP_SERVER_NAME: mcp_server},
             allowed_tools=allowed,
+            # **硬禁** Claude Code SDK 的所有内建工具 —— KB Agent 只能用我们 MCP
+            # 里暴露的工具，绝不允许触达宿主 FS / 启动 shell / 联网抓站 / 用
+            # SDK 自己的 Agent 机制绕开我们的 spawn_subagent。实测 A1/A2 里 LLM
+            # 尝试过 Read / Agent / LS，这里一次性黑掉 Anthropic 文档列出的所有
+            # Claude Code 内建工具名。
+            disallowed_tools=[
+                # 文件 / 编辑
+                "Read", "Write", "Edit", "NotebookEdit",
+                "LS",  # 目录列出
+                # shell
+                "Bash", "BashOutput", "KillShell", "KillBash",
+                # 搜索
+                "Glob", "Grep",
+                # 联网
+                "WebFetch", "WebSearch",
+                # 任务 / 代理 / MCP 基建（用我们自己的 spawn_subagent 代替）
+                "TodoWrite", "Task", "Agent",
+                "ExitPlanMode",  # 我们用 submit_plan
+                "SlashCommand",
+            ],
             max_turns=self.max_turns,
             max_budget_usd=self.max_budget_usd,
             permission_mode=self.permission_mode,  # type: ignore[arg-type]

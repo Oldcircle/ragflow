@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ..schema import AgentDefinition
-from ._common import strict_rag_prompt
+from ._common import strict_rag_prompt, SUPERVISOR_TOOLS
 
 
 DEFINITION = AgentDefinition(
@@ -28,7 +28,7 @@ DEFINITION = AgentDefinition(
     ),
     max_turns=8,
     max_budget_usd=0.5,
-    tools="*",
+    tools=SUPERVISOR_TOOLS,
     kb_hints=("保障房", "住房", "配租", "深圳", "政策"),
     citation_enforce="warn",
     citation_numeric_strict=True,

@@ -32,3 +32,21 @@ def strict_rag_prompt(
     return _STRICT_RAG_PROMPT_TEMPLATE.format(
         role=role, fallback=fallback, prohibitions=prohibitions
     )
+
+
+# Phase 2.6 v0.2 设计约束：supervisor 只做「检索 QA + 委派」，不直接持写/审计工具。
+# 拿写工具要去 spawn sub_archivist；做体检 / 写笔记要 spawn sub_librarian。
+# 这样确保 tool-level 架构分离不会被 "tools=*" 绕掉。
+SUPERVISOR_TOOLS = [
+    # 读
+    "rag_retrieve",
+    "rag_list_docs",
+    "rag_read_doc",
+    "rag_graph_query",
+    # 轻量体检（<1KB 响应，supervisor 做 sanity check 之前）
+    "kb_stats",
+    # 委派 + 用户交互
+    "spawn_subagent",
+    "ask_user_question",
+    "submit_plan",
+]

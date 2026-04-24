@@ -159,24 +159,39 @@ async def spawn_subagent(args: dict) -> dict:
     max_turns = max(1, min(max_turns, MAX_CHILD_TURNS))
 
     # ── 4) 工具白名单：definition.tools > arg.allowed_tools > 父继承 ──
+    #
+    # Phase 2.6 v0.2 起，**命名 subagent 的工具不再被父工具集限制**。
+    # 权限边界改由父 Agent 的 `allowed_subagent_types` 控制：
+    #   - 父不在 `allowed_subagent_types` 里列该 subagent → 压根不能 spawn
+    #   - 父列了 → 承认 subagent definition 里声明的**完整工具集**，
+    #     不做父子交集；subagent 可以用父自己都拿不到的工具
+    #     （比如 librarian 有 kb_audit / doc_create_note，supervisor 没有）
+    #
+    # 这匹配"supervisor 只做 QA + 委派，写/审计走 subagent"的架构分离。
+    # 工具必须在全局 ``ALL_TOOLS`` 注册表里（防 definition 写错名）。
+    from ..registry import ALL_TOOLS
+
     parent_tools = list(ctx.tool_names) if ctx.tool_names else _all_registered_tool_names()
     parent_tools = [t for t in parent_tools if t != "spawn_subagent"]
+    all_known = set(ALL_TOOLS.keys()) - {"spawn_subagent"}
+
     if definition is not None:
         from ..definitions import resolve_tools
 
-        defn_tools = resolve_tools(definition, parent_tools=parent_tools)
-        # definition 的 tools 必须是父工具集的子集（spawn_subagent 已经先剔除）
-        allowed = [t for t in (defn_tools or []) if t in parent_tools]
+        defn_tools = resolve_tools(definition, parent_tools=None)  # 不做父限制
+        # 只校验"definition 写的工具名必须真实存在"——排字不算权限
+        allowed = [t for t in (defn_tools or []) if t in all_known]
         if not allowed:
             return mcp_json_response({
                 "error": "definition_tools_unavailable",
                 "message": (
                     f"Subagent definition {subagent_type!r} requires tools "
-                    f"{definition.tools}, none of which are in parent whitelist "
-                    f"{parent_tools}."
+                    f"{definition.tools}, none of which exist in registry."
                 ),
             })
     else:
+        # 非命名派：仍按父工具集约束（防止父通过泛 spawn_subagent 越权拿 agent
+        # 本不该看到的工具）
         requested = [t for t in (args.get("allowed_tools") or []) if isinstance(t, str)]
         if requested:
             allowed = [t for t in requested if t in parent_tools]

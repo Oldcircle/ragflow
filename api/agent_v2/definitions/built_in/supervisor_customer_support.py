@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ..schema import AgentDefinition
-from ._common import strict_rag_prompt
+from ._common import strict_rag_prompt, SUPERVISOR_TOOLS
 
 
 DEFINITION = AgentDefinition(
@@ -26,7 +26,7 @@ DEFINITION = AgentDefinition(
     ),
     max_turns=6,
     max_budget_usd=0.3,
-    tools="*",
+    tools=SUPERVISOR_TOOLS,
     kb_hints=("手册", "FAQ", "产品", "故障"),
     citation_enforce="warn",
     can_spawn_subagents=False,  # 客服场景禁用 subagent，简单直接
