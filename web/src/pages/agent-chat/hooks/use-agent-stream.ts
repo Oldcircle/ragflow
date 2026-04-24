@@ -129,7 +129,21 @@ export function useAgentStream() {
   const controllerRef = useRef<AbortController | null>(null);
 
   const reset = useCallback(() => {
-    setTurn(EMPTY_TURN);
+    // Phase 2.6 v0.6-fix: preserve pendingPlan / pendingQuestion across a
+    // reset so the plan-approval / ask-user-question card keeps rendering
+    // after the SSE turn ends. The card lives in the streaming container
+    // (`streaming?.pendingPlan`) but the parent always calls reset() on
+    // turn completion (to avoid double-rendering the text that just got
+    // refetched into historyMessages). Without this carry-over, the card
+    // flashes for one frame and disappears as soon as `end` lands.
+    //
+    // On the next `send()`, the card clears naturally because send() resets
+    // turn to a fresh EMPTY_TURN at the start of the request.
+    setTurn((prev) => ({
+      ...EMPTY_TURN,
+      pendingPlan: prev.pendingPlan,
+      pendingQuestion: prev.pendingQuestion,
+    }));
     setIsStreaming(false);
   }, []);
 

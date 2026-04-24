@@ -139,9 +139,20 @@ export default function AgentChatPage() {
     [deleteMut, currentSessionId, t],
   );
 
+  // Phase 2.6 v0.6-fix: a pending plan / question must keep the streaming
+  // container rendered even after `end`, otherwise the approval card vanishes
+  // and the user has no way to click Approve/Reject. useAgentStream.reset()
+  // carries these two fields across, but they only reach the UI if the
+  // parent also keeps `streaming` non-null while they exist.
   const hasStreamingTurn =
     isStreaming ||
-    Boolean(turn.text || turn.toolCalls.length > 0 || turn.thinking);
+    Boolean(
+      turn.text ||
+      turn.toolCalls.length > 0 ||
+      turn.thinking ||
+      turn.pendingPlan ||
+      turn.pendingQuestion,
+    );
 
   const userInitials = getInitials(
     userInfo?.nickname || userInfo?.email || 'User',

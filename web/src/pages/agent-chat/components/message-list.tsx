@@ -100,16 +100,25 @@ export const MessageList = memo(function MessageList({
           <UserMessage initials={userInitials} text={pendingUser} />
         )}
 
-        {streaming && (
-          <AssistantMessage
-            text={streaming.text}
-            thinking={streaming.thinking}
-            toolSummary={summarizeStreamingTools(streaming)}
-            usage={streaming.usage}
-            streaming={isStreaming && !streaming.done}
-            toolCalls={streaming.toolCalls}
-          />
-        )}
+        {/* v0.6-fix: only render AssistantMessage when there's actual body
+            content. If the only thing alive in `streaming` is a pendingPlan
+            or pendingQuestion card (because reset() carried it over after
+            `end`), the text/toolCalls are empty and we'd otherwise draw an
+            empty bubble above the approval card. */}
+        {streaming &&
+          (streaming.text ||
+            streaming.thinking ||
+            streaming.toolCalls.length > 0 ||
+            isStreaming) && (
+            <AssistantMessage
+              text={streaming.text}
+              thinking={streaming.thinking}
+              toolSummary={summarizeStreamingTools(streaming)}
+              usage={streaming.usage}
+              streaming={isStreaming && !streaming.done}
+              toolCalls={streaming.toolCalls}
+            />
+          )}
 
         {streaming?.citationWarning && (
           <CitationWarningPanel warning={streaming.citationWarning} />
