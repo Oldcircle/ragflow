@@ -13,6 +13,7 @@ import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { AgentV2Session } from './api';
 import { Badge } from './components/badge';
 import { Composer } from './components/composer';
+import { useAttachments } from './hooks/use-attachments';
 import { I } from './components/icons';
 import { MessageList } from './components/message-list';
 import { NewSessionDialog } from './components/new-session-dialog';
@@ -61,6 +62,8 @@ export default function AgentChatPage() {
   const createMut = useCreateSession();
   const deleteMut = useDeleteSession();
   const { turn, isStreaming, send, abort, reset } = useAgentStream();
+  // Phase 2.7 Stage 4 — session attachment upload state
+  const attachments = useAttachments(currentSessionId);
 
   const currentSession: AgentV2Session | undefined = sessionDetail?.session;
   const historyMessages = useMemo(
@@ -208,6 +211,10 @@ export default function AgentChatPage() {
           isStreaming={isStreaming}
           onSend={handleSend}
           onAbort={abort}
+          attachments={attachments.staged}
+          onUploadFiles={attachments.upload}
+          onRemoveAttachment={attachments.remove}
+          onClearAttachments={attachments.clearStaged}
         />
       </main>
 

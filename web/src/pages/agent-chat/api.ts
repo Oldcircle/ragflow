@@ -85,6 +85,30 @@ export interface AgentV2Template {
   kb_hints: string[];
 }
 
+// Phase 2.7 Stage 1 — session attachments
+export interface AgentV2Attachment {
+  id: string;
+  session_id: string;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  hash_xxh128: string;
+  origin: 'upload' | 'web_fetch' | 'agent_generated' | string;
+  source_url: string | null;
+  preview_text: string | null;
+  status: 'staged' | 'archived' | 'rejected' | 'expired' | string;
+  archived_doc_id: string | null;
+  archived_kb_id: string | null;
+  archived_at: number | null;
+  expires_at: number | null;
+  create_time: number;
+}
+
+export interface AgentV2AttachmentUploadResponse {
+  uploaded: AgentV2Attachment[];
+  rejected: Array<{ filename: string; reason: string }>;
+}
+
 export const agentV2Api = {
   async listSessions(params?: {
     page?: number;
@@ -138,5 +162,48 @@ export const agentV2Api = {
   async listTemplates() {
     const { data } = await request.get('/v1/agent_v2/template');
     return data.data as { templates: AgentV2Template[] };
+  },
+
+  // ── Phase 2.7 Stage 1 — session attachments ──
+  async uploadAttachments(
+    sessionId: string,
+    files: File[],
+    onProgress?: (percent: number) => void,
+    signal?: AbortSignal,
+  ) {
+    const form = new FormData();
+    for (const f of files) {
+      form.append('file', f);
+    }
+    // umi-request onUploadProgress event shape: { progress: 0..1 }
+    const { data } = await request.post(
+      `/v1/agent_v2/session/${sessionId}/attachments`,
+      {
+        data: form,
+        signal,
+        requestType: 'form',
+        onUploadProgress: ({ progress }: { progress?: number }) => {
+          if (onProgress) {
+            onProgress(Math.round((progress || 0) * 100));
+          }
+        },
+      },
+    );
+    return data.data as AgentV2AttachmentUploadResponse;
+  },
+
+  async listAttachments(sessionId: string, includeRejected = false) {
+    const { data } = await request.get(
+      `/v1/agent_v2/session/${sessionId}/attachments`,
+      { params: includeRejected ? { include_rejected: 1 } : undefined },
+    );
+    return (data.data?.attachments ?? []) as AgentV2Attachment[];
+  },
+
+  async deleteAttachment(sessionId: string, attachmentId: string) {
+    const { data } = await request.delete(
+      `/v1/agent_v2/session/${sessionId}/attachments/${attachmentId}`,
+    );
+    return data.data as { rejected: boolean };
   },
 };
