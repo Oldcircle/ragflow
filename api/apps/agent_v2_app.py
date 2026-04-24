@@ -154,13 +154,27 @@ async def create_session():
                 message=f"no access to dataset(s): {denied}",
             )
 
+        # Phase 2.6 v0.6-fix: enforce supervisor tool whitelist at session
+        # creation. If the caller didn't specify tool_names (or passed a
+        # falsy value like {}), fall back to SUPERVISOR_TOOLS so write tools
+        # only reach the session via spawn_subagent → archivist/librarian.
+        # Without this, writes like doc_tag / doc_reparse were callable by
+        # the supervisor directly, bypassing the plan-gate architecture.
+        requested_tools = req.get("tool_names")
+        if isinstance(requested_tools, list) and requested_tools:
+            effective_tool_names = requested_tools
+        else:
+            from api.agent_v2.definitions.built_in._common import SUPERVISOR_TOOLS
+
+            effective_tool_names = list(SUPERVISOR_TOOLS)
+
         session = AgentV2SessionService.create_session(
             tenant_id=current_user.id,
             user_id=current_user.id,
             name=req.get("name") or "Untitled Agent",
             kb_ids=kb_ids,
             system_prompt=req.get("system_prompt", ""),
-            tool_names=req.get("tool_names"),
+            tool_names=effective_tool_names,
             model_config=req.get("model_config"),
             max_turns=int(req.get("max_turns", 20)),
             max_budget_usd=req.get("max_budget_usd", 1.0),
@@ -440,12 +454,25 @@ async def send_message():
         include_tool_calls=True,  # v0.5 — keep prior tool activity in history
     )
 
+    # Phase 2.6 v0.6-fix: defensive fallback for legacy sessions that were
+    # stored with tool_names=None or {} (pre-fix). Without this, such a
+    # session would pass tool_names=None → runner enables ALL 18 tools,
+    # handing the supervisor direct write power (doc_tag / doc_reparse /
+    # etc.) and bypassing the plan-gate architecture.
+    stored_tool_names = session.tool_names
+    if isinstance(stored_tool_names, list) and stored_tool_names:
+        effective_runtime_tools = list(stored_tool_names)
+    else:
+        from api.agent_v2.definitions.built_in._common import SUPERVISOR_TOOLS
+
+        effective_runtime_tools = list(SUPERVISOR_TOOLS)
+
     runner = AgentRunner(
         tenant_id=session.tenant_id,
         kb_ids=list(session.kb_ids or []),
         system_prompt=session.system_prompt or "",
         model=model_cfg,
-        tool_names=list(session.tool_names) if session.tool_names else None,
+        tool_names=effective_runtime_tools,
         user_id=session.user_id,
         max_turns=session.max_turns,
         max_budget_usd=session.max_budget_usd,

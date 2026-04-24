@@ -159,6 +159,23 @@ class AgentRunner:
                 "TodoWrite", "Task", "Agent",
                 "ExitPlanMode",  # 我们用 submit_plan
                 "SlashCommand",
+                # v0.6-fix: 实测 supervisor 在真机里调过 ScheduleWakeup 去"自我唤醒
+                # 60 秒后检查结果"——这是 Claude Code 的自调度能力，在 KB agent
+                # 场景里没意义（agent 的 turn 在用户下一条消息之前不会恢复），而且
+                # 让 agent 产生"时间在流动"的幻觉。一起禁掉。
+                "ScheduleWakeup",
+                "CronCreate", "CronList", "CronDelete",
+                # ToolSearch 和 deferred tool 机制在 KB agent 场景不适用
+                "ToolSearch",
+                # Plan mode 相关残余
+                "EnterPlanMode", "EnterWorktree", "ExitWorktree",
+                # 远程触发 / 推送通知类
+                "RemoteTrigger", "PushNotification", "Monitor",
+                # Task 管理（v0.6 agent 用自己的 [step K/N] 标记，不走 SDK task）
+                "TaskCreate", "TaskList", "TaskUpdate", "TaskGet",
+                "TaskStop", "TaskOutput",
+                # AskUserQuestion 的 SDK 原生工具（我们用自己的 ask_user_question）
+                "AskUserQuestion",
             ],
             max_turns=self.max_turns,
             max_budget_usd=self.max_budget_usd,
