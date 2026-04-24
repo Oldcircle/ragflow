@@ -193,42 +193,60 @@ def render_tool_availability_section(
         hint = SEARCH_HINT_BY_TOOL.get(n, "(no description registered)")
         positive_lines.append(f"- `{n}` — {hint}")
 
-    # Build negative list by stripping any confabulated name that matches an
-    # actually-enabled tool (case-insensitive, underscore/space insensitive).
+    # Negative-enumeration masking: any confabulated name that matches an
+    # actually-enabled tool (case-insensitive, underscore/space insensitive)
+    # is stripped so we don't send contradictory signals to the model.
     enabled_normalized = {n.replace("_", "").lower() for n in ordered_names}
-    negative = [
-        name
-        for name in _CONFABULATED_TOOLS
-        if name.replace("_", "").replace(" ", "").lower() not in enabled_normalized
-    ]
-    negative_line = ", ".join(f"`{x}`" for x in negative)
 
     has_web = any(
         n in enabled_normalized for n in ("websearch", "webfetch")
     )
 
+    tool_count = len(ordered_names)
+
+    # 动态生成"其它产品的工具例子"——剥掉已启用的同名工具，避免给模型
+    # 自相矛盾的信号（例如启用了 web_search 还说 WebSearch 不存在）。
+    example_others = [
+        t
+        for t in (
+            "Gmail", "Google Drive", "Google Calendar",
+            "Bash", "Shell", "LSP", "Skill", "SlashCommand",
+            "Read", "Write", "Edit", "Agent", "Task",
+            "WebSearch", "WebFetch", "ScheduleWakeup",
+        )
+        if t.replace(" ", "").replace("_", "").lower()
+        not in enabled_normalized
+    ]
+    example_tokens_en = ", ".join(f"`{t}`" for t in example_others)
+    example_tokens_zh = " / ".join(f"`{t}`" for t in example_others)
+
     if lang == "zh":
         web_line_zh = (
             "- 本会话**已启用联网工具**（`web_search` / `web_fetch`），被问到"
-            "能否联网时，直接回答「可以」并遵守它们的使用约束（先查 KB，不在 "
+            "能否联网时，直接回答「可以」并遵守使用约束（先查 KB，不在 "
             "[N] 脚注里引用外链）。"
             if has_web
             else "- 本会话**未启用联网工具**。被问「能联网吗」「能搜索最新信息吗」"
             "时，明确回答「本会话未启用联网工具」，不要假装自己能联网。"
         )
         return (
-            "# 可用工具\n\n"
-            "本会话你能调用的工具**仅限**以下列表：\n\n"
+            "# 可用工具（严格列表）\n\n"
+            f"本会话**只有**以下 {tool_count} 个工具，**没有其它任何工具**。"
+            "这个列表是穷尽的——不存在「其它工具」「额外能力」「附加插件」等概念。\n\n"
             + "\n".join(positive_lines)
-            + "\n\n# 你没有的工具\n\n"
-            "本会话**没有**以下工具（任何客户端 / 产品线里的同名工具不代表你这里也有）：\n\n"
-            f"{negative_line}。\n\n"
+            + "\n\n"
+            "# 关于工具枚举的严格约束\n\n"
+            f"- 被问「你有什么工具」时，**只**列出上面 {tool_count} 个工具，然后**结束**。"
+            "绝不以「其它工具」「另外」「还有」「此外」「**补充**」等过渡词追加任何内容。\n"
+            "- 其它 AI 产品（Claude Code CLI、Claude Desktop、Claude API 的 MCP "
+            "catalog、Claude.ai 客户端、IDE 插件等）里有的工具（如 "
+            f"{example_tokens_zh} 等）在**这里都不存在**。\n"
+            "- 禁止举「比喻」——例如说「类似 LSP 的代码智能」「等价于 Skill 的内置」，"
+            "这些也会被视为错误暗示自己拥有这些工具。\n\n"
             "# 元问题处理（用户问你的能力 / 工具 / 是否能联网）\n\n"
-            "- 被问「你有什么工具」「你能做什么」「能联网吗」等元问题时，"
-            "**只**根据上面的「可用工具」清单老实回答。\n"
+            f"- 被问「你有什么工具」「你能做什么」时，**只**基于上面 {tool_count} 个工具回答。\n"
             f"{web_line_zh}\n"
-            "- **禁止**凭训练记忆编造自己有但实际没注册的工具。\n"
-            "- 若用户说「启动 X 工具」/「开启 Y」，告诉他「工具集由会话配置决定，"
+            "- 若用户要求「启动 X 工具」/「开启 Y」，告诉他「工具集由会话配置决定，"
             "可在新建会话或会话设置里切换模板（例如『研究/尽调』模板带联网工具）」。"
         )
 
@@ -242,23 +260,27 @@ def render_tool_availability_section(
         "not available here. Do not pretend to have `web_search` or Bing/Google."
     )
     return (
-        "# Available Tools\n\n"
-        "The ONLY tools you can call in this session are listed below. "
-        "Do not attempt to invoke anything else.\n\n"
+        "# Available Tools (exhaustive list)\n\n"
+        f"This session has EXACTLY {tool_count} tools. There are NO other tools — "
+        "no \"other capabilities\", no \"additional plugins\", no \"extra\" tools. "
+        "The list below is complete and closed.\n\n"
         + "\n".join(positive_lines)
-        + "\n\n# Tools you do NOT have\n\n"
-        "You do NOT have access to any of the following — they may exist in "
-        "other products (Claude Code CLI, Anthropic MCP catalog, etc.) but "
-        "they are not registered on this session:\n\n"
-        f"{negative_line}.\n\n"
+        + "\n\n"
+        "# Strict constraints on tool enumeration\n\n"
+        f"- When asked \"what tools do you have?\", list EXACTLY those {tool_count} "
+        "tools and STOP. Never append \"other tools\", \"also\", \"additionally\", "
+        "\"in addition\", \"plus\", or any transition followed by tools not in "
+        "the list above.\n"
+        "- Tools present in other AI products (Claude Code CLI, Claude "
+        "Desktop, Anthropic MCP catalog, IDE plugins, etc.) — e.g. "
+        f"{example_tokens_en} — do NOT exist here.\n"
+        "- Do not offer analogies either — phrases like \"similar to LSP\", "
+        "\"equivalent to Skill\", \"like a built-in Bash\" will be read as "
+        "false claims of having those tools. Stay grounded in the exact list.\n\n"
         "# Meta-question handling (capabilities / tools / web access)\n\n"
-        "- When the user asks about your capabilities (\"what tools do you "
-        "have?\", \"can you browse the web?\", \"can you send email?\", etc.), "
-        "enumerate ONLY the tools from the \"Available Tools\" section above. "
-        "Never claim tools from memory of other AI products.\n"
+        f"- When asked about capabilities, answer ONLY from the {tool_count} "
+        "tools listed above.\n"
         f"{web_line_en}\n"
-        "- Never invent Gmail, Drive, Bash, LSP, Skill, or any tool not "
-        "listed above.\n"
         "- If the user asks to \"enable\" or \"turn on\" a tool, explain that "
         "the tool set is configured per session — either pick a different "
         "template at session creation (the \"Research / DD\" template ships "

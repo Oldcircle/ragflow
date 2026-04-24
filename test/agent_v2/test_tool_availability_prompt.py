@@ -38,18 +38,20 @@ def test_negative_enumeration_lists_common_claude_tools():
     # DeepSeek's usual hallucination candidates are explicitly denied
     for bad in ("Gmail", "Google Drive", "LSP", "Skill", "Bash"):
         assert f"`{bad}`" in text
-    # Introductory phrase
-    assert "Tools you do NOT have" in text
+    # Strict-enumeration framing (v0.8.1)
+    assert "Strict constraints on tool enumeration" in text
+    assert "exhaustive" in text.lower()
 
 
-def test_enabled_tool_stripped_from_negative_list():
-    # When web_search is enabled, "WebSearch" should NOT appear in the
-    # negative list (otherwise model sees conflicting signals).
+def test_enabled_tool_dropped_from_negative_mentions():
+    # When web_search is enabled, "WebSearch" / "WebFetch" should NOT appear
+    # in the negative tool list (otherwise model sees conflicting signals).
     with_web = render_tool_availability_section(["web_search", "web_fetch"])
-    # Separator is comma-inside-backticks; check both forms
+    # They must not be in the negative prose (which uses `Gmail`, `WebSearch`
+    # backticked tokens). Positive list uses lowercase `web_search`.
     assert "`WebSearch`" not in with_web
     assert "`WebFetch`" not in with_web
-    # But Gmail still is in negative (we didn't enable it)
+    # But Gmail still is in the negative list (we didn't enable it)
     assert "`Gmail`" in with_web
 
 
@@ -82,7 +84,7 @@ def test_zh_variant_in_chinese():
         ["rag_retrieve"], lang="zh"
     )
     assert "可用工具" in text
-    assert "没有的工具" in text
+    assert "严格约束" in text
     assert "元问题处理" in text
 
 
