@@ -258,6 +258,37 @@ ANNOTATIONS: dict[str, ToolAnnotation] = {
         avg_latency_ms=2500,
         side_effects=("HTTP GET to the public internet",),
     ),
+    # ── Attachments (Phase 2.7 Stage 2) ────────────────────────────────
+    "web_fetch_to_attachment": ToolAnnotation(
+        name="web_fetch_to_attachment",
+        # Technically writes a DB row + MinIO blob, but no KB change yet —
+        # the materialization is a **staging** act, reversible via reject.
+        # Treat as write for openWorld / destructive signals, but keep
+        # idempotent=True because 24h URL dedupe makes replays safe.
+        is_read_only=False,
+        is_idempotent=True,
+        cost_class="normal",
+        avg_latency_ms=3500,
+        side_effects=(
+            "HTTP GET to the public internet",
+            "creates a staged AgentV2Attachment row + MinIO blob",
+        ),
+        supports_next_steps=True,
+    ),
+    "doc_archive_attachment": ToolAnnotation(
+        name="doc_archive_attachment",
+        is_read_only=False,
+        # Idempotent: same attachment_id archives to same KB → status=
+        # already_archived with the existing doc_id, no duplicate write.
+        is_idempotent=True,
+        cost_class="expensive",
+        avg_latency_ms=1500,
+        side_effects=(
+            "creates Document + chunks + triggers parse queue",
+            "flips AgentV2Attachment.status to archived",
+        ),
+        supports_next_steps=True,
+    ),
 }
 
 

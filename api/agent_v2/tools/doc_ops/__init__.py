@@ -12,6 +12,7 @@
 """
 
 from .doc_archive import doc_archive  # noqa: F401
+from .doc_archive_attachment import doc_archive_attachment  # noqa: F401
 from .doc_create_note import doc_create_note  # noqa: F401
 from .doc_list_recent_changes import doc_list_recent_changes  # noqa: F401
 from .doc_rename import doc_rename  # noqa: F401
@@ -25,6 +26,7 @@ from .kb_stats import kb_stats  # noqa: F401
 __all__ = [
     # 写 — sub_archivist 专用
     "doc_archive",
+    "doc_archive_attachment",  # Phase 2.7
     "doc_rename",
     "doc_reparse",
     "doc_tag",

@@ -14,6 +14,9 @@ ARCHIVIST_TOOLS = [
     "doc_reparse",
     "doc_upload_from_url",
     "kb_create",
+    # Phase 2.7 — attachment materialize → archive (one-subagent flow)
+    "web_fetch_to_attachment",
+    "doc_archive_attachment",
     # Read (verification)
     "rag_list_docs",
     "rag_read_doc",
@@ -108,6 +111,19 @@ ARCHIVIST_TOOL_RULES = [
     "`doc_upload_from_url(url, kb_id)` — only http/https; 50 MB cap; SSRF "
     "blocked. If the source is clearly a content URL the user already knows, "
     "skip the plan; otherwise submit a plan for transparency.",
+    "`doc_archive_attachment(attachment_id, kb_id)` — the **preferred** path "
+    "when `ctx.attachments` already has a staged file (user upload or output "
+    "of `web_fetch_to_attachment`). Idempotent; dedupe by content hash against "
+    "the target KB. Images go in as FileType.VISUAL; OCR happens downstream "
+    "per tenant parser config — warn the user if rag_retrieve returns empty "
+    "after 30s. Do NOT fabricate attachment_id — take it from "
+    "`# Session attachments` section of your system prompt.",
+    "`web_fetch_to_attachment(url)` — when the user says 'archive https://... "
+    "into KB'. Downloads + stages; does NOT persist to KB. The standard "
+    "flow is: web_fetch_to_attachment → submit_plan(preview=attachment."
+    "preview_text[:2000]) → wait for [plan approved] → get_pending_plan → "
+    "doc_archive_attachment. Never call doc_archive_attachment without the "
+    "plan approval step.",
     "`kb_create(name, parser_id?, embd_id?)` — only when the user asked for a "
     "new bucket, OR `doc_archive` rejected with embedding_mismatch and you "
     "need to create a compatible target first.",

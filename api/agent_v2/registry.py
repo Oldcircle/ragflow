@@ -22,6 +22,7 @@ from claude_agent_sdk.types import McpToolAnnotations
 from .tools.ask_user_question import ask_user_question
 from .tools.doc_ops import (
     doc_archive,
+    doc_archive_attachment,
     doc_create_note,
     doc_list_recent_changes,
     doc_rename,
@@ -40,6 +41,7 @@ from .tools.rag_retrieve import rag_retrieve
 from .tools.spawn_subagent import spawn_subagent
 from .tools.submit_plan import submit_plan
 from .tools.web_fetch import web_fetch
+from .tools.web_fetch_to_attachment import web_fetch_to_attachment
 from .tools.web_search import web_search
 
 # 所有已实现工具的注册表
@@ -71,6 +73,9 @@ ALL_TOOLS = {
     # Phase 2.6 v0.7 — 公网检索 / 抓取（研究类 supervisor / subagent 可选）
     "web_search": web_search,
     "web_fetch": web_fetch,
+    # Phase 2.7 Stage 2 — attachment materialize + archive
+    "web_fetch_to_attachment": web_fetch_to_attachment,
+    "doc_archive_attachment": doc_archive_attachment,
 }
 
 # MCP server 名（给 SDK 用）；SDK 生成的工具名是 ``mcp__<server>__<tool>``
@@ -118,6 +123,10 @@ def _decorate_for_mcp(tool: SdkMcpTool) -> SdkMcpTool:
                 "submit_plan",
                 "web_search",
                 "web_fetch",
+                "web_fetch_to_attachment",  # network download
+                # doc_archive_attachment does NOT hit the internet — it
+                # reads from MinIO + writes to the KB + DB, which is all
+                # in-cluster. Not openWorld.
             ),
         }
         decorated.annotations = mcp_ann

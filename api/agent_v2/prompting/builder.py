@@ -130,6 +130,9 @@ SEARCH_HINT_BY_TOOL: dict[str, str] = {
     # Web (Phase 2.6 v0.7)
     "web_search": "search the public web for recent or external info",
     "web_fetch": "fetch the full text of a specific web page",
+    # Attachments (Phase 2.7)
+    "web_fetch_to_attachment": "download a url into a staged session attachment",
+    "doc_archive_attachment": "archive a staged session attachment into a knowledge base",
 }
 
 

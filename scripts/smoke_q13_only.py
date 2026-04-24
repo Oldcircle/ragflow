@@ -117,7 +117,7 @@ async def main() -> int:
     print("=" * 70)
     print(f"Q13 smoke — {elapsed:.1f}s, {len(tool_calls)} tool calls")
     print("=" * 70)
-    print(f"\nTool calls:")
+    print("\nTool calls:")
     for name, n in tool_calls:
         print(f"  - {name}  (returned {n} items)")
     print(f"\nAnswer ({len(answer)} chars):")
