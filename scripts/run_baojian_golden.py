@@ -263,8 +263,13 @@ QUESTIONS: list[GoldenQuestion] = [
 
 
 async def run_one(runner_cls, model_cfg_cls, q: GoldenQuestion) -> dict[str, Any]:
+    from api.agent_v2.definitions.built_in._common import SUPERVISOR_TOOLS
     from api.agent_v2.runner import AgentRunner, ModelConfig  # noqa: F401
 
+    # Phase 2.6 v0.8 — 保障房模板走 SUPERVISOR_TOOLS（8 个 KB-only 工具），
+    # 显式传入避免 runner 回落到 ALL_TOOLS（包含 web_search —— 会在没 Tavily
+    # key 的场景下把 turn 打崩）。这也匹配前端 new-session-dialog 的模板流通
+    # 语义（sz-baojian-house 的 suggested_tool_names == SUPERVISOR_TOOLS）。
     runner = runner_cls(
         tenant_id=DEFAULT_TENANT_ID,
         kb_ids=[DEFAULT_KB_ID],
@@ -274,6 +279,7 @@ async def run_one(runner_cls, model_cfg_cls, q: GoldenQuestion) -> dict[str, Any
             base_url="https://api.deepseek.com/anthropic",
             auth_token=os.environ.get("AGENT_V2_DEEPSEEK_KEY"),
         ),
+        tool_names=list(SUPERVISOR_TOOLS),
         max_turns=8,
         max_budget_usd=0.5,
     )
