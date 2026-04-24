@@ -204,6 +204,40 @@
 
 ---
 
+### Phase 2.7 — 附件协议 + 下载-验证-归档（规划中，2026-04-25 立项）
+
+**目标**：Agent 对话里能直接**接入文件**（用户上传 / Agent 下载）→ 经用户 preview 确认 → 归档到 KB。把 KB 从"只读顾问"推到"可交互档案管理员"。
+
+**两个用户场景**：
+1. **用户上传**：拖文件进对话 → Agent 看到附件 → `submit_plan` 带 preview → 用户批准 → `doc_archive_attachment` 入库
+2. **Agent 下载**：用户说"把 https://xxx 入库" → `web_fetch_to_attachment` 抓成 staged → `submit_plan` 带 preview → 批准 → `doc_archive_attachment`（复用场景 1 后半段）
+
+**核心设计决策**（对齐 `~/Opensource/vendor/claude-code-ref`）：
+- **Attachment 作独立 message type**（不塞 content block）—— 对齐 ref `attachments.ts:3675`（60+ 子类型证明扩展性）
+- **不搞通用 pending queue** —— ref 全库 0 命中 `PendingEdit/PendingWrite`。复用 `submit_plan + plan_gate` 作 staging（Phase 2.6 v0.4 做好的 permission-mode 等价物）
+- **场景 1/2 共用** `doc_archive_attachment` 作最后一步 —— `web_fetch_to_attachment` 只材化 staged 附件，不直接入库
+
+**新增表 + 工具**：
+- `agent_v2_attachment` 表（session-scoped，24h TTL，xxhash128 dedupe）
+- `web_fetch_to_attachment`（sub_librarian 用）+ `doc_archive_attachment`（sub_archivist 用，plan_gated）
+- `submit_plan.preview` 字段扩展（markdown_excerpt，≤ 8KB，前端折叠渲染）
+
+**Stage 分解**（11-15h 合计）：
+- Stage 1 DB + HTTP + ToolContext 附件基础设施（4-5h）
+- Stage 2 `doc_archive_attachment` + `web_fetch_to_attachment` 工具（2-3h）
+- Stage 3 `submit_plan.preview` 字段 + 前端 plan card 折叠预览（2h）
+- Stage 4 前端 composer 文件选择器 + attachment chip（2-3h）
+- Stage 5 真机 smoke + 文档更新（1-2h）
+
+详见 `PLAN-attachments.md`（完整设计 + ref 引用精确到行号 + 决策 log）。
+
+**退出标准**：
+- 场景 1 + 场景 2 各 1 个真机 E2E smoke 通过
+- 附件上限 / TTL / dedup / RBAC / plan gate 全链路测试绿
+- TEST-MANUAL 加 G13 附件组，人工测通过
+
+---
+
 ### Phase 1.7 — 前端产品化重构（当前）
 
 **目标**：把现有 RAGFlow 原版前端包装成我们自己的企业知识库产品，参考 `design-refs/zhiyuan/`「知源 · 企业知识库」稿统一品牌、导航、首页和主要业务页面，同时保留全部功能。
@@ -279,6 +313,7 @@
 | `PLAN-multi-agent.md` | P2.3 Multi-Agent subagent 详细设计 |
 | `PLAN-agent-runtime-maturity.md` | Phase 2.5 Agent Runtime 成熟化（Citation validator / 多轮上下文 / Agent definition，参考 `vendor/claude-code-ref`）|
 | `PLAN-doc-ops.md` | Phase 2.6 文档运营工具（doc_tag / rename / archive / reparse / upload / kb_create + ask_user_question / submit_plan + sub_archivist）|
+| `PLAN-attachments.md` | Phase 2.7 附件协议 + 下载-验证-归档（`web_fetch_to_attachment` + `doc_archive_attachment` + `submit_plan.preview`，参照 `claude-code-ref/src/utils/attachments.ts`）|
 | `PRODUCT-UI-PLAN.md` | Phase 1.7 前端产品化（已完成，可归档）|
 | `STATUS.md` | 会话交接文档，每次实质进展必更 |
 | `DESIGN.md` | Phase 1 Agent v2 架构设计（稳定，不再改） |
@@ -299,3 +334,4 @@
 | 2026-04-23 | v0.7 | Phase 2.6 v0.5：U3 searchHint 前缀 + MCP 协议原生 annotations（`readOnly`/`destructive`/`openWorld`）通过 `registry._decorate_for_mcp` 注入；U7 多轮历史保留 tool_use/tool_result breadcrumbs（`list_for_runner(include_tool_calls=True)` + `_format_tool_calls_for_history`）；per-subagent 模型路由（#42）`AgentDefinition.model: ModelRef` 生效。+29 测试（258 pass / 8 skip）|
 | 2026-04-23 | v0.8 | Phase 2.6 v0.6：G7 plan 执行闭环。`AgentV2Session.pending_plan_body` 保存完整 plan payload；新 read-only 工具 `get_pending_plan` 让 archivist 在 approved 状态下读回 title/steps/affected_resources 逐步执行；sub_archivist v1.3.0 要求 `[step K/N done: ...]` 标记；工具总数 17 → 18。+14 测试（272 pass / 8 skip）|
 | 2026-04-23 | v0.3 | Phase 2.5 全部完成（commits `540bfb91f` / `86fb8e867` / `c921ea729`）；Phase 2 + 3.1 + 3.2 + 2.5 全数落地，下一批为 Phase 3.3 企业管理台或 P3.2c 钉钉/企微 |
+| 2026-04-25 | v0.9 | 插入 Phase 2.7（附件协议 + 下载-验证-归档）：深扒 `claude-code-ref/src/utils/attachments.ts` 拿到"attachment-as-independent-message" pattern；决定**复用** `submit_plan + plan_gate` 作 staging 层（ref 全库无 PendingQueue 抽象，我们的 v0.4 plan gate 正是 Plan Mode 等价物）；新 `agent_v2_attachment` 表 + 2 工具（`web_fetch_to_attachment` / `doc_archive_attachment`）+ `submit_plan.preview` 字段扩展 + 前端 composer 文件选择器。11-15h 工作量，详见 `PLAN-attachments.md` |

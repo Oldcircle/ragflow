@@ -4,6 +4,51 @@
 
 ---
 
+## 最近更新：2026-04-25（Phase 2.7 立项：附件协议 + 下载-验证-归档，设计定版）
+
+**触发**：用户提了两个场景——
+1. 对话里直接上传文件，Agent 自动归档到 KB
+2. Agent 下载 URL 内容，用户 preview 审核，批准后归档
+
+按用户要求**先深扒 `vendor/claude-code-ref` 同类机制再动手**。Explore 过一遍
+`src/utils/attachments.ts` / `bridge/inboundAttachments.ts` /
+`EnterPlanModeTool.ts` / `ExitPlanModeV2Tool.ts`，拿到 5 节核心发现：
+
+**关键设计决策（3 条）**：
+1. **Attachment 作独立 message type**（不塞 UserMessage 的 content block）
+   —— ref `attachments.ts:3675` 的 60+ 子类型证明架构扩展性
+2. **不搞通用 pending queue** —— ref 全库 0 命中 `PendingEdit`；我们的
+   `submit_plan + plan_gate runtime`（v0.4 做的）就是 ExitPlanMode 等价物
+3. **场景 1 + 场景 2 共用** `doc_archive_attachment` 作最后一步；
+   `web_fetch_to_attachment` 只材化成 staged attachment，不直接入库
+
+**关键产物**：
+- `PLAN-attachments.md`（**新**，完整设计 + ref 引用精确到行号 + 决策 log +
+  11 节 11 章，覆盖 DB schema / HTTP 端点 / MCP 工具 / 前端组件 / safety
+  limits / 分 Stage 工时拆解 / 拒绝的替代方案 log）
+- `CLAUDE.md` / `PLAN.md` 活跃文档清单登记
+- `PLAN.md` 新增 Phase 2.7 章节 + v0.9 版本记录
+
+**数据/工具摘要**：
+- 新表 `agent_v2_attachment`（session-scoped + 24h TTL + xxhash128 dedupe）
+- 新工具 `web_fetch_to_attachment`（sub_librarian）+ `doc_archive_attachment`
+  （sub_archivist，plan_gated）
+- `submit_plan.preview` 字段扩展（markdown_excerpt，≤ 8KB，前端折叠渲染）
+- 前端 composer 文件选择器 + attachment chip + plan card preview 展开
+
+**Stage 分解（11-15h 合计）**：
+1. DB + HTTP + ToolContext 附件基础设施（4-5h）
+2. `doc_archive_attachment` + `web_fetch_to_attachment` 工具（2-3h）
+3. `submit_plan.preview` + 前端 plan card 折叠预览（2h）
+4. 前端 composer 附件上传（2-3h）
+5. 真机 smoke + 文档更新（1-2h）
+
+**下一步入口**：
+1. 用户确认设计（PLAN-attachments.md）→ 开 Stage 1
+2. Stage 1 开始：建 migration + `AgentV2AttachmentService` + 3 个 HTTP 端点
+
+---
+
 ## 最近更新：2026-04-24（Phase 2.6 v0.7.2：Web 工具硬化 + 异步任务显式交接）
 
 **触发**：v0.7 加了 `web_search` / `web_fetch`，但只达到最小可用；同时
