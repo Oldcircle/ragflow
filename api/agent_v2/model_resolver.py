@@ -8,6 +8,9 @@
 目前支持的 provider（按 Anthropic-兼容端点映射）：
   - Anthropic: 直接用官方
   - DeepSeek: 走 https://api.deepseek.com/anthropic
+    - 默认 model=deepseek-chat；可通过 AGENT_V2_DEEPSEEK_MODEL 指定：
+      - `deepseek-v4-flash`（1M context，upstream v0.25.0 新增）
+      - `deepseek-v4-pro`（1M context reasoner 升级版）
   - 其他「OpenAI-API-Compatible / VLLM / Ollama」类：尝试 <base>/anthropic，不保证全兼容
 """
 
@@ -116,14 +119,18 @@ def resolve_model(conf: dict | None, tenant_id: str) -> ResolvedModel:
         "DEEPSEEK_API_KEY"
     )
     if key:
+        # 默认 deepseek-chat；可通过 AGENT_V2_DEEPSEEK_MODEL 切换到 V4：
+        #   - deepseek-v4-flash   — 1M context, tool_use 友好（upstream v0.25.0）
+        #   - deepseek-v4-pro     — 1M context, reasoner 升级版
+        model = os.environ.get("AGENT_V2_DEEPSEEK_MODEL", "deepseek-chat")
         return ResolvedModel(
             config=ModelConfig(
-                model="deepseek-chat",
+                model=model,
                 base_url="https://api.deepseek.com/anthropic",
                 auth_token=key,
             ),
             source="env_fallback",
-            display_name="env / deepseek-chat",
+            display_name=f"env / {model}",
         )
     key = os.environ.get("AGENT_V2_ANTHROPIC_KEY") or os.environ.get(
         "ANTHROPIC_API_KEY"

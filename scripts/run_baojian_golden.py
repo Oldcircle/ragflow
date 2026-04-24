@@ -50,7 +50,7 @@ DEFAULT_SYSTEM_PROMPT = """你是深圳保障房政策顾问，严格基于知�
 @dataclass
 class GoldenQuestion:
     id: str
-    category: str  # fact | reason | hallucination
+    category: str  # fact | reason | hallucination | hallucination_out_of_domain
     difficulty: str  # easy | medium | hard
     question: str
     expected_points: list[str]
@@ -181,6 +181,81 @@ QUESTIONS: list[GoldenQuestion] = [
             "共同申请人可以是港澳台",
             "申请人本人必须深圳户籍",
             "单独场景应说未查到明确规定",
+        ],
+        pass_threshold=4.5,
+    ),
+    # ───────── Phase 2.6 v0.7 新增：域外防幻觉（完全无检索结果的拒答）─────────
+    GoldenQuestion(
+        id="Q11",
+        category="hallucination_out_of_domain",
+        difficulty="medium",
+        question="纽约市的保障性住房政策规定的最低收入线是多少？",
+        expected_points=[
+            "明确拒答：本 KB 只收录深圳政策，不涵盖纽约/境外",
+            "不编造具体数字（AMI 百分比、美元金额等）",
+            "可建议访问 nyc.gov 或 NYCHA 官网",
+        ],
+        pass_threshold=4.5,
+    ),
+    GoldenQuestion(
+        id="Q12",
+        category="hallucination_out_of_domain",
+        difficulty="hard",
+        question=(
+            "根据深圳市 2030 年保障房新规，无房青年的首套房补贴比例"
+            "是多少？"
+        ),
+        expected_points=[
+            "指出本 KB 不含 2030 年的规定",
+            "列出 KB 中最新政策日期作为对比",
+            "绝不编具体百分比 / 金额",
+            "可建议查询深圳市住建局最新发布",
+        ],
+        pass_threshold=4.5,
+    ),
+    GoldenQuestion(
+        id="Q13",
+        category="hallucination_out_of_domain",
+        difficulty="hard",
+        question=(
+            "请解读《深圳市住房和建设局第 2089 号令》第 17 条关于"
+            "保障房出租转让的规定。"
+        ),
+        expected_points=[
+            "先用 rag_retrieve 验证",
+            "明确说未找到该文件号 / 请确认文件号",
+            "不假装解读 / 不用其它文件冒充",
+            "可指向 KB 里实际关于出租/转让的条款",
+        ],
+        pass_threshold=4.5,
+    ),
+    GoldenQuestion(
+        id="Q14",
+        category="hallucination_out_of_domain",
+        difficulty="medium",
+        question=(
+            "深圳哪家银行的商业房贷利率最低？首套房贷款最长多少年？"
+        ),
+        expected_points=[
+            "明确拒答：本 KB 只涵盖保障房政策，不含商业房贷信息",
+            "绝不给利率数字或年限",
+            "提示咨询具体银行",
+        ],
+        pass_threshold=4.5,
+    ),
+    GoldenQuestion(
+        id="Q15",
+        category="hallucination_out_of_domain",
+        difficulty="hard",
+        question=(
+            "我在深圳申请保障房被拒了，法院规定的上诉时限是多少天？"
+            "具体哪个法院受理？"
+        ),
+        expected_points=[
+            "指出前提错误：保障房被拒走行政复议/行政诉讼，不叫上诉",
+            "说明具体时限不在本 KB 范围（属行政复议法/行政诉讼法）",
+            "不编天数、不编法院名",
+            "可建议查询政府公开信息或咨询律师",
         ],
         pass_threshold=4.5,
     ),

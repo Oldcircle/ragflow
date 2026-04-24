@@ -238,6 +238,26 @@ ANNOTATIONS: dict[str, ToolAnnotation] = {
         cost_class="cheap",
         avg_latency_ms=40,
     ),
+    # ── Web（Phase 2.6 v0.7）──────────────────────────────────────────────
+    "web_search": ToolAnnotation(
+        name="web_search",
+        is_read_only=True,
+        # Not truly idempotent — web index changes — but retrying the same
+        # query is replay-safe within a short window, so treat as idempotent
+        # for LLM planning purposes.
+        is_idempotent=True,
+        cost_class="normal",
+        avg_latency_ms=1500,
+        side_effects=("calls external Tavily API; counts against quota",),
+    ),
+    "web_fetch": ToolAnnotation(
+        name="web_fetch",
+        is_read_only=True,
+        is_idempotent=True,  # same URL → (usually) same content
+        cost_class="normal",
+        avg_latency_ms=2500,
+        side_effects=("HTTP GET to the public internet",),
+    ),
 }
 
 

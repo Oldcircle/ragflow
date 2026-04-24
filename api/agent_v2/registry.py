@@ -39,6 +39,8 @@ from .tools.rag_read_doc import rag_read_doc
 from .tools.rag_retrieve import rag_retrieve
 from .tools.spawn_subagent import spawn_subagent
 from .tools.submit_plan import submit_plan
+from .tools.web_fetch import web_fetch
+from .tools.web_search import web_search
 
 # 所有已实现工具的注册表
 ALL_TOOLS = {
@@ -56,7 +58,7 @@ ALL_TOOLS = {
     "doc_reparse": doc_reparse,
     "doc_upload_from_url": doc_upload_from_url,
     "kb_create": kb_create,
-    # Phase 2.6 v0.2 — 自我维护 / 总结笔记（sub_librarian 专用）
+    # Phase 2.6 v0.2 — 自我维护 / 总结笔记（sub_librarian 专用)
     "doc_create_note": doc_create_note,
     "kb_audit": kb_audit,
     "kb_stats": kb_stats,
@@ -66,6 +68,9 @@ ALL_TOOLS = {
     "submit_plan": submit_plan,
     # Phase 2.6 v0.6 — plan 执行闭环（sub_archivist 在批准后调用）
     "get_pending_plan": get_pending_plan,
+    # Phase 2.6 v0.7 — 公网检索 / 抓取（研究类 supervisor / subagent 可选）
+    "web_search": web_search,
+    "web_fetch": web_fetch,
 }
 
 # MCP server 名（给 SDK 用）；SDK 生成的工具名是 ``mcp__<server>__<tool>``
@@ -105,9 +110,15 @@ def _decorate_for_mcp(tool: SdkMcpTool) -> SdkMcpTool:
             "readOnly": ann.is_read_only,
             "destructive": not ann.is_read_only and not ann.is_idempotent,
             # openWorld = reaches beyond the KB (network fetch, user IO).
-            # True for URL ingest and interactive tools; false otherwise.
+            # True for URL ingest / interactive / public web tools.
             "openWorld": tool.name
-            in ("doc_upload_from_url", "ask_user_question", "submit_plan"),
+            in (
+                "doc_upload_from_url",
+                "ask_user_question",
+                "submit_plan",
+                "web_search",
+                "web_fetch",
+            ),
         }
         decorated.annotations = mcp_ann
 

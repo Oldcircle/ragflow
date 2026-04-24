@@ -34,11 +34,25 @@ DEFINITION = AgentDefinition(
             "and cite the source's own projection verbatim.",
             "When comparing multiple companies / periods, present values in "
             "a table and annotate each cell with [N] citations.",
+            # Web tool usage guidance (Phase 2.6 v0.7)
+            "ALWAYS try `rag_retrieve` FIRST. Only escalate to `web_search` "
+            "when the KB has no relevant chunks after 2 keyword variations, "
+            "or when the user explicitly asks about 'latest / current / "
+            "today' prices or news.",
+            "Web results cannot use the [N] citation markers (those are "
+            "reserved for KB chunks). When referencing a web result, cite "
+            "the URL inline, e.g. '(per https://example.com/foo)'.",
+            "If web and KB disagree on a fact, prefer the KB and note the "
+            "discrepancy; do not silently override KB with web content.",
         ],
     ),
     max_turns=15,
     max_budget_usd=1.0,
-    tools=SUPERVISOR_TOOLS,
+    # Research supervisor is the ONLY built-in supervisor with web access.
+    # Rationale: policy / contract / wiki supervisors must stay KB-only so
+    # citation integrity holds; finance research inherently needs up-to-date
+    # external context (prices, filings, news) that can't live in a static KB.
+    tools=[*SUPERVISOR_TOOLS, "web_search", "web_fetch"],
     kb_hints=("research report", "filings", "industry", "财报", "研报"),
     citation_enforce="warn",
     citation_numeric_strict=True,

@@ -113,6 +113,9 @@ SEARCH_HINT_BY_TOOL: dict[str, str] = {
     "doc_reparse": "clear chunks and re-run the parser on a document",
     "doc_upload_from_url": "download a url into the knowledge base",
     "kb_create": "create a new empty knowledge base",
+    # Web (Phase 2.6 v0.7)
+    "web_search": "search the public web for recent or external info",
+    "web_fetch": "fetch the full text of a specific web page",
 }
 
 
