@@ -115,6 +115,55 @@ export interface AgentV2AttachmentUploadResponse {
   rejected: Array<{ filename: string; reason: string }>;
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Phase 2.8.1 — unified API error handling
+//
+// RAGFlow backend returns HTTP 200 even for validation / authz / quota
+// errors, with a `{code, message}` envelope where success uses code=0
+// (RetCode.SUCCESS) and any other code is a failure. The legacy pattern
+// `return data.data as T` lies about the type — on error, `data.data` is
+// undefined or null and the consumer crashes on first property access.
+//
+// `unwrap()` enforces the contract: it throws on non-success codes with
+// the server's message attached, so consumers can catch via standard
+// try/catch and the failure path is consistent across the whole module.
+//
+// This is intentionally local to agent-chat — applying it project-wide
+// would touch dozens of unrelated callers and is out of scope.
+// ──────────────────────────────────────────────────────────────────────────
+
+interface ApiEnvelope<T> {
+  code?: number;
+  message?: string;
+  data?: T | null;
+}
+
+class ApiError extends Error {
+  code: number;
+  constructor(code: number, message: string) {
+    super(message);
+    this.code = code;
+    this.name = 'ApiError';
+  }
+}
+
+function unwrap<T>(envelope: ApiEnvelope<T>): T {
+  if (envelope == null) {
+    throw new ApiError(-1, 'empty response from server');
+  }
+  if (typeof envelope.code === 'number' && envelope.code !== 0) {
+    throw new ApiError(
+      envelope.code,
+      envelope.message ?? `request failed (code ${envelope.code})`,
+    );
+  }
+  if (envelope.data == null) {
+    // Code is 0 (success) but data is missing — backend handler bug.
+    throw new ApiError(-1, envelope.message ?? 'server returned empty data');
+  }
+  return envelope.data;
+}
+
 export const agentV2Api = {
   async listSessions(params?: {
     page?: number;
@@ -122,16 +171,18 @@ export const agentV2Api = {
     status?: string;
   }) {
     const { data } = await request.get('/v1/agent_v2/session', { params });
-    return (data.data?.sessions ?? []) as AgentV2Session[];
+    // List endpoint may return empty list legitimately — don't unwrap;
+    // just be defensive about the optional .sessions key.
+    return (data?.data?.sessions ?? []) as AgentV2Session[];
   },
 
   async getSession(sessionId: string) {
     const { data } = await request.get(`/v1/agent_v2/session/${sessionId}`);
-    return data.data as {
+    return unwrap<{
       session: AgentV2Session;
       messages: AgentV2Message[];
       tool_calls: AgentV2ToolCall[];
-    };
+    }>(data);
   },
 
   async createSession(payload: {
@@ -144,12 +195,12 @@ export const agentV2Api = {
     max_budget_usd?: number;
   }) {
     const { data } = await request.post('/v1/agent_v2/session', payload);
-    return data.data as AgentV2Session;
+    return unwrap<AgentV2Session>(data);
   },
 
   async deleteSession(sessionId: string) {
     const { data } = await request.delete(`/v1/agent_v2/session/${sessionId}`);
-    return data.data as { deleted: boolean };
+    return unwrap<{ deleted: boolean }>(data);
   },
 
   /**
@@ -181,29 +232,29 @@ export const agentV2Api = {
       `/v1/agent_v2/session/${sessionId}`,
       patch,
     );
-    return data.data as {
+    return unwrap<{
       session: AgentV2Session;
       updated_fields: string[];
       warnings: string[];
-    };
+    }>(data);
   },
 
   async listTools() {
     const { data } = await request.get('/v1/agent_v2/tool');
-    return data.data as {
+    return unwrap<{
       tools: AgentV2ToolInfo[];
       mcp_tool_names: string[];
-    };
+    }>(data);
   },
 
   async listModels() {
     const { data } = await request.get('/v1/agent_v2/model');
-    return data.data as { models: AgentV2ModelInfo[] };
+    return unwrap<{ models: AgentV2ModelInfo[] }>(data);
   },
 
   async listTemplates() {
     const { data } = await request.get('/v1/agent_v2/template');
-    return data.data as { templates: AgentV2Template[] };
+    return unwrap<{ templates: AgentV2Template[] }>(data);
   },
 
   // ── Phase 2.7 Stage 1 — session attachments ──
@@ -217,21 +268,36 @@ export const agentV2Api = {
     for (const f of files) {
       form.append('file', f);
     }
-    // umi-request onUploadProgress event shape: { progress: 0..1 }
+    // axios signature: post(url, body, config). The earlier code wrapped
+    // FormData inside a config-style object ({ data: form, requestType:
+    // 'form', ... }) — that's the umi-request shape, not axios. Axios
+    // serialized the wrapper as JSON and the backend never saw any
+    // multipart files → permanent "no file part" rejection.
     const { data } = await request.post(
       `/v1/agent_v2/session/${sessionId}/attachments`,
+      form,
       {
-        data: form,
         signal,
-        requestType: 'form',
-        onUploadProgress: ({ progress }: { progress?: number }) => {
-          if (onProgress) {
-            onProgress(Math.round((progress || 0) * 100));
-          }
+        // Let the browser set Content-Type with the right boundary.
+        // Axios picks this up automatically when body is FormData;
+        // we override to `undefined` only to clear any default JSON
+        // Content-Type the global request instance might have set.
+        headers: { 'Content-Type': undefined as unknown as string },
+        onUploadProgress: (event) => {
+          if (!onProgress) return;
+          // Axios native progress event shape:
+          //   { loaded: number, total?: number, progress?: number, ... }
+          const pct =
+            typeof event.progress === 'number'
+              ? event.progress
+              : event.total
+                ? event.loaded / event.total
+                : 0;
+          onProgress(Math.round(pct * 100));
         },
       },
     );
-    return data.data as AgentV2AttachmentUploadResponse;
+    return unwrap<AgentV2AttachmentUploadResponse>(data);
   },
 
   async listAttachments(sessionId: string, includeRejected = false) {
@@ -239,13 +305,15 @@ export const agentV2Api = {
       `/v1/agent_v2/session/${sessionId}/attachments`,
       { params: includeRejected ? { include_rejected: 1 } : undefined },
     );
-    return (data.data?.attachments ?? []) as AgentV2Attachment[];
+    return (data?.data?.attachments ?? []) as AgentV2Attachment[];
   },
 
   async deleteAttachment(sessionId: string, attachmentId: string) {
     const { data } = await request.delete(
       `/v1/agent_v2/session/${sessionId}/attachments/${attachmentId}`,
     );
-    return data.data as { rejected: boolean };
+    return unwrap<{ rejected: boolean }>(data);
   },
 };
+
+export { ApiError, unwrap };
