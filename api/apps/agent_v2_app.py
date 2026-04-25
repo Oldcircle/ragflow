@@ -33,6 +33,7 @@ from api.utils.api_utils import (
 from api.agent_v2.model_resolver import list_available_chat_models, resolve_model
 from api.agent_v2.plan_decision import augment_for_plan_decision, parse_plan_decision
 from api.agent_v2.registry import ALL_TOOLS, list_tool_names
+from api.agent_v2 import runner_registry
 from api.agent_v2.runner import AgentRunner, ModelConfig
 from api.agent_v2.templates import list_templates
 from common.constants import RetCode
@@ -247,6 +248,40 @@ async def delete_session(session_id: str):
             return get_data_error_result(message="session not found")
         AgentV2SessionService.soft_delete(session_id)
         return get_json_result(data={"deleted": True})
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/session/<session_id>/cancel", methods=["POST"])  # noqa: F821
+@login_required
+async def cancel_session_run(session_id: str):
+    """Phase 2.7 v0.21 — abort the active runner for this session.
+
+    Looks up the in-process runner registry and calls ``cancel()`` on
+    the AgentRunner currently serving this session. Tools using
+    ``check_cancelled()`` (web_search / web_fetch / etc.) will bail at
+    their next cooperative check; the SSE stream then emits a
+    ``cancelled`` error envelope and unwinds normally.
+
+    Idempotent: calling cancel on a session that isn't running
+    (no active turn, or running on a different pod) returns
+    ``{"cancelled": false}`` without error. The frontend can call this
+    safely on every "stop" click without coordinating with stream state.
+
+    RBAC: a user can only cancel their own tenant's sessions. There's
+    no separate per-session role for cancellation — if you can read the
+    session, you can stop its run.
+    """
+    try:
+        session = AgentV2SessionService.get_by_id(session_id)
+        if not session or session.tenant_id != current_user.id:
+            return get_data_error_result(message="session not found")
+        cancelled = runner_registry.cancel(session_id)
+        return get_json_result(data={
+            "session_id": session_id,
+            "cancelled": cancelled,
+            "active_runs_in_process": runner_registry.active_session_count(),
+        })
     except Exception as e:
         return server_error_response(e)
 
@@ -756,6 +791,12 @@ async def send_message():
 
     async def stream():
         events: list[dict] = []
+        # Phase 2.7 v0.21 — register the runner so the cancel endpoint
+        # (POST /v1/agent_v2/session/<id>/cancel) can reach it. Always
+        # unregister in finally regardless of how the stream ends —
+        # success / error / client disconnect / SDK crash all need to
+        # clear the registry entry.
+        runner_registry.register(session_id, runner)
         try:
             async for ev in runner.run(
                 runner_input,
@@ -787,6 +828,12 @@ async def send_message():
             logger.info("conversation stream cancelled for session %s", session_id)
             raise
         finally:
+            # v0.21 — drop the runner from the registry so a stale entry
+            # doesn't shadow the next turn. Pass ``runner`` so we only
+            # drop OUR entry — protects against a late finally racing
+            # with a fresh registration if the user fires a new turn
+            # immediately after a cancel.
+            runner_registry.unregister(session_id, runner)
             # 收流后落 assistant 消息（即便失败也留最后状态）
             text = "".join(
                 e["data"].get("text", "")
