@@ -75,6 +75,110 @@ def _clear_cache_for_tests() -> None:
         _CACHE.clear()
 
 
+# ────────────── secondary-model focused extraction ──────────────
+#
+# Mirror of claude-code-ref's WebFetchTool ``makeSecondaryModelPrompt``.
+# When the agent passes a ``prompt`` arg, we run the fetched content
+# through a small fast model (deepseek-chat in our case, Haiku in CC) to
+# extract just what's relevant. This is the single biggest context-saver
+# for web_fetch — a 24 KB page distilled into a 500-token answer.
+
+_SECONDARY_MAX_TOKENS = 1500
+
+
+def _build_secondary_prompt(
+    *, content: str, user_prompt: str, preapproved: bool,
+) -> str:
+    """Compose the secondary-model prompt. Quote constraints follow CC's
+    pattern — strict for general web (avoid copyright issues), looser for
+    preapproved (open-source docs / official sites the user trusts)."""
+    if preapproved:
+        guidelines = (
+            "Provide a concise response based on the content above. Include "
+            "relevant details, code examples, and documentation excerpts as "
+            "needed."
+        )
+    else:
+        guidelines = (
+            "Provide a concise response based only on the content above. "
+            "In your response:\n"
+            "- Enforce a strict 125-character maximum for quotes from any "
+            "source document.\n"
+            "- Use quotation marks for exact language; any language outside "
+            "of the quotation should never be word-for-word the same.\n"
+            "- You are not a lawyer and never comment on the legality of "
+            "your own prompts and responses."
+        )
+    return (
+        "Web page content:\n---\n"
+        f"{content}\n"
+        "---\n\n"
+        f"{user_prompt}\n\n"
+        f"{guidelines}\n"
+    )
+
+
+async def _summarize_with_secondary_model(
+    *, content: str, user_prompt: str, preapproved: bool, model_config,
+) -> tuple[str | None, str | None]:
+    """Returns ``(summary, error)`` — at most one is non-None.
+
+    Calls the Anthropic-compatible ``/v1/messages`` endpoint directly via
+    httpx instead of going through the ``anthropic`` SDK. Two reasons:
+
+    1. anthropic SDK 0.34.x + recent httpx versions disagree on the
+       ``proxies`` kwarg, breaking the SDK at construction time.
+    2. We only need a single non-streaming POST; the SDK adds dependency
+       weight without buying anything we use.
+
+    Compatible with DeepSeek's Anthropic-flavored endpoint and Anthropic's
+    own (and any other ``base_url`` that speaks the same dialect)."""
+    if not model_config or not getattr(model_config, "auth_token", None):
+        return None, "secondary_model_unavailable: no model_config in context"
+
+    try:
+        import httpx
+    except ImportError:
+        return None, "secondary_model_unavailable: httpx not installed"
+
+    full_prompt = _build_secondary_prompt(
+        content=content, user_prompt=user_prompt, preapproved=preapproved,
+    )
+
+    base_url = (model_config.base_url or "https://api.anthropic.com").rstrip("/")
+    endpoint = f"{base_url}/v1/messages"
+    headers = {
+        "x-api-key": model_config.auth_token,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+    }
+    body = {
+        "model": model_config.model,
+        "max_tokens": _SECONDARY_MAX_TOKENS,
+        "messages": [{"role": "user", "content": full_prompt}],
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(endpoint, headers=headers, json=body)
+        if resp.status_code >= 400:
+            return None, (
+                f"secondary_model_http_{resp.status_code}: "
+                f"{resp.text[:300]}"
+            )
+        data = resp.json()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("web_fetch secondary model call failed: %s", exc)
+        return None, f"secondary_model_error: {type(exc).__name__}: {exc}"
+
+    parts: list[str] = []
+    for block in data.get("content") or []:
+        if isinstance(block, dict) and isinstance(block.get("text"), str):
+            parts.append(block["text"])
+    summary = "".join(parts).strip()
+    return summary or None, None
+
+
 def _ssrf_check(url: str) -> tuple[bool, str]:
     """返回 ``(ok, reason)``；失败时 reason 解释原因。"""
     parsed = urlparse(url)
@@ -223,6 +327,20 @@ def _html_to_markdown(html: str) -> tuple[str, str]:
                 ),
                 "default": False,
             },
+            "prompt": {
+                "type": "string",
+                "description": (
+                    "Optional focused-extraction prompt. When set, the "
+                    "fetched page is passed through a secondary fast model "
+                    "with this prompt and only the model's concise response "
+                    "is returned (in `summary`); the full markdown is "
+                    "discarded to save context. Use this when you only need "
+                    "to answer one specific question about a long page — "
+                    "e.g. 'What is the deadline for the 2025 program?' "
+                    "instead of consuming the whole 24 KB body."
+                ),
+                "maxLength": 500,
+            },
         },
         "required": ["url"],
     },
@@ -250,7 +368,7 @@ async def web_fetch(args: dict) -> dict:
             }
         )
 
-    get_ctx()  # enforce Runner context
+    ctx = get_ctx()  # enforce Runner context
 
     url = str(args.get("url", "")).strip()
     if not url:
@@ -263,12 +381,18 @@ async def web_fetch(args: dict) -> dict:
         return fail("security_error", reason, url=url)
 
     timeout_s = min(max(float(args.get("timeout_s", _DEFAULT_TIMEOUT_S)), 1.0), 60.0)
+    user_prompt = str(args.get("prompt") or "").strip() or None
+
+    # Cache key includes the optional ``prompt`` so different focused-
+    # extraction queries on the same URL don't share a cached entry. Plain
+    # full-content fetches use just the URL, matching v0.15 behavior.
+    cache_key = f"{fetch_url}::{user_prompt}" if user_prompt else fetch_url
 
     # Cache lookup BEFORE the network roundtrip. Same URL within TTL skips
     # the fetch + parse entirely. The agent gets a near-instant response and
     # we don't burn the target host's quota on chatty re-fetches.
     if not args.get("no_cache"):
-        cached = _cache_get(fetch_url)
+        cached = _cache_get(cache_key)
         if cached is not None:
             out = dict(cached)
             out["cache_hit"] = True
@@ -378,13 +502,17 @@ async def web_fetch(args: dict) -> dict:
     if truncated:
         content = content.rstrip() + _TRUNCATED_MARKER
 
-    payload = {
-        "url": str(resp.url),
+    final_url = str(resp.url) or fetch_url
+    preapproved = is_preapproved(final_url)
+    full_length = len(content.encode("utf-8"))
+
+    payload: dict = {
+        "url": final_url,
         "requested_url": url,
         "upgraded_from_http": upgraded_from_http,
         "title": title,
         "content": content,
-        "length": len(content.encode("utf-8")),
+        "length": full_length,
         "truncated": truncated,
         "content_type": ctype,
         "status_code": resp.status_code,
@@ -393,13 +521,39 @@ async def web_fetch(args: dict) -> dict:
         # Preapproved hosts (Anthropic / MDN / docs.python.org / gov.cn etc.)
         # are flagged so a future plan_gate revision can fast-path archives
         # from these sources without an explicit user approval step.
-        "preapproved": is_preapproved(str(resp.url) or fetch_url),
+        "preapproved": preapproved,
         "citation_policy": (
             "If using this fetched page in the final answer, cite the URL "
             "inline or in a `Sources:` section. Do not use KB [N] "
             "citation markers for web sources."
         ),
     }
+
+    # Focused-extraction branch: pipe the fetched markdown through the
+    # configured chat model and return its concise answer instead of the
+    # full body. Mirrors claude-code-ref WebFetchTool's secondary-model
+    # path (Haiku in their setup; whatever model is in ctx.model_config
+    # for us — typically deepseek-chat).
+    if user_prompt:
+        summary, sec_err = await _summarize_with_secondary_model(
+            content=content,
+            user_prompt=user_prompt,
+            preapproved=preapproved,
+            model_config=ctx.model_config,
+        )
+        if summary:
+            payload["summary"] = summary
+            payload["summarized"] = True
+            payload["full_content_length"] = full_length
+            # Drop the body — agent only needs the focused answer.
+            payload.pop("content", None)
+        else:
+            # Fall back to full content but flag the failure so the agent
+            # knows it didn't get the focused answer it asked for.
+            payload["summarized"] = False
+            payload["summary_error"] = sec_err
+        payload["duration_ms"] = int((time.perf_counter() - start) * 1000)
+
     if not args.get("no_cache"):
-        _cache_set(fetch_url, payload)
+        _cache_set(cache_key, payload)
     return mcp_json_response(payload)

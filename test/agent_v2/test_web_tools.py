@@ -745,6 +745,169 @@ def test_web_fetch_flags_preapproved_host(in_ctx):
     assert out_other["preapproved"] is False
 
 
+def test_web_fetch_summarize_with_prompt(in_ctx, monkeypatch):
+    """When ``prompt`` is set, web_fetch routes content through the
+    secondary model and returns a summary instead of the full body."""
+    from api.agent_v2.runner import ModelConfig
+    from api.agent_v2.tools.base import ToolContext, set_ctx, reset_ctx
+
+    rich_ctx = ToolContext(
+        tenant_id="t1",
+        kb_ids=("kb1",),
+        user_id="u1",
+        model_config=ModelConfig(
+            model="deepseek-chat",
+            base_url="https://api.deepseek.com/anthropic",
+            auth_token="fake-key",
+        ),
+    )
+    token = set_ctx(rich_ctx)
+    try:
+        client_inner, _ = _make_html_client(
+            body=(
+                b"<html><head><title>Policy</title></head>"
+                b"<body><main><p>Article 1: applications open Jan 2025. "
+                b"Article 2: deadline March 31 2025.</p></main></body></html>"
+            ),
+            url="https://policy.example.com/2025",
+        )
+
+        captured: dict = {}
+
+        async def _fake_summarize(*, content, user_prompt, preapproved, model_config):
+            captured["content"] = content
+            captured["user_prompt"] = user_prompt
+            captured["preapproved"] = preapproved
+            captured["model"] = model_config.model
+            captured["base_url"] = model_config.base_url
+            captured["auth_token"] = model_config.auth_token
+            return "The deadline is March 31, 2025.", None
+
+        with patch(
+            "api.agent_v2.tools.web_fetch.socket.getaddrinfo",
+            return_value=[(None, None, None, None, ("93.184.216.34", 443))],
+        ), patch(
+            "httpx.AsyncClient", return_value=client_inner,
+        ), patch(
+            "api.agent_v2.tools.web_fetch._summarize_with_secondary_model",
+            side_effect=_fake_summarize,
+        ):
+            out = _parse(
+                _call(
+                    web_fetch,
+                    {
+                        "url": "https://policy.example.com/2025",
+                        "prompt": "What is the application deadline?",
+                    },
+                )
+            )
+
+        assert out["summarized"] is True
+        assert out["summary"] == "The deadline is March 31, 2025."
+        assert "content" not in out
+        assert out["full_content_length"] > 0
+        # The summarizer received the right ctx-derived credentials + model
+        assert captured["model"] == "deepseek-chat"
+        assert captured["base_url"] == "https://api.deepseek.com/anthropic"
+        assert captured["auth_token"] == "fake-key"
+        # ...and the user's question + the page content
+        assert "Article 1" in captured["content"]
+        assert captured["user_prompt"] == "What is the application deadline?"
+    finally:
+        reset_ctx(token)
+
+
+def test_web_fetch_summarize_falls_back_when_no_model_config(in_ctx):
+    """No model_config → summary_error stamped, full content still returned."""
+    client_inner, _ = _make_html_client(
+        body=b"<html><body><p>raw text</p></body></html>",
+        url="https://example.com/no-model",
+    )
+    with patch(
+        "api.agent_v2.tools.web_fetch.socket.getaddrinfo",
+        return_value=[(None, None, None, None, ("93.184.216.34", 443))],
+    ), patch("httpx.AsyncClient", return_value=client_inner):
+        out = _parse(
+            _call(
+                web_fetch,
+                {
+                    "url": "https://example.com/no-model",
+                    "prompt": "irrelevant",
+                },
+            )
+        )
+    assert out["summarized"] is False
+    assert "secondary_model_unavailable" in (out.get("summary_error") or "")
+    # Full body preserved as fallback
+    assert "raw text" in out.get("content", "")
+
+
+def test_web_fetch_summarize_strict_guidelines_for_open_web(in_ctx):
+    """Non-preapproved hosts get the strict 125-char-quote guidelines;
+    preapproved hosts get the looser docs-friendly variant."""
+    from api.agent_v2.tools.web_fetch import _build_secondary_prompt
+
+    open_web = _build_secondary_prompt(
+        content="x", user_prompt="extract this", preapproved=False,
+    )
+    docs = _build_secondary_prompt(
+        content="x", user_prompt="extract this", preapproved=True,
+    )
+    assert "125-character maximum" in open_web
+    assert "125-character maximum" not in docs
+    assert "code examples" in docs
+
+
+def test_web_fetch_caches_summary_distinct_from_full_fetch(in_ctx):
+    """Summary cache key includes the prompt; a plain fetch and a
+    prompt-based fetch on the same URL keep separate cached entries."""
+    from api.agent_v2.runner import ModelConfig
+    from api.agent_v2.tools.base import ToolContext, set_ctx, reset_ctx
+
+    rich_ctx = ToolContext(
+        tenant_id="t1",
+        kb_ids=("kb1",),
+        user_id="u1",
+        model_config=ModelConfig(
+            model="m", base_url="https://x", auth_token="k",
+        ),
+    )
+    token = set_ctx(rich_ctx)
+    try:
+        client_inner, get_calls = _make_html_client(
+            body=b"<html><body><p>page</p></body></html>",
+            url="https://example.com/dual",
+        )
+
+        async def _fake_summarize(**_kw):
+            return "answer about X", None
+
+        with patch(
+            "api.agent_v2.tools.web_fetch.socket.getaddrinfo",
+            return_value=[(None, None, None, None, ("93.184.216.34", 443))],
+        ), patch("httpx.AsyncClient", return_value=client_inner), patch(
+            "api.agent_v2.tools.web_fetch._summarize_with_secondary_model",
+            side_effect=_fake_summarize,
+        ):
+            plain = _parse(_call(web_fetch, {"url": "https://example.com/dual"}))
+            with_prompt = _parse(_call(
+                web_fetch,
+                {"url": "https://example.com/dual", "prompt": "what about X"},
+            ))
+            plain_again = _parse(_call(web_fetch, {"url": "https://example.com/dual"}))
+
+        # Plain fetch was cached; prompt-fetch had to fetch independently
+        # since cache key differs. Both endpoints fetched once each.
+        assert plain["cache_hit"] is False
+        assert with_prompt["cache_hit"] is False
+        assert plain_again["cache_hit"] is True
+        assert get_calls["count"] == 2  # plain + prompt; plain_again hit cache
+        assert with_prompt.get("summary") == "answer about X"
+        assert plain.get("summary") is None
+    finally:
+        reset_ctx(token)
+
+
 def test_preapproved_suffix_match():
     """``szjs.sz.gov.cn`` should match the bare ``gov.cn`` entry via
     suffix-walk so we don't have to enumerate every subdomain."""
