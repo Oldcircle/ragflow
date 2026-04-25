@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from ...tools import _names as names
 from ..schema import AgentDefinition
 from ._common import strict_rag_prompt, SUPERVISOR_TOOLS
 
 
 DEFINITION = AgentDefinition(
     name="research-analyst",
-    version="1.0.0",
+    version="2.0.0",
     description=(
         "Finance / investment research supervisor. Synthesizes across research "
         "reports, filings, and company profiles. Strong at cross-document "
@@ -52,7 +53,7 @@ DEFINITION = AgentDefinition(
     # Rationale: policy / contract / wiki supervisors must stay KB-only so
     # citation integrity holds; finance research inherently needs up-to-date
     # external context (prices, filings, news) that can't live in a static KB.
-    tools=[*SUPERVISOR_TOOLS, "web_search", "web_fetch"],
+    tools=[*SUPERVISOR_TOOLS, names.WEB_SEARCH, names.WEB_FETCH],
     kb_hints=("research report", "filings", "industry", "财报", "研报"),
     citation_enforce="warn",
     citation_numeric_strict=True,

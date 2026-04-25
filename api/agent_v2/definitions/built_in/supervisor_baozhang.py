@@ -8,7 +8,7 @@ from ._common import strict_rag_prompt, SUPERVISOR_TOOLS
 
 DEFINITION = AgentDefinition(
     name="sz-baojian-house",
-    version="1.0.0",
+    version="2.0.0",
     description=(
         "Answers citizen questions about Shenzhen affordable housing policies "
         "(public rental, affordable-rental, sales-based affordable, joint-"

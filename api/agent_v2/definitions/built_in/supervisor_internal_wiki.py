@@ -8,7 +8,7 @@ from ._common import strict_rag_prompt, SUPERVISOR_TOOLS
 
 DEFINITION = AgentDefinition(
     name="internal-wiki",
-    version="1.0.0",
+    version="2.0.0",
     description=(
         "General-purpose internal knowledge advisor. Point it at your company "
         "handbook, SOP, process, and training KBs so employees can ask the "

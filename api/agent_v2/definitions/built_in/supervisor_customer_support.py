@@ -8,7 +8,7 @@ from ._common import strict_rag_prompt, SUPERVISOR_TOOLS
 
 DEFINITION = AgentDefinition(
     name="customer-support",
-    version="1.0.0",
+    version="2.0.0",
     description=(
         "Answers end-customer questions grounded in product manuals, FAQs, "
         "troubleshooting playbooks, and policy documents. Escalates (opens a "

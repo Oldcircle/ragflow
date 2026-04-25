@@ -1,36 +1,40 @@
-"""Shared definitions for built-in agents (Phase 2.6 v0.3).
+"""Shared definitions for built-in agents.
 
-All prompts are now English and section-structured (see
-`api/agent_v2/prompting/builder.py`). Domain specialization is preserved via
-the `role_line` + `domain_context` + `hard_constraints` parameters fed to
-`build_supervisor_prompt`.
+Phase 2.8: ``strict_rag_prompt`` now returns a callable that materializes
+the supervisor body via the PromptSection pipeline (see ``prompting/sections.py``),
+rather than the legacy single-string ``build_supervisor_prompt`` template.
+Domain specialization is preserved via the ``role`` / ``fallback`` /
+``extras`` parameters; existing supervisor files stay unchanged.
 
-This module only deals with text assembly. Runtime context (kb_ids, tenant)
-is injected by the runner / spawn flow, not at definition time.
+This module only deals with text assembly. Runtime context (kb_ids,
+tenant) is injected by the runner / spawn flow, not at definition time.
 """
 
 from __future__ import annotations
 
-from ...prompting import build_supervisor_prompt
+from collections.abc import Callable
+
+from ...prompting import PromptCtx, assemble_prompt, sections
+from ...tools import _names as names
 
 
 # Phase 2.6 v0.2 design constraint: supervisor only does "retrieval QA +
-# delegation", no direct write / audit tools. Writes go through sub_archivist,
-# audits / notes go through sub_librarian. Keeps the architectural separation
-# from being bypassed by a loose ``tools="*"`` setting. Declared early so the
-# helpers below can reference it when building annotated prompts.
+# delegation", no direct write / audit tools. Writes go through
+# sub_archivist, audits / notes go through sub_librarian. Keeps the
+# architectural separation from being bypassed by a loose ``tools="*"``
+# setting.
 SUPERVISOR_TOOLS = [
     # Read
-    "rag_retrieve",
-    "rag_list_docs",
-    "rag_read_doc",
-    "rag_graph_query",
+    names.RAG_RETRIEVE,
+    names.RAG_LIST_DOCS,
+    names.RAG_READ_DOC,
+    names.RAG_GRAPH_QUERY,
     # Cheap health snapshot (<1KB, no side effects)
-    "kb_stats",
+    names.KB_STATS,
     # Delegation + user interaction
-    "spawn_subagent",
-    "ask_user_question",
-    "submit_plan",
+    names.SPAWN_SUBAGENT,
+    names.ASK_USER_QUESTION,
+    names.SUBMIT_PLAN,
 ]
 
 
@@ -39,35 +43,53 @@ def strict_rag_prompt(
     role: str,
     fallback: str,
     extras: list[str] | None = None,
-) -> str:
-    """Backwards-compatible supervisor prompt builder.
+) -> Callable[[dict | None], str]:
+    """Phase 2.8 supervisor prompt builder — returns a callable.
 
-    `role` is now expected in English (e.g. "the Shenzhen Affordable Housing
-    Policy Advisor"), though Chinese still works — the model handles
-    multilingual role names. `fallback` is the phrase the agent emits when
-    the KB does not cover a fact (e.g. "consult your local housing bureau").
-    `extras` are additional domain-specific hard constraints.
+    ``role`` is in English (e.g. "the Shenzhen Affordable Housing Policy
+    Advisor"). ``fallback`` is the phrase the agent emits when the KB
+    does not cover a fact (e.g. "consult your local housing bureau").
+    ``extras`` are additional domain-specific hard constraints.
+
+    The returned callable matches ``schema.SystemPromptFn`` so it plugs
+    into ``AgentDefinition.system_prompt`` directly.
+
+    Body composition (via ``sections.supervisor_static_sections``):
+        identity → domain_context → strict_rag_constraints (with
+        domain extras) → workflow → delegation → clarify_vs_act →
+        actions_risk → tone_and_style → numeric_length_anchors →
+        retrieval_output_rules
     """
     domain_context = (
         f"You operate on a knowledge base curated for {role}. "
-        f"If users ask questions outside this scope, reply briefly that you "
-        f"can only answer questions relating to {role}, and do not call any tools."
+        f"If users ask questions outside this scope, reply briefly that "
+        f"you can only answer questions relating to {role}, and do not "
+        f"call any tools."
     )
-    # Map the legacy "fallback" string into a hard constraint phrased
-    # the way the rest of the prompt talks about gaps:
-    # "If the retrieved material does not answer, say 'no direct basis in
-    # the knowledge base; please {fallback}'."
     fallback_constraint = (
         "When the knowledge base does not directly answer the user, say "
-        f"exactly: 'No direct basis in the knowledge base; please {fallback}.' "
-        "Do not bridge the gap with training knowledge."
+        f"exactly: 'No direct basis in the knowledge base; please "
+        f"{fallback}.' Do not bridge the gap with training knowledge."
     )
-    hard = [fallback_constraint]
+    constraints: list[str] = [fallback_constraint]
     if extras:
-        hard.extend(extras)
-    return build_supervisor_prompt(
-        role_line=f"You are {role}, answering strictly from the knowledge base.",
-        domain_context=domain_context,
-        hard_constraints=hard,
-        tool_names_for_annotations=SUPERVISOR_TOOLS,
-    )
+        constraints.extend(extras)
+
+    role_line = f"You are {role}, answering strictly from the knowledge base."
+
+    def _build(_ctx: dict | None = None) -> str:
+        static = sections.supervisor_static_sections(
+            extra_constraints=constraints
+        )
+        ctx = PromptCtx(
+            role_line=role_line,
+            enabled_tools=frozenset(SUPERVISOR_TOOLS),
+            domain_context=domain_context,
+        )
+        return assemble_prompt(
+            static_sections=static,
+            dynamic_sections=sections.supervisor_dynamic_sections(),
+            ctx=ctx,
+        )
+
+    return _build

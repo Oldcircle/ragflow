@@ -8,7 +8,7 @@ from ._common import strict_rag_prompt, SUPERVISOR_TOOLS
 
 DEFINITION = AgentDefinition(
     name="legal-contract",
-    version="1.0.0",
+    version="2.0.0",
     description=(
         "For in-house legal and compliance teams. Answers clause-level "
         "questions grounded in a company-private KB of contract templates, "

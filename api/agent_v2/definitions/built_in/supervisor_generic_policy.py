@@ -8,7 +8,7 @@ from ._common import strict_rag_prompt, SUPERVISOR_TOOLS
 
 DEFINITION = AgentDefinition(
     name="generic-policy",
-    version="1.0.0",
+    version="2.0.0",
     description=(
         "General-purpose supervisor for any policy / regulation / internal-"
         "rule knowledge base. Strict verbatim citation; never fabricates "
