@@ -28,6 +28,12 @@ export interface AgentV2Session {
   max_turns: number;
   max_budget_usd: number | null;
   status: 'active' | 'archived' | 'deleted';
+  /** Phase 2.5.1 — citation validator strictness. */
+  citation_enforce_level?: 'off' | 'warn' | 'strict';
+  /** Phase 2.5.1 — strict numeric-claim citation check. */
+  citation_numeric_strict?: boolean;
+  /** Phase 2.5.2 — multi-turn history depth. */
+  history_turn_limit?: number;
   create_time?: number;
   update_time?: number;
 }
@@ -144,6 +150,42 @@ export const agentV2Api = {
   async deleteSession(sessionId: string) {
     const { data } = await request.delete(`/v1/agent_v2/session/${sessionId}`);
     return data.data as { deleted: boolean };
+  },
+
+  /**
+   * Phase 2.8.1 — patch a subset of editable session fields.
+   *
+   * Server-side validator enforces:
+   *   - kb_ids: every id must be accessible (≥VIEWER) to current user
+   *   - tool_names: every name must be a registered MCP tool
+   *   - max_turns 1..100, max_budget_usd > 0..100, history_turn_limit 0..100
+   *   - citation_enforce_level: off|warn|strict (case-insensitive)
+   *
+   * Locked fields (`model_config_json`, `system_prompt`) reject — those
+   * change agent identity and require a new session.
+   */
+  async updateSession(
+    sessionId: string,
+    patch: {
+      name?: string;
+      kb_ids?: string[];
+      tool_names?: string[];
+      max_turns?: number;
+      max_budget_usd?: number;
+      citation_enforce_level?: 'off' | 'warn' | 'strict';
+      citation_numeric_strict?: boolean;
+      history_turn_limit?: number;
+    },
+  ) {
+    const { data } = await request.patch(
+      `/v1/agent_v2/session/${sessionId}`,
+      patch,
+    );
+    return data.data as {
+      session: AgentV2Session;
+      updated_fields: string[];
+      warnings: string[];
+    };
   },
 
   async listTools() {

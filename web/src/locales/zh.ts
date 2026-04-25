@@ -246,6 +246,35 @@ export default {
       citationKindMissing: '脚注编号缺失',
       citationKindNumber: '数字无原文支撑',
       citationKindNoCite: '数字型断言无脚注',
+      // Phase 2.8.1 — 设置抽屉
+      settings: '设置',
+      settingsTitle: '会话设置',
+      settingsHint:
+        '修改下一轮生效。模型与提示词不可改——要换 Agent 身份请新建会话。',
+      settingsSave: '保存',
+      settingsSaved: '已保存',
+      settingsSaveFailed: '保存失败',
+      settingsCancel: '取消',
+      settingsLockedNotice:
+        '已建会话不能改模型 / 系统提示词。如需切换请新建会话。',
+      knowledgeBases: '知识库',
+      kbScope: '检索范围',
+      kbScopeHint: '选择本会话可检索的知识库（下一轮生效）。',
+      tools: '工具',
+      toolsHint: '勾选可用 MCP 工具。留空 = 使用所有已注册工具。',
+      citationEnforce: '引用校验',
+      citationOff: '关闭（不校验）',
+      citationWarn: '警告（标出问题）',
+      citationStrict: '严格（重写或失败）',
+      citationNumericStrict: '数字必须可溯源',
+      citationNumericStrictHint:
+        '每个数字 / 百分比 / 年限 / 金额必须能落到某个 chunk。',
+      historyTurnLimit: '历史轮次',
+      historyTurnLimitHint:
+        '0 = 单轮问答。值越大多轮上下文越多（满 20 触发 compact）。',
+      patchWarning: '注意',
+      patchToolsWarning:
+        '工具清单已更新，但缓存的 system_prompt 还在引用旧清单。要彻底刷新请新建会话。',
     },
     memories: {
       llmTooltip: '分析对话内容，提取关键信息，并生成结构化的记忆摘要。',

@@ -46,6 +46,27 @@ export function useDeleteSession() {
   });
 }
 
+/**
+ * Phase 2.8.1 — patch a subset of editable session fields.
+ * Invalidates sessions list + the specific session detail on success.
+ */
+export function useUpdateSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      sessionId,
+      patch,
+    }: {
+      sessionId: string;
+      patch: Parameters<typeof agentV2Api.updateSession>[1];
+    }) => agentV2Api.updateSession(sessionId, patch),
+    onSuccess: (_data, { sessionId }) => {
+      qc.invalidateQueries({ queryKey: K.sessions });
+      qc.invalidateQueries({ queryKey: K.session(sessionId) });
+    },
+  });
+}
+
 export function useTools() {
   return useQuery({
     queryKey: K.tools,

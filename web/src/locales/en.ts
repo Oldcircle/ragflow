@@ -268,6 +268,36 @@ export default {
       citationKindMissing: 'Footnote index missing',
       citationKindNumber: 'Number not supported by source',
       citationKindNoCite: 'Numeric claim has no citation',
+      // Phase 2.8.1 — settings drawer
+      settings: 'Settings',
+      settingsTitle: 'Session settings',
+      settingsHint:
+        'Changes apply on the next turn. Model and prompt are locked — create a new session to switch agent identity.',
+      settingsSave: 'Save',
+      settingsSaved: 'Saved',
+      settingsSaveFailed: 'Save failed',
+      settingsCancel: 'Cancel',
+      settingsLockedNotice:
+        'Model and system prompt are read-only on existing sessions. Create a new session to change them.',
+      knowledgeBases: 'Knowledge bases',
+      kbScope: 'Retrieval scope',
+      kbScopeHint: 'Pick which KBs the agent can retrieve from this turn.',
+      tools: 'Tools',
+      toolsHint:
+        'Toggle which MCP tools are available. Empty = use all registered tools.',
+      citationEnforce: 'Citation enforcement',
+      citationOff: 'Off (no check)',
+      citationWarn: 'Warn (flag issues)',
+      citationStrict: 'Strict (rewrite or fail)',
+      citationNumericStrict: 'Strict numeric citations',
+      citationNumericStrictHint:
+        'Every number, percentage, year and amount must trace to a chunk.',
+      historyTurnLimit: 'History turns',
+      historyTurnLimitHint:
+        '0 = single-turn QA. Higher = more multi-turn context (compactor kicks in at 20).',
+      patchWarning: 'Heads up',
+      patchToolsWarning:
+        'Tool list changed but the cached system_prompt still references the old set. Create a new session to fully refresh the prompt.',
     },
     memories: {
       llmTooltip:

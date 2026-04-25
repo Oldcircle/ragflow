@@ -24,6 +24,7 @@ import {
   LucidePanelLeftClose,
   LucidePanelLeftOpen,
   LucidePlus,
+  LucideSettings2,
   LucideTrash2,
 } from 'lucide-react';
 import { memo, MouseEvent } from 'react';
@@ -37,6 +38,8 @@ export interface SessionSidebarProps {
   onSelect: (id: string) => void;
   onCreate: () => void;
   onDelete: (id: string) => void;
+  /** Phase 2.8.1 — open the settings drawer for a session. */
+  onOpenSettings?: (id: string) => void;
   /** 受控折叠；由父组件持有以便同步调整主区宽度。 */
   collapsed: boolean;
   onToggleCollapse: () => void;
@@ -64,6 +67,7 @@ export const SessionSidebar = memo(function SessionSidebar({
   onSelect,
   onCreate,
   onDelete,
+  onOpenSettings,
   collapsed,
   onToggleCollapse,
 }: SessionSidebarProps) {
@@ -189,6 +193,7 @@ export const SessionSidebar = memo(function SessionSidebar({
           currentSessionId,
           onSelect,
           onDelete,
+          onOpenSettings,
           t('common.delete'),
         )}
         {renderGroup(
@@ -197,6 +202,7 @@ export const SessionSidebar = memo(function SessionSidebar({
           currentSessionId,
           onSelect,
           onDelete,
+          onOpenSettings,
           t('common.delete'),
         )}
         {renderGroup(
@@ -205,6 +211,7 @@ export const SessionSidebar = memo(function SessionSidebar({
           currentSessionId,
           onSelect,
           onDelete,
+          onOpenSettings,
           t('common.delete'),
         )}
       </div>
@@ -218,6 +225,7 @@ function renderGroup(
   currentSessionId: string | undefined,
   onSelect: (id: string) => void,
   onDelete: (id: string) => void,
+  onOpenSettings: ((id: string) => void) | undefined,
   deleteLabel: string,
 ) {
   if (list.length === 0) return null;
@@ -234,6 +242,7 @@ function renderGroup(
             active={s.id === currentSessionId}
             onSelect={onSelect}
             onDelete={onDelete}
+            onOpenSettings={onOpenSettings}
             deleteLabel={deleteLabel}
           />
         ))}
@@ -247,6 +256,7 @@ interface ItemProps {
   active: boolean;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
+  onOpenSettings?: (id: string) => void;
   deleteLabel: string;
 }
 
@@ -255,6 +265,7 @@ function SessionItem({
   active,
   onSelect,
   onDelete,
+  onOpenSettings,
   deleteLabel,
 }: ItemProps) {
   const { t } = useTranslation();
@@ -289,6 +300,27 @@ function SessionItem({
           )}
         </span>
       </button>
+
+      {onOpenSettings && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="transparent"
+              size="icon-xs"
+              className="border-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+              onClick={(e: MouseEvent<HTMLButtonElement>) => {
+                e.stopPropagation();
+                onOpenSettings(session.id);
+              }}
+              data-testid="agent-v2-session-settings"
+              data-session-id={session.id}
+            >
+              <LucideSettings2 />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('agentV2.settings')}</TooltipContent>
+        </Tooltip>
+      )}
 
       <Tooltip>
         <TooltipTrigger asChild>

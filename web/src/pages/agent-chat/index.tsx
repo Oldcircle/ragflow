@@ -13,13 +13,14 @@ import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { AgentV2Session } from './api';
 import { Badge } from './components/badge';
 import { Composer } from './components/composer';
-import { useAttachments } from './hooks/use-attachments';
 import { I } from './components/icons';
 import { MessageList } from './components/message-list';
 import { NewSessionDialog } from './components/new-session-dialog';
+import { SessionSettingsDrawer } from './components/session-settings-drawer';
 import { SessionSidebar } from './components/session-sidebar';
 import { ToolCallsSidebar } from './components/tool-calls-sidebar';
 import { useAgentStream } from './hooks/use-agent-stream';
+import { useAttachments } from './hooks/use-attachments';
 import {
   useCreateSession,
   useDeleteSession,
@@ -36,6 +37,10 @@ export default function AgentChatPage() {
   const [currentSessionId, setCurrentSessionId] = useState<string>();
   const [pendingUser, setPendingUser] = useState<string | null>(null);
   const [newDialogOpen, setNewDialogOpen] = useState(false);
+  // Phase 2.8.1 — settings drawer for an existing session.
+  const [settingsSessionId, setSettingsSessionId] = useState<
+    string | undefined
+  >();
   // 会话侧栏折叠；本地持久化，避免每次刷新弹回默认态
   const [sessionsCollapsed, setSessionsCollapsed] = useState<boolean>(() => {
     try {
@@ -180,6 +185,7 @@ export default function AgentChatPage() {
         onSelect={setCurrentSessionId}
         onCreate={() => setNewDialogOpen(true)}
         onDelete={handleDeleteSession}
+        onOpenSettings={setSettingsSessionId}
         collapsed={sessionsCollapsed}
         onToggleCollapse={toggleSessionsCollapsed}
       />
@@ -229,6 +235,12 @@ export default function AgentChatPage() {
         onOpenChange={setNewDialogOpen}
         onSubmit={handleCreateSession}
         submitting={createMut.isPending}
+      />
+
+      <SessionSettingsDrawer
+        session={sessions.find((s) => s.id === settingsSessionId)}
+        open={Boolean(settingsSessionId)}
+        onOpenChange={(open) => !open && setSettingsSessionId(undefined)}
       />
     </div>
   );
