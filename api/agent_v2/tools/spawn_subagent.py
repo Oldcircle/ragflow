@@ -297,6 +297,12 @@ async def spawn_subagent(args: dict) -> dict:
             user_id=ctx.user_id,
             max_turns=max_turns,
             max_budget_usd=child_budget,
+            # The child shares the parent's agent_v2 session — attachments,
+            # plan_gate state, and audit lineage are session-scoped, not
+            # runner-scoped. Without this, ctx.session_id leaks through as
+            # None and tools like web_fetch_to_attachment / submit_plan /
+            # doc_ingest_attachment refuse with "no_session".
+            session_id=ctx.session_id,
             parent_session_id=ctx.session_id,
             depth=ctx.depth + 1,
             citation_enforce_level=child_enforce,
