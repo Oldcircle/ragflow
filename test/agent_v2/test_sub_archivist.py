@@ -38,10 +38,19 @@ class TestSubArchivistDefinition:
         assert "submit_plan" in d.tools
 
     def test_prompt_forbids_background_wakeup_for_async_ops(self):
+        # Phase 2.8: system_prompt is now a callable; materialize via
+        # resolve_system_prompt(). The "no background wake-up" rule lives
+        # in the shared step_marker_rules section now (see prompting/sections.py).
         d = get_definition("sub_archivist")
-        assert "There is no background wake-up" in d.system_prompt
-        assert "Send \"check progress\" in your next message" in d.system_prompt
-        assert "Do not imply an automatic scheduled follow-up" in d.system_prompt
+        sp = d.resolve_system_prompt()
+        assert "There is no background wake-up" in sp
+        assert 'Send "check progress" in your next message' in sp
+        # Phrasing softened to "Never imply automatic scheduled follow-up"
+        # in step_marker_rules — both phrasings tolerated for the spirit.
+        assert (
+            "Do not imply an automatic scheduled follow-up" in sp
+            or "Never imply automatic scheduled follow-up" in sp
+        )
 
     def test_cannot_spawn_further_subagents(self):
         d = get_definition("sub_archivist")

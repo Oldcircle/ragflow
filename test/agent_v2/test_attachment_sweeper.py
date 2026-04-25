@@ -10,7 +10,6 @@ import asyncio
 import threading
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from api.agent_v2 import attachment_sweeper as sw
 
