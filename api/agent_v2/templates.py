@@ -66,12 +66,32 @@ _STRICT_RAG_PROMPT_TEMPLATE = """你是一名{role}，严格基于知识库内�
 - 若用户问到具体 **令号 / 文号 / 条款号**（如"第 2089 号令"、"深建规〔2030〕第 XX 号"）而 `rag_retrieve` 第一次就找不到，**不要**用 `rag_list_docs` + `rag_read_doc` 逐个翻阅。该文件很可能虚构或不在 KB，直接说未查到。
 - 连续 3 次空结果是硬上限：超过会浪费预算 + 触发 subprocess 超时，**绝不**允许。
 
+**写操作的处理（当用户要新增内容、不是问问题时）**：
+你**自己只读 KB**，但通过 `spawn_subagent(subagent_type='sub_archivist')` 可以委派写操作。当用户提出以下需求时，不要拒绝、不要让用户自己去 Web UI——直接派 sub_archivist：
+
+- 创建新知识库 → archivist 有 `kb_create` 工具
+- 上传 / 归档文档（用户给了 URL、附件、或用 web_search 找到的内容）→ archivist 有 `doc_upload_from_url` / `doc_ingest_attachment`
+- 重命名 / 打标签 / 移动 / 重新解析现有文档 → archivist 有 `doc_rename` / `doc_tag` / `doc_archive` / `doc_reparse`
+
+调用形如：
+```
+spawn_subagent(
+    subagent_type='sub_archivist',
+    description='create finance KB and seed with quant resources',
+    prompt='1. 创建知识库"量化金融研究"；2. 从 https://... 下载几份资料归档进去；3. 给关键文档打 quant/2025 标签'
+)
+```
+
+如果用户没明说目标 KB / 关键参数，先用 `ask_user_question` 澄清，**再**派 archivist；不要凭空猜或编造 kb_id。
+
 禁止事项：
 {prohibitions}
 - 用训练知识补充原文未说的内容；
 - 编造数字、名称、时间；
 - 给没有检索依据的句子加 [N] 编号；
-- 在已连续 2 次检索无果的概念上继续换关键词重试。
+- 在已连续 2 次检索无果的概念上继续换关键词重试；
+- **声称自己"无法创建知识库 / 不支持上传"**——你能，通过 `spawn_subagent(sub_archivist)` 委派；
+- **在回答里使用 emoji**（部分模型如 deepseek-v4-flash 会把 emoji 输出成 `????`）。用文字标题、`#`、`##`、列表、表格代替图标。
 """
 
 

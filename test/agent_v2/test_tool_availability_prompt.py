@@ -185,6 +185,40 @@ def test_policy_templates_do_not_have_web_tools(tpl_id):
     assert "web_fetch" not in t.suggested_tool_names
 
 
+def test_every_template_prompt_explains_delegation_for_writes():
+    """v0.22 — supervisors are read-only by tool config, but they CAN
+    spawn sub_archivist for write operations. The prompt must say so;
+    otherwise the agent hallucinates "I can't create a KB" when the
+    user asks (live-caught: a v4-flash session declined to create a
+    finance KB even though spawn_subagent + sub_archivist were wired)."""
+    from api.agent_v2.templates import TEMPLATES
+
+    for tpl in TEMPLATES:
+        sp = tpl.system_prompt or ""
+        assert "spawn_subagent" in sp and "sub_archivist" in sp, (
+            f"Template {tpl.id} prompt doesn't mention spawn_subagent + "
+            f"sub_archivist — agent will refuse write requests"
+        )
+        # And explicitly forbid the "I can't create a KB" failure mode
+        assert "无法创建知识库" in sp or "claim" in sp.lower(), (
+            f"Template {tpl.id} prompt doesn't forbid the "
+            f"can't-create-KB hallucination"
+        )
+
+
+def test_every_template_prompt_forbids_emoji():
+    """v0.22 — deepseek-v4-flash mis-renders emoji as literal '????'
+    in output (verified live: ``????系统性学习平台``). Until the model
+    fixes this, prompts must say no-emoji."""
+    from api.agent_v2.templates import TEMPLATES
+
+    for tpl in TEMPLATES:
+        assert "emoji" in (tpl.system_prompt or "").lower(), (
+            f"Template {tpl.id} prompt doesn't ban emoji — output will "
+            f"have ???? on v4-flash"
+        )
+
+
 def test_template_tool_names_are_all_registered():
     """Every tool a template suggests must actually exist in ALL_TOOLS —
     otherwise the backend silently drops it."""
