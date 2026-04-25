@@ -63,8 +63,14 @@ def _load_env_file(path: Path, *, only_keys: set[str]) -> None:
 # back to the tracked docker/.env for shared defaults. Both paths are read
 # with the same restricted-keys filter to avoid pulling shell-templated
 # values like ``${DOC_ENGINE:-elasticsearch}`` into our env.
-_load_env_file(REPO_ROOT / "docker" / ".env.local", only_keys={"TAVILY_API_KEY"})
-_load_env_file(REPO_ROOT / "docker" / ".env", only_keys={"TAVILY_API_KEY"})
+_load_env_file(
+    REPO_ROOT / "docker" / ".env.local",
+    only_keys={"TAVILY_API_KEY", "AGENT_V2_DEEPSEEK_MODEL"},
+)
+_load_env_file(
+    REPO_ROOT / "docker" / ".env",
+    only_keys={"TAVILY_API_KEY", "AGENT_V2_DEEPSEEK_MODEL"},
+)
 
 if not os.environ.get("TAVILY_API_KEY"):
     print("FAIL: TAVILY_API_KEY missing — set in docker/.env or env var")
