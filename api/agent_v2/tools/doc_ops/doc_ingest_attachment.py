@@ -40,6 +40,48 @@ def _resolve_kb_id(args: dict) -> str | None:
     return args.get("kb_id")
 
 
+def _preapproved_bypass(args: dict, _ctx) -> dict | None:
+    """Phase 2.7 v0.18 — skip the plan gate when the staged attachment came
+    from a preapproved domain (gov.cn / docs.python.org / MDN / etc).
+
+    Reads the source URL from the AgentV2Attachment row (only present for
+    attachments created via ``web_fetch_to_attachment``; user-uploaded
+    files don't carry one and never bypass — they always need user
+    approval since RAGFlow has no way to know the user's intent).
+
+    Returns ``{"reason": "preapproved_source", "host": <host>, "url": <url>}``
+    when the gate should be skipped; None otherwise.
+    """
+    attachment_id = (args.get("attachment_id") or "").strip()
+    if not attachment_id:
+        return None
+    try:
+        from api.db.services.agent_v2_service import AgentV2AttachmentService
+
+        from ..web_fetch_preapproved import is_preapproved
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        att = AgentV2AttachmentService.get_by_id(attachment_id)
+    except Exception:  # noqa: BLE001
+        return None
+    if not att:
+        return None
+    source_url = getattr(att, "source_url", None)
+    if not source_url:
+        return None
+    if not is_preapproved(source_url):
+        return None
+    from urllib.parse import urlparse
+
+    host = (urlparse(source_url).hostname or "").lower() or None
+    return {
+        "reason": "preapproved_source",
+        "host": host,
+        "url": source_url,
+    }
+
+
 def _extra_audit(args: dict, result: Any, _ctx) -> dict:
     """Produce audit metadata from the tool's response envelope."""
     try:
@@ -90,7 +132,14 @@ def _extra_audit(args: dict, result: Any, _ctx) -> dict:
         "- Requires CONTRIBUTOR+ on the target KB.\n"
         "- Plan-gated: first write in a turn must follow an approved "
         "`submit_plan`. Show the user the preview of what you'll archive via "
-        "the plan's `preview` field before calling.\n\n"
+        "the plan's `preview` field before calling.\n"
+        "- Trusted-source fast-path: when the attachment came from a "
+        "preapproved domain (gov.cn / docs.python.org / MDN / kubernetes.io "
+        "/ etc — see web_fetch's `preapproved=true` flag), the plan gate is "
+        "skipped automatically and the bypass is recorded in audit. You "
+        "still SHOULD call `submit_plan` for batch operations or whenever "
+        "the user benefits from seeing the plan; the bypass exists to avoid "
+        "friction on single-doc archives from canonical sources.\n\n"
         "Images: synchronous PaddleOCR runs at archive time; the resulting "
         "text is composed into a markdown sub-document (`<name>.ocr.md`) "
         "with provenance front-matter and that markdown — not the raw image "
@@ -149,6 +198,7 @@ def _extra_audit(args: dict, result: Any, _ctx) -> dict:
     min_role="contributor",
     kb_id_from=_resolve_kb_id,
     extra_audit_metadata=_extra_audit,
+    plan_gate_bypass=_preapproved_bypass,
 )
 async def doc_ingest_attachment(args: dict) -> dict:
     ctx = get_ctx(require=["tenant_id"])

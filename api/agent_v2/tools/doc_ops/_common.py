@@ -54,6 +54,7 @@ def require_kb_write(
     kb_id_from: Callable[[dict], str | None] = _default_kb_from_args,
     extra_audit_metadata: Callable[[dict, Any, ToolContext], dict] | None = None,
     plan_gated: bool = True,
+    plan_gate_bypass: Callable[[dict, ToolContext], dict | None] | None = None,
 ):
     """所有 doc_ops 写工具共享的装饰器。
 
@@ -64,6 +65,10 @@ def require_kb_write(
     - ``extra_audit_metadata``：工具返回后把结构化补充信息塞进 audit metadata
     - ``plan_gated``：Phase 2.6 v0.4 — True（默认）= 受 submit_plan gate 管辖；
       低风险工具（如 ``doc_create_note``）可设 False 绕过 gate。
+    - ``plan_gate_bypass``：Phase 2.7 v0.18 — 动态旁路。即使 ``plan_gated=True``，
+      该 callback 返回 dict（如 ``{"reason": "preapproved_source", ...}``）时
+      跳过 gate，并把 reason 写进 audit metadata 区分"用户批准"和"系统旁路"。
+      返回 None 表示按原 gate 逻辑走。被 ``plan_gated=False`` 的工具忽略。
 
     被装饰的函数签名固定为 ``async def tool(args: dict) -> dict``（MCP 工具协议）。
     """
@@ -113,8 +118,16 @@ def require_kb_write(
                         ),
                     })
 
-            # 1b. Plan gate (Phase 2.6 v0.4)
-            if plan_gated:
+            # 1b. Plan gate (Phase 2.6 v0.4) + bypass (Phase 2.7 v0.18)
+            bypass_info: dict | None = None
+            if plan_gated and plan_gate_bypass is not None:
+                try:
+                    bypass_info = plan_gate_bypass(args, ctx)
+                except Exception:
+                    logger.exception("plan_gate_bypass callback failed")
+                    bypass_info = None
+
+            if plan_gated and bypass_info is None:
                 gate = _plan_gate_check(ctx, action)
                 if gate is not None:
                     _safe_audit(
@@ -168,6 +181,10 @@ def require_kb_write(
             }
             if kb_id:
                 meta["kb_id"] = kb_id
+            if bypass_info:
+                # Distinguish auto-bypass (preapproved source) from user
+                # approval in the audit trail. Risk reviewers care which.
+                meta["plan_gate_bypass"] = bypass_info
             if extra_audit_metadata:
                 try:
                     extra = extra_audit_metadata(args, result, ctx)
