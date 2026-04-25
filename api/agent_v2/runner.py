@@ -30,6 +30,7 @@ from claude_agent_sdk import (
 from . import event as ev
 from .errors import AgentError
 from .registry import MCP_SERVER_NAME, build_mcp_server, list_tool_names
+from .tools import _names as tool_names
 from .tools.base import ToolContext, reset_ctx, set_ctx
 
 logger = logging.getLogger("ragflow.agent_v2.runner")
@@ -831,10 +832,10 @@ class _SdkError:
 # 键词"这种合理试错，但拒绝无限循环。
 _EMPTY_RAG_THRESHOLD = 3
 _EMPTY_RAG_TOOLS = (
-    "rag_retrieve",
-    "rag_list_docs",
-    "rag_read_doc",
-    "rag_graph_query",
+    tool_names.RAG_RETRIEVE,
+    tool_names.RAG_LIST_DOCS,
+    tool_names.RAG_READ_DOC,
+    tool_names.RAG_GRAPH_QUERY,
 )
 
 
@@ -859,7 +860,7 @@ def _is_empty_rag_result(tool_name: str, result) -> bool:
         return False
     if not isinstance(data, dict):
         return False
-    if short == "rag_retrieve":
+    if short == tool_names.RAG_RETRIEVE:
         chunks = data.get("chunks") or []
         if not chunks:
             return True
@@ -869,11 +870,11 @@ def _is_empty_rag_result(tool_name: str, result) -> bool:
             if isinstance(c, dict)
         ]
         return bool(sims) and max(sims) < 0.2
-    if short == "rag_list_docs":
+    if short == tool_names.RAG_LIST_DOCS:
         return not (data.get("docs") or [])
-    if short == "rag_read_doc":
+    if short == tool_names.RAG_READ_DOC:
         return not (data.get("chunks") or data.get("content"))
-    if short == "rag_graph_query":
+    if short == tool_names.RAG_GRAPH_QUERY:
         return not (data.get("entities") or data.get("relations"))
     return False
 

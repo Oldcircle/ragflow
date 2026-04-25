@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .tools import _names as names
+
 
 @dataclass(frozen=True)
 class ToolAnnotation:
@@ -69,8 +71,8 @@ class ToolAnnotation:
 
 ANNOTATIONS: dict[str, ToolAnnotation] = {
     # ── Read / RAG ──────────────────────────────────────────────────────
-    "rag_retrieve": ToolAnnotation(
-        name="rag_retrieve",
+    names.RAG_RETRIEVE: ToolAnnotation(
+        name=names.RAG_RETRIEVE,
         is_read_only=True,
         is_idempotent=True,
         cost_class="normal",
@@ -78,24 +80,24 @@ ANNOTATIONS: dict[str, ToolAnnotation] = {
         # chunks carry doc_id → natural next_step is rag_read_doc or doc_tag
         supports_next_steps=True,
     ),
-    "rag_list_docs": ToolAnnotation(
-        name="rag_list_docs",
+    names.RAG_LIST_DOCS: ToolAnnotation(
+        name=names.RAG_LIST_DOCS,
         is_read_only=True,
         is_idempotent=True,
         cost_class="cheap",
         avg_latency_ms=80,
         supports_next_steps=True,
     ),
-    "rag_read_doc": ToolAnnotation(
-        name="rag_read_doc",
+    names.RAG_READ_DOC: ToolAnnotation(
+        name=names.RAG_READ_DOC,
         is_read_only=True,
         is_idempotent=True,
         cost_class="cheap",
         avg_latency_ms=120,
         supports_next_steps=True,
     ),
-    "rag_graph_query": ToolAnnotation(
-        name="rag_graph_query",
+    names.RAG_GRAPH_QUERY: ToolAnnotation(
+        name=names.RAG_GRAPH_QUERY,
         is_read_only=True,
         is_idempotent=True,
         cost_class="normal",
@@ -103,8 +105,8 @@ ANNOTATIONS: dict[str, ToolAnnotation] = {
         supports_next_steps=True,
     ),
     # ── Delegation ──────────────────────────────────────────────────────
-    "spawn_subagent": ToolAnnotation(
-        name="spawn_subagent",
+    names.SPAWN_SUBAGENT: ToolAnnotation(
+        name=names.SPAWN_SUBAGENT,
         is_read_only=False,  # the child may write
         is_idempotent=False,
         cost_class="expensive",
@@ -112,8 +114,8 @@ ANNOTATIONS: dict[str, ToolAnnotation] = {
         side_effects=("runs a child agent with its own LLM budget",),
     ),
     # ── Write / doc ops ─────────────────────────────────────────────────
-    "doc_tag": ToolAnnotation(
-        name="doc_tag",
+    names.DOC_TAG: ToolAnnotation(
+        name=names.DOC_TAG,
         is_read_only=False,
         is_idempotent=True,  # add/remove/set are replay-safe
         cost_class="normal",
@@ -121,8 +123,8 @@ ANNOTATIONS: dict[str, ToolAnnotation] = {
         side_effects=("mutates doc.meta_fields.tags",),
         supports_next_steps=True,
     ),
-    "doc_rename": ToolAnnotation(
-        name="doc_rename",
+    names.DOC_RENAME: ToolAnnotation(
+        name=names.DOC_RENAME,
         is_read_only=False,
         is_idempotent=True,
         cost_class="cheap",
@@ -130,8 +132,8 @@ ANNOTATIONS: dict[str, ToolAnnotation] = {
         side_effects=("mutates document.name",),
         supports_next_steps=True,
     ),
-    "doc_archive": ToolAnnotation(
-        name="doc_archive",
+    names.DOC_ARCHIVE: ToolAnnotation(
+        name=names.DOC_ARCHIVE,
         is_read_only=False,
         is_idempotent=False,  # a second call moves the re-created doc again
         cost_class="expensive",
@@ -143,8 +145,8 @@ ANNOTATIONS: dict[str, ToolAnnotation] = {
         ),
         supports_next_steps=True,
     ),
-    "doc_reparse": ToolAnnotation(
-        name="doc_reparse",
+    names.DOC_REPARSE: ToolAnnotation(
+        name=names.DOC_REPARSE,
         is_read_only=False,
         is_idempotent=False,  # queues a fresh task even on replay
         cost_class="expensive",
@@ -155,8 +157,8 @@ ANNOTATIONS: dict[str, ToolAnnotation] = {
         ),
         supports_next_steps=True,
     ),
-    "doc_upload_from_url": ToolAnnotation(
-        name="doc_upload_from_url",
+    names.DOC_UPLOAD_FROM_URL: ToolAnnotation(
+        name=names.DOC_UPLOAD_FROM_URL,
         is_read_only=False,
         is_idempotent=True,  # URL+kb dedup guards replays
         cost_class="expensive",
@@ -167,8 +169,8 @@ ANNOTATIONS: dict[str, ToolAnnotation] = {
         ),
         supports_next_steps=True,
     ),
-    "kb_create": ToolAnnotation(
-        name="kb_create",
+    names.KB_CREATE: ToolAnnotation(
+        name=names.KB_CREATE,
         is_read_only=False,
         is_idempotent=False,
         cost_class="normal",
@@ -180,8 +182,8 @@ ANNOTATIONS: dict[str, ToolAnnotation] = {
         supports_next_steps=True,
     ),
     # ── Reflect / summarize (librarian) ─────────────────────────────────
-    "doc_create_note": ToolAnnotation(
-        name="doc_create_note",
+    names.DOC_CREATE_NOTE: ToolAnnotation(
+        name=names.DOC_CREATE_NOTE,
         is_read_only=False,
         is_idempotent=True,  # dedup by (kb_id, title)
         cost_class="normal",
@@ -192,30 +194,30 @@ ANNOTATIONS: dict[str, ToolAnnotation] = {
         ),
         supports_next_steps=True,
     ),
-    "kb_audit": ToolAnnotation(
-        name="kb_audit",
+    names.KB_AUDIT: ToolAnnotation(
+        name=names.KB_AUDIT,
         is_read_only=True,
         is_idempotent=True,
         cost_class="normal",
         avg_latency_ms=600,
     ),
-    "kb_stats": ToolAnnotation(
-        name="kb_stats",
+    names.KB_STATS: ToolAnnotation(
+        name=names.KB_STATS,
         is_read_only=True,
         is_idempotent=True,
         cost_class="cheap",
         avg_latency_ms=90,
     ),
-    "doc_list_recent_changes": ToolAnnotation(
-        name="doc_list_recent_changes",
+    names.DOC_LIST_RECENT_CHANGES: ToolAnnotation(
+        name=names.DOC_LIST_RECENT_CHANGES,
         is_read_only=True,
         is_idempotent=True,
         cost_class="cheap",
         avg_latency_ms=80,
     ),
     # ── Interactive ─────────────────────────────────────────────────────
-    "ask_user_question": ToolAnnotation(
-        name="ask_user_question",
+    names.ASK_USER_QUESTION: ToolAnnotation(
+        name=names.ASK_USER_QUESTION,
         is_read_only=True,  # doesn't touch KB state; SSE-only
         is_idempotent=False,  # each call opens a distinct prompt
         cost_class="cheap",
@@ -224,8 +226,8 @@ ANNOTATIONS: dict[str, ToolAnnotation] = {
             "emits SSE event; halts the turn to wait for user reply",
         ),
     ),
-    "submit_plan": ToolAnnotation(
-        name="submit_plan",
+    names.SUBMIT_PLAN: ToolAnnotation(
+        name=names.SUBMIT_PLAN,
         is_read_only=False,  # flips session.pending_plan_status
         is_idempotent=False,
         cost_class="cheap",
@@ -236,16 +238,16 @@ ANNOTATIONS: dict[str, ToolAnnotation] = {
             "locks destructive writes until the user decides",
         ),
     ),
-    "get_pending_plan": ToolAnnotation(
-        name="get_pending_plan",
+    names.GET_PENDING_PLAN: ToolAnnotation(
+        name=names.GET_PENDING_PLAN,
         is_read_only=True,
         is_idempotent=True,
         cost_class="cheap",
         avg_latency_ms=40,
     ),
     # ── Web（Phase 2.6 v0.7）──────────────────────────────────────────────
-    "web_search": ToolAnnotation(
-        name="web_search",
+    names.WEB_SEARCH: ToolAnnotation(
+        name=names.WEB_SEARCH,
         is_read_only=True,
         # Not truly idempotent — web index changes — but retrying the same
         # query is replay-safe within a short window, so treat as idempotent
@@ -255,8 +257,8 @@ ANNOTATIONS: dict[str, ToolAnnotation] = {
         avg_latency_ms=1500,
         side_effects=("calls external Tavily API; counts against quota",),
     ),
-    "web_fetch": ToolAnnotation(
-        name="web_fetch",
+    names.WEB_FETCH: ToolAnnotation(
+        name=names.WEB_FETCH,
         is_read_only=True,
         is_idempotent=True,  # same URL → (usually) same content
         cost_class="normal",
@@ -264,8 +266,8 @@ ANNOTATIONS: dict[str, ToolAnnotation] = {
         side_effects=("HTTP GET to the public internet",),
     ),
     # ── Attachments (Phase 2.7 Stage 2) ────────────────────────────────
-    "web_fetch_to_attachment": ToolAnnotation(
-        name="web_fetch_to_attachment",
+    names.WEB_FETCH_TO_ATTACHMENT: ToolAnnotation(
+        name=names.WEB_FETCH_TO_ATTACHMENT,
         # Technically writes a DB row + MinIO blob, but no KB change yet —
         # the materialization is a **staging** act, reversible via reject.
         # Treat as write for openWorld / destructive signals, but keep
@@ -280,8 +282,8 @@ ANNOTATIONS: dict[str, ToolAnnotation] = {
         ),
         supports_next_steps=True,
     ),
-    "doc_ingest_attachment": ToolAnnotation(
-        name="doc_ingest_attachment",
+    names.DOC_INGEST_ATTACHMENT: ToolAnnotation(
+        name=names.DOC_INGEST_ATTACHMENT,
         is_read_only=False,
         # Idempotent: same attachment_id archives to same KB → status=
         # already_archived with the existing doc_id, no duplicate write.

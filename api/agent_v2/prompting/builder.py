@@ -1,62 +1,184 @@
-"""Prompt builders — Claude-Code-style 8-section system prompts, English.
+"""Prompt builders — Phase 2.8 PromptSection architecture.
 
 ## Design overview
 
-Claude Code's system prompts are **section-indexed**, not free-form. Each agent
-gets a stable skeleton (Role → Context → Constraints → Workflow → Tools →
-Output → Examples → Notes), so the model can navigate instructions like a
-table of contents instead of re-parsing free prose every turn.
+Phase 2.8 (see ``PLAN-prompt-architecture.md``) replaced the v0.3 monolithic
+string-template approach with a section-list model that mirrors
+``vendor/claude-code-ref/src/constants/systemPromptSections.ts``:
 
-We split into two builders because KB supervisors and subagents have different
-jobs:
+- **``PromptSection``** is a named, optionally-cacheable unit. Each compute
+  callback receives ``(enabled_tools, ctx)`` and returns a string or ``None``
+  (``None`` segments drop out of the final prompt).
+- **``PromptCtx``** carries per-render variables (``role_line`` /
+  ``enabled_tools`` / ``pending_plan_status`` etc.).
+- **``PromptCache``** memoizes ``PromptSection`` outputs that are not
+  ``cache_break``. Mirrors ref's ``getSystemPromptSectionCache`` flow.
+- **``SYSTEM_PROMPT_DYNAMIC_BOUNDARY``** splits the assembled prompt into a
+  static prefix (memoizable) and a dynamic suffix (recomputed per turn).
+  Prefix stability enables prompt-cache hits on DeepSeek and Anthropic
+  providers.
 
-- **Supervisor** = "front door" — understands user intent, delegates to
-  subagents, never touches write tools directly. Needs the
-  *Delegation rules* + *Clarify-vs-act decision tree* sections.
-- **Subagent** = "specialist" — single mental mode (read-only investigator /
-  destructive archivist / observer-and-writer librarian). Needs tighter *Hard
-  rules* and *Output format* sections.
+The legacy ``build_supervisor_prompt`` / ``build_subagent_prompt`` helpers are
+preserved as backward-compat shims so existing AgentDefinition files keep
+working while we migrate them stage-by-stage.
 
-We do **not** port Claude Code's dynamic boundary marker
-(`__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__`) — that exists for prompt caching on
-Anthropic's endpoint, which DeepSeek doesn't match. Can revisit if we switch
-providers.
-
-## Section order (supervisor)
-
-1. Role & mission
-2. Domain context
-3. Hard constraints (must / must-not)
-4. Workflow (how to approach a user request)
-5. Delegation rules (when to spawn which subagent)
-6. Clarify-vs-act decision tree
-7. Tool usage rules (per tool: when + how)
-8. Output format (citation rules / structured answers)
-
-## Section order (subagent)
-
-1. Role & mission
-2. Hard constraints (scope boundaries, refusals)
-3. Workflow (step-by-step expected behavior)
-4. Tool usage rules
-5. Output format
-
-## Philosophy
-
-Prompts are **stable contracts** between designer and model. Each section has
-one job; the model can skip to the right section. Avoid:
-
-- Narrative prose across sections
-- Redundancy (same rule in two sections)
-- Chinese-English mixing (we commit to English as lingua franca)
-- Markdown decoration for its own sake (`✅ 🚫 🟡` etc.)
-
-Reference: `/tmp/architectural-synthesis.md` §5; `AUDIT-claude-code-alignment.md` §3.
+References:
+- ``vendor/claude-code-ref/src/constants/systemPromptSections.ts:8-58``
+- ``vendor/claude-code-ref/src/constants/prompts.ts:116-117`` + ``:564-580``
+- ``AUDIT-claude-code-alignment.md`` §五-e
+- ``PLAN-prompt-architecture.md``
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from typing import Iterable
+
+from ..tools import _names as names
+
+
+# ──────────────────────────────  Phase 2.8 core  ──────────────────────────────
+
+
+SYSTEM_PROMPT_DYNAMIC_BOUNDARY = "__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__"
+"""Literal marker delimiting cacheable prefix from per-turn suffix.
+
+Mirrors ``vendor/claude-code-ref/src/constants/prompts.ts:116-117``. Provider
+adapters can split on this to apply ``cache_control``; consumers that don't
+care just get one string.
+"""
+
+
+@dataclass
+class PromptCtx:
+    """Render context passed to every section's ``compute`` callback."""
+
+    role_line: str = ""
+    """Single sentence identity, e.g. 'You are sub_archivist...'."""
+
+    enabled_tools: frozenset[str] = field(default_factory=frozenset)
+    """Tool short-names this session can reach (D2 fix)."""
+
+    domain_context: str = ""
+    """Optional paragraph describing the agent's KB / domain."""
+
+    domain_extras: str = ""
+    """Raw markdown appended after standard sections."""
+
+    pending_plan_status: str | None = None
+    """Current ``AgentV2Session.pending_plan_status`` if any. Cache-busts
+    pending_plan_section across turns."""
+
+    kb_ids: tuple[str, ...] = ()
+    """Active KB ids — cache-busts kb-aware sections on selection change."""
+
+    lang: str = "en"
+    """``en`` (default) or ``zh`` — drives tool_availability text."""
+
+
+@dataclass
+class PromptSection:
+    """A named, optionally-cacheable prompt section.
+
+    Mirrors claude-code-ref's ``systemPromptSection`` factory
+    (``src/constants/systemPromptSections.ts:20``).
+
+    Differences:
+    - ``compute`` takes ``(enabled_tools, ctx)`` rather than zero args.
+    - ``cache_break`` requires a non-empty ``reason`` to force authors to
+      justify cache invalidation (matches the ``DANGEROUS_`` prefix intent
+      from ``systemPromptSections.ts:32``).
+    """
+
+    name: str
+    compute: Callable[[frozenset[str], PromptCtx], str | None]
+    cache_break: bool = False
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        if self.cache_break and not self.reason:
+            raise ValueError(
+                f"PromptSection({self.name!r}, cache_break=True) requires "
+                "a non-empty `reason` explaining why cache-busting is "
+                "necessary."
+            )
+
+
+class PromptCache:
+    """Per-runner memoization for ``PromptSection`` outputs.
+
+    Mirrors claude-code-ref's cache flow
+    (``systemPromptSections.ts:46-58``). Fresh cache per
+    ``AgentRunner.run()``; ``cache_break=True`` sections always recompute.
+    """
+
+    def __init__(self) -> None:
+        self._store: dict[str, str | None] = {}
+
+    def resolve(
+        self,
+        sections: Sequence[PromptSection],
+        ctx: PromptCtx,
+    ) -> list[str]:
+        """Return rendered strings for ``sections`` (Nones filtered)."""
+        out: list[str] = []
+        for s in sections:
+            if s.cache_break or s.name not in self._store:
+                self._store[s.name] = s.compute(ctx.enabled_tools, ctx)
+            v = self._store[s.name]
+            if v is not None:
+                out.append(v)
+        return out
+
+    def clear(self) -> None:
+        self._store.clear()
+
+    def has(self, name: str) -> bool:
+        return name in self._store
+
+
+def assemble_prompt(
+    static_sections: Sequence[PromptSection],
+    dynamic_sections: Sequence[PromptSection],
+    ctx: PromptCtx,
+    cache: PromptCache | None = None,
+) -> str:
+    """Assemble a full system prompt using the Phase 2.8 layout.
+
+    Layout::
+
+        [static_sections joined with \\n\\n]
+        __SYSTEM_PROMPT_DYNAMIC_BOUNDARY__
+        [dynamic_sections joined with \\n\\n]
+
+    The boundary marker stays in the output even when ``dynamic_sections`` is
+    empty — provider adapters use it to split for ``cache_control`` insertion.
+
+    Mirrors ``vendor/claude-code-ref/src/constants/prompts.ts:564-580``.
+    """
+    cache = cache if cache is not None else PromptCache()
+    parts: list[str] = []
+    parts.extend(cache.resolve(static_sections, ctx))
+    parts.append(SYSTEM_PROMPT_DYNAMIC_BOUNDARY)
+    parts.extend(cache.resolve(dynamic_sections, ctx))
+    return "\n\n".join(parts)
+
+
+def prepend_bullets(items: Iterable[str | Iterable[str]]) -> list[str]:
+    """Render a mixed flat / nested list as Markdown bullets.
+
+    Mirrors ``vendor/claude-code-ref/src/constants/prompts.ts:169-175``.
+    Nested items get 2-space indent.
+    """
+    out: list[str] = []
+    for item in items:
+        if isinstance(item, str):
+            out.append(f"- {item}")
+        else:
+            for sub in item:
+                out.append(f"  - {sub}")
+    return out
 
 
 # ──────────────────────────────  Shared constants  ──────────────────────────────
@@ -106,33 +228,33 @@ RETRIEVAL_OUTPUT_RULES: list[str] = [
 # or need to help a classifier pick the right tool.
 SEARCH_HINT_BY_TOOL: dict[str, str] = {
     # Retrieval
-    "rag_retrieve": "search knowledge base semantically for relevant chunks",
-    "rag_list_docs": "list documents in the current knowledge base",
-    "rag_read_doc": "read the full text of a single document",
-    "rag_graph_query": "query the knowledge graph for an entity",
+    names.RAG_RETRIEVE: "search knowledge base semantically for relevant chunks",
+    names.RAG_LIST_DOCS: "list documents in the current knowledge base",
+    names.RAG_READ_DOC: "read the full text of a single document",
+    names.RAG_GRAPH_QUERY: "query the knowledge graph for an entity",
     # Delegation / interaction
-    "spawn_subagent": "delegate a focused task to a subagent",
-    "ask_user_question": "ask the user a multiple-choice clarifying question",
-    "submit_plan": "submit a plan for user approval before executing a batch",
+    names.SPAWN_SUBAGENT: "delegate a focused task to a subagent",
+    names.ASK_USER_QUESTION: "ask the user a multiple-choice clarifying question",
+    names.SUBMIT_PLAN: "submit a plan for user approval before executing a batch",
     # Reflect / observe
-    "kb_stats": "get quick KB metrics (doc count, chunks, embed coverage, <1KB)",
-    "kb_audit": "deep KB audit with stale / duplicate / unparsed samples",
-    "doc_list_recent_changes": "list recent audit-log entries for this tenant",
-    "get_pending_plan": "read back the approved plan to execute step by step",
+    names.KB_STATS: "get quick KB metrics (doc count, chunks, embed coverage, <1KB)",
+    names.KB_AUDIT: "deep KB audit with stale / duplicate / unparsed samples",
+    names.DOC_LIST_RECENT_CHANGES: "list recent audit-log entries for this tenant",
+    names.GET_PENDING_PLAN: "read back the approved plan to execute step by step",
     # Write
-    "doc_create_note": "save agent-authored markdown as a new document",
-    "doc_tag": "add, remove, or replace document tags",
-    "doc_rename": "rename a document",
-    "doc_archive": "move a document to another knowledge base",
-    "doc_reparse": "clear chunks and re-run the parser on a document",
-    "doc_upload_from_url": "download a url into the knowledge base",
-    "kb_create": "create a new empty knowledge base",
+    names.DOC_CREATE_NOTE: "save agent-authored markdown as a new document",
+    names.DOC_TAG: "add, remove, or replace document tags",
+    names.DOC_RENAME: "rename a document",
+    names.DOC_ARCHIVE: "move a document to another knowledge base",
+    names.DOC_REPARSE: "clear chunks and re-run the parser on a document",
+    names.DOC_UPLOAD_FROM_URL: "download a url into the knowledge base",
+    names.KB_CREATE: "create a new empty knowledge base",
     # Web (Phase 2.6 v0.7)
-    "web_search": "search the public web for recent or external info",
-    "web_fetch": "fetch the full text of a specific web page",
+    names.WEB_SEARCH: "search the public web for recent or external info",
+    names.WEB_FETCH: "fetch the full text of a specific web page",
     # Attachments (Phase 2.7)
-    "web_fetch_to_attachment": "download a url into a staged session attachment",
-    "doc_ingest_attachment": "commit a staged session attachment into a knowledge base",
+    names.WEB_FETCH_TO_ATTACHMENT: "download a url into a staged session attachment",
+    names.DOC_INGEST_ATTACHMENT: "commit a staged session attachment into a knowledge base",
 }
 
 
@@ -195,11 +317,11 @@ def render_tool_availability_section(
     """
     from ..registry import ALL_TOOLS
 
-    names = list(tool_names) if tool_names else list(ALL_TOOLS.keys())
+    raw_names = list(tool_names) if tool_names else list(ALL_TOOLS.keys())
     # Preserve order; dedupe while preserving order
     seen: set[str] = set()
     ordered_names: list[str] = []
-    for n in names:
+    for n in raw_names:
         if n in seen:
             continue
         seen.add(n)
@@ -213,7 +335,7 @@ def render_tool_availability_section(
     # This is the prompt-side complement to the runtime ``allowed_subagent_types``
     # gate; we surface what the agent CAN reach so it actually uses it.
     spawn_subagent_extras: list[str] = []
-    if "spawn_subagent" in ordered_names:
+    if names.SPAWN_SUBAGENT in ordered_names:
         try:
             from ..definitions import list_definitions
             for d in list_definitions(kind="subagent"):
@@ -226,7 +348,7 @@ def render_tool_availability_section(
                 # prompt usually fails to bridge.
                 write_tools = [
                     t for t in tools
-                    if t.startswith(("kb_", "doc_")) and t != "kb_stats"
+                    if t.startswith(("kb_", "doc_")) and t != names.KB_STATS
                 ]
                 cap_hint = (
                     f"writes via {', '.join(f'`{t}`' for t in write_tools[:6])}"
@@ -250,7 +372,7 @@ def render_tool_availability_section(
     for n in ordered_names:
         hint = SEARCH_HINT_BY_TOOL.get(n, "(no description registered)")
         positive_lines.append(f"- `{n}` — {hint}")
-        if n == "spawn_subagent" and spawn_subagent_extras:
+        if n == names.SPAWN_SUBAGENT and spawn_subagent_extras:
             positive_lines.extend(spawn_subagent_extras)
 
     # Negative-enumeration masking: any confabulated name that matches an

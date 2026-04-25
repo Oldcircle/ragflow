@@ -19,6 +19,7 @@ import copy
 from claude_agent_sdk import SdkMcpTool, create_sdk_mcp_server
 from claude_agent_sdk.types import McpToolAnnotations
 
+from .tools import _names as names
 from .tools.ask_user_question import ask_user_question
 from .tools.doc_ops import (
     doc_archive,
@@ -44,38 +45,38 @@ from .tools.web_fetch import web_fetch
 from .tools.web_fetch_to_attachment import web_fetch_to_attachment
 from .tools.web_search import web_search
 
-# 所有已实现工具的注册表
+# 所有已实现工具的注册表 — 工具名一律走 ``_names`` 常量，禁用裸字面量。
 ALL_TOOLS = {
     # 读：RAG 检索
-    "rag_retrieve": rag_retrieve,
-    "rag_list_docs": rag_list_docs,
-    "rag_read_doc": rag_read_doc,
-    "rag_graph_query": rag_graph_query,
+    names.RAG_RETRIEVE: rag_retrieve,
+    names.RAG_LIST_DOCS: rag_list_docs,
+    names.RAG_READ_DOC: rag_read_doc,
+    names.RAG_GRAPH_QUERY: rag_graph_query,
     # 委派
-    "spawn_subagent": spawn_subagent,
+    names.SPAWN_SUBAGENT: spawn_subagent,
     # Phase 2.6 — 文档写操作（sub_archivist 专用）
-    "doc_tag": doc_tag,
-    "doc_rename": doc_rename,
-    "doc_archive": doc_archive,
-    "doc_reparse": doc_reparse,
-    "doc_upload_from_url": doc_upload_from_url,
-    "kb_create": kb_create,
+    names.DOC_TAG: doc_tag,
+    names.DOC_RENAME: doc_rename,
+    names.DOC_ARCHIVE: doc_archive,
+    names.DOC_REPARSE: doc_reparse,
+    names.DOC_UPLOAD_FROM_URL: doc_upload_from_url,
+    names.KB_CREATE: kb_create,
     # Phase 2.6 v0.2 — 自我维护 / 总结笔记（sub_librarian 专用)
-    "doc_create_note": doc_create_note,
-    "kb_audit": kb_audit,
-    "kb_stats": kb_stats,
-    "doc_list_recent_changes": doc_list_recent_changes,
+    names.DOC_CREATE_NOTE: doc_create_note,
+    names.KB_AUDIT: kb_audit,
+    names.KB_STATS: kb_stats,
+    names.DOC_LIST_RECENT_CHANGES: doc_list_recent_changes,
     # Phase 2.6 — 交互式工具（两个 subagent 共用）
-    "ask_user_question": ask_user_question,
-    "submit_plan": submit_plan,
+    names.ASK_USER_QUESTION: ask_user_question,
+    names.SUBMIT_PLAN: submit_plan,
     # Phase 2.6 v0.6 — plan 执行闭环（sub_archivist 在批准后调用）
-    "get_pending_plan": get_pending_plan,
+    names.GET_PENDING_PLAN: get_pending_plan,
     # Phase 2.6 v0.7 — 公网检索 / 抓取（研究类 supervisor / subagent 可选）
-    "web_search": web_search,
-    "web_fetch": web_fetch,
+    names.WEB_SEARCH: web_search,
+    names.WEB_FETCH: web_fetch,
     # Phase 2.7 Stage 2 — attachment materialize + archive
-    "web_fetch_to_attachment": web_fetch_to_attachment,
-    "doc_ingest_attachment": doc_ingest_attachment,
+    names.WEB_FETCH_TO_ATTACHMENT: web_fetch_to_attachment,
+    names.DOC_INGEST_ATTACHMENT: doc_ingest_attachment,
 }
 
 # MCP server 名（给 SDK 用）；SDK 生成的工具名是 ``mcp__<server>__<tool>``
@@ -118,12 +119,12 @@ def _decorate_for_mcp(tool: SdkMcpTool) -> SdkMcpTool:
             # True for URL ingest / interactive / public web tools.
             "openWorld": tool.name
             in (
-                "doc_upload_from_url",
-                "ask_user_question",
-                "submit_plan",
-                "web_search",
-                "web_fetch",
-                "web_fetch_to_attachment",  # network download
+                names.DOC_UPLOAD_FROM_URL,
+                names.ASK_USER_QUESTION,
+                names.SUBMIT_PLAN,
+                names.WEB_SEARCH,
+                names.WEB_FETCH,
+                names.WEB_FETCH_TO_ATTACHMENT,  # network download
                 # doc_ingest_attachment does NOT hit the internet — it
                 # reads from MinIO + writes to the KB + DB, which is all
                 # in-cluster. Not openWorld.
