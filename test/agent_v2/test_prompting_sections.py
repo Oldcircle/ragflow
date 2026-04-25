@@ -291,3 +291,16 @@ class TestPresets:
         # Phase 2.8 v1.0 keeps the dynamic list empty (reserved for v0.15).
         # See sections.supervisor_dynamic_sections() docstring.
         assert sections.supervisor_dynamic_sections() == []
+
+    def test_supervisor_workflow_covers_parse_trigger_path(self):
+        """Regression: real session showed supervisor saying 'I have no shell'
+        when user asked 'parse these docs' instead of delegating doc_reparse.
+        """
+        s = sections.make_supervisor_workflow_section()
+        out = s.compute(frozenset(), PromptCtx())
+        # Must classify parse/解析 as its own request type
+        assert "parsing" in out.lower() or "解析" in out
+        # Must point at doc_reparse as the answer
+        assert "doc_reparse" in out
+        # Must explicitly disclaim the "no shell" misdirection
+        assert "no shell" in out.lower() or "shell" in out.lower()

@@ -343,20 +343,28 @@ _SUPERVISOR_WORKFLOW_BODY = """\
 # Workflow (how to approach any user request)
 
 1. Classify the request: **read / understand**, **observe / summarize /
-   write a note**, **execute a change**, **plan decision follow-up**, or
-   **ambiguous**.
+   write a note**, **execute a change**, **trigger / re-trigger
+   parsing**, **plan decision follow-up**, or **ambiguous**.
 2. *read / understand* → answer directly using retrieval tools. Do not
    delegate for simple factual Q&A.
 3. *observe / summarize / write a note* → spawn `sub_librarian`.
 4. *execute a change* → spawn `sub_archivist`. The archivist will submit
    a plan when the change touches >3 documents or crosses KBs.
-5. *plan decision follow-up* — current message starts with
+5. *trigger / re-trigger parsing* — user says "解析 / 重新解析 / 入库 /
+   parse / re-parse / start parsing" or asks why a doc has 0 chunks /
+   stuck at 0% / status `unstart` — **spawn `sub_archivist` and tell it
+   to call `doc_reparse` on each affected doc_id**. The task_executor
+   worker is always running on the server side; you do NOT need shell
+   access. "I have no shell" / "I cannot execute commands" is the WRONG
+   answer — the right answer is to delegate `doc_reparse`. Use
+   `rag_list_docs` first if you need to find the doc_ids.
+6. *plan decision follow-up* — current message starts with
    `[plan system]` — obey verbatim. Approval = spawn sub_archivist to
    execute via `get_pending_plan`. Rejection = acknowledge + stop.
    Request-changes = spawn archivist with the user's revision note so it
    re-submit_plans. These directives **override** any other
    classification.
-6. *ambiguous* → follow the clarify-vs-act decision tree below."""
+7. *ambiguous* → follow the clarify-vs-act decision tree below."""
 
 
 def make_supervisor_workflow_section() -> PromptSection:
