@@ -37,13 +37,16 @@ def _ctx(**kw):
 
 @pytest.fixture
 def in_ctx():
-    from api.agent_v2.tools.web_search import _clear_cache_for_tests
+    from api.agent_v2.tools.web_fetch import _clear_cache_for_tests as _clear_fetch
+    from api.agent_v2.tools.web_search import _clear_cache_for_tests as _clear_search
 
-    _clear_cache_for_tests()
+    _clear_search()
+    _clear_fetch()
     token = set_ctx(_ctx())
     yield
     reset_ctx(token)
-    _clear_cache_for_tests()
+    _clear_search()
+    _clear_fetch()
 
 
 # ───────────────── web_search ─────────────────
@@ -638,6 +641,122 @@ def test_web_fetch_rejects_unsupported_content_type(in_ctx):
         out = _parse(_call(web_fetch, {"url": "https://example.com/binary"}))
     assert "error" in out
     assert "unsupported_content_type" in out["error"]
+
+
+# ───────────────── web_fetch cache + preapproved ─────────────────
+
+
+def _make_html_client(*, body: bytes, url: str = "https://example.com/"):
+    """Helper that builds a one-shot httpx-like async client returning the
+    given HTML body. Used by the cache + preapproved tests below."""
+    fake_response = MagicMock()
+    fake_response.status_code = 200
+    fake_response.headers = {"content-type": "text/html; charset=utf-8"}
+    fake_response.content = body
+    fake_response.encoding = "utf-8"
+    fake_response.url = url
+
+    get_calls = {"count": 0}
+
+    class _FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, _url):
+            get_calls["count"] += 1
+            return fake_response
+
+    return _FakeClient(), get_calls
+
+
+def test_web_fetch_caches_within_ttl(in_ctx):
+    """Two identical fetches in a row → second is a cache hit, no second
+    network call."""
+    client, calls = _make_html_client(
+        body=(
+            b"<html><head><title>Cached</title></head>"
+            b"<body><main><p>fresh body</p></main></body></html>"
+        ),
+        url="https://example.com/cache-me",
+    )
+    with patch(
+        "api.agent_v2.tools.web_fetch.socket.getaddrinfo",
+        return_value=[(None, None, None, None, ("93.184.216.34", 443))],
+    ), patch("httpx.AsyncClient", return_value=client):
+        first = _parse(_call(web_fetch, {"url": "https://example.com/cache-me"}))
+        second = _parse(_call(web_fetch, {"url": "https://example.com/cache-me"}))
+
+    assert first["cache_hit"] is False
+    assert second["cache_hit"] is True
+    assert second["title"] == "Cached"
+    assert second["content"] == first["content"]
+    assert calls["count"] == 1  # second call hit the cache
+
+
+def test_web_fetch_no_cache_flag_bypasses_cache(in_ctx):
+    """``no_cache=true`` should always re-fetch."""
+    client, calls = _make_html_client(
+        body=b"<html><body><p>x</p></body></html>",
+        url="https://example.com/skip",
+    )
+    with patch(
+        "api.agent_v2.tools.web_fetch.socket.getaddrinfo",
+        return_value=[(None, None, None, None, ("93.184.216.34", 443))],
+    ), patch("httpx.AsyncClient", return_value=client):
+        _parse(_call(web_fetch, {"url": "https://example.com/skip"}))
+        _parse(_call(
+            web_fetch,
+            {"url": "https://example.com/skip", "no_cache": True},
+        ))
+    assert calls["count"] == 2
+
+
+def test_web_fetch_flags_preapproved_host(in_ctx):
+    """Fetch from docs.python.org (in PREAPPROVED_HOSTS) → preapproved=true.
+    Random commercial host → preapproved=false."""
+    py_client, _ = _make_html_client(
+        body=b"<html><body><p>docs</p></body></html>",
+        url="https://docs.python.org/3/library/asyncio.html",
+    )
+    other_client, _ = _make_html_client(
+        body=b"<html><body><p>random blog</p></body></html>",
+        url="https://example.com/blog",
+    )
+    with patch(
+        "api.agent_v2.tools.web_fetch.socket.getaddrinfo",
+        return_value=[(None, None, None, None, ("93.184.216.34", 443))],
+    ), patch("httpx.AsyncClient", return_value=py_client):
+        out_py = _parse(
+            _call(
+                web_fetch,
+                {"url": "https://docs.python.org/3/library/asyncio.html"},
+            )
+        )
+    with patch(
+        "api.agent_v2.tools.web_fetch.socket.getaddrinfo",
+        return_value=[(None, None, None, None, ("93.184.216.34", 443))],
+    ), patch("httpx.AsyncClient", return_value=other_client):
+        out_other = _parse(_call(web_fetch, {"url": "https://example.com/blog"}))
+
+    assert out_py["preapproved"] is True
+    assert out_other["preapproved"] is False
+
+
+def test_preapproved_suffix_match():
+    """``szjs.sz.gov.cn`` should match the bare ``gov.cn`` entry via
+    suffix-walk so we don't have to enumerate every subdomain."""
+    from api.agent_v2.tools.web_fetch_preapproved import is_preapproved
+
+    assert is_preapproved("https://www.gov.cn/policy") is True
+    assert is_preapproved("https://szjs.sz.gov.cn/notice") is True
+    assert is_preapproved("https://docs.python.org/3/") is True
+    assert is_preapproved("https://example.com/blog") is False
+    # Empty / malformed → false (shouldn't blow up)
+    assert is_preapproved("") is False
+    assert is_preapproved("not a url") is False
 
 
 # ───────────────── registry + annotations parity ─────────────────

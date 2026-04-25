@@ -17,18 +17,62 @@ from __future__ import annotations
 import ipaddress
 import logging
 import socket
+import threading
 import time
+from collections import OrderedDict
 from urllib.parse import urljoin, urlparse
 
 from .base import get_ctx, mcp_json_response, tool  # noqa: F401 — get_ctx used in future
+from .web_fetch_preapproved import is_preapproved
 
 logger = logging.getLogger("ragflow.agent_v2.web_fetch")
 
 _ALLOWED_SCHEMES = {"http", "https"}
-_MAX_CONTENT_BYTES = 2 * 1024 * 1024  # 2 MB，给 Agent 阅读，不需要全量
+# Content size cap. The MCP transport wraps tool output in a 32 KB JSON
+# envelope (``base.MAX_TOOL_OUTPUT_BYTES``); anything bigger gets cut by the
+# wrapper, leaving the agent with broken JSON. We cap content at 24 KB so
+# even with title + headers + JSON keys we comfortably fit. Pages that
+# need a deeper read should use a future ``prompt=`` argument (Haiku-style
+# focused extraction — claude-code-ref WebFetchTool design) once that lands.
+_MAX_CONTENT_BYTES = 24 * 1024
 _DEFAULT_TIMEOUT_S = 15.0
 _MAX_REDIRECTS = 10
 _TRUNCATED_MARKER = "\n\n[Content truncated due to length...]"
+
+# 15-minute self-cleaning URL cache — mirrors claude-code-ref's WebFetchTool
+# behavior. Keyed on the canonicalized URL only; ``timeout_s`` doesn't
+# meaningfully change the response so we ignore it for cache key purposes.
+_CACHE_TTL_S = 15 * 60
+_CACHE_MAX = 64
+_CACHE_LOCK = threading.Lock()
+_CACHE: "OrderedDict[str, tuple[float, dict]]" = OrderedDict()
+
+
+def _cache_get(key: str) -> dict | None:
+    now = time.time()
+    with _CACHE_LOCK:
+        entry = _CACHE.get(key)
+        if entry is None:
+            return None
+        ts, value = entry
+        if now - ts > _CACHE_TTL_S:
+            _CACHE.pop(key, None)
+            return None
+        _CACHE.move_to_end(key)
+        return value
+
+
+def _cache_set(key: str, value: dict) -> None:
+    with _CACHE_LOCK:
+        _CACHE[key] = (time.time(), value)
+        _CACHE.move_to_end(key)
+        while len(_CACHE) > _CACHE_MAX:
+            _CACHE.popitem(last=False)
+
+
+def _clear_cache_for_tests() -> None:
+    with _CACHE_LOCK:
+        _CACHE.clear()
 
 
 def _ssrf_check(url: str) -> tuple[bool, str]:
@@ -127,16 +171,23 @@ def _html_to_markdown(html: str) -> tuple[str, str]:
         "page — either because the user pasted a URL, or because `web_search` "
         "surfaced a result whose snippet is insufficient.\n\n"
         "Returns the page's title + markdown-ish text (scripts/nav stripped, "
-        "truncated to 2 MB).\n\n"
+        "truncated to 24 KB so it fits the MCP envelope without clipping).\n\n"
         "Usage notes:\n"
         "- Call with a single URL per invocation. Batch by calling multiple "
         "times if needed.\n"
-        "- Content is truncated to 2 MB — do not assume exhaustive coverage.\n"
+        "- Content is truncated to 24 KB — do not assume exhaustive coverage. "
+        "For long pages, fetch the URL and quote only the relevant fragment.\n"
         "- Private / loopback / link-local hosts are refused for security "
         "(SSRF defense). Only http(s) on public IPs.\n"
         "- http:// URLs are upgraded to https://. Cross-host redirects are "
         "blocked and returned as `redirect_blocked`; fetch the redirected URL "
         "only after the user explicitly agrees.\n"
+        "- Self-cleaning 15-minute cache: re-fetching the same URL within "
+        "the window returns the cached response with `cache_hit=true`. Pass "
+        "`no_cache=true` if the user said the page changed.\n"
+        "- Trusted sources (Anthropic docs, MDN, language docs, .gov.cn) "
+        "are flagged in the response with `preapproved=true`; downstream "
+        "tooling may fast-path archive operations from these origins.\n"
         "- The fetched text is transient reading material; you cannot cite "
         "it with [N] (those markers are reserved for KB chunks). Cite the URL "
         "inline or in a `Sources:` section instead.\n"
@@ -162,6 +213,15 @@ def _html_to_markdown(html: str) -> tuple[str, str]:
                 "default": 15,
                 "minimum": 1,
                 "maximum": 60,
+            },
+            "no_cache": {
+                "type": "boolean",
+                "description": (
+                    "Skip the 15-minute response cache. Set true only when "
+                    "the user explicitly said the page changed since the "
+                    "previous fetch in this session."
+                ),
+                "default": False,
             },
         },
         "required": ["url"],
@@ -203,6 +263,17 @@ async def web_fetch(args: dict) -> dict:
         return fail("security_error", reason, url=url)
 
     timeout_s = min(max(float(args.get("timeout_s", _DEFAULT_TIMEOUT_S)), 1.0), 60.0)
+
+    # Cache lookup BEFORE the network roundtrip. Same URL within TTL skips
+    # the fetch + parse entirely. The agent gets a near-instant response and
+    # we don't burn the target host's quota on chatty re-fetches.
+    if not args.get("no_cache"):
+        cached = _cache_get(fetch_url)
+        if cached is not None:
+            out = dict(cached)
+            out["cache_hit"] = True
+            out["duration_ms"] = int((time.perf_counter() - start) * 1000)
+            return mcp_json_response(out)
 
     try:
         import httpx
@@ -307,22 +378,28 @@ async def web_fetch(args: dict) -> dict:
     if truncated:
         content = content.rstrip() + _TRUNCATED_MARKER
 
-    return mcp_json_response(
-        {
-            "url": str(resp.url),
-            "requested_url": url,
-            "upgraded_from_http": upgraded_from_http,
-            "title": title,
-            "content": content,
-            "length": len(content.encode("utf-8")),
-            "truncated": truncated,
-            "content_type": ctype,
-            "status_code": resp.status_code,
-            "duration_ms": int((time.perf_counter() - start) * 1000),
-            "citation_policy": (
-                "If using this fetched page in the final answer, cite the URL "
-                "inline or in a `Sources:` section. Do not use KB [N] "
-                "citation markers for web sources."
-            ),
-        }
-    )
+    payload = {
+        "url": str(resp.url),
+        "requested_url": url,
+        "upgraded_from_http": upgraded_from_http,
+        "title": title,
+        "content": content,
+        "length": len(content.encode("utf-8")),
+        "truncated": truncated,
+        "content_type": ctype,
+        "status_code": resp.status_code,
+        "duration_ms": int((time.perf_counter() - start) * 1000),
+        "cache_hit": False,
+        # Preapproved hosts (Anthropic / MDN / docs.python.org / gov.cn etc.)
+        # are flagged so a future plan_gate revision can fast-path archives
+        # from these sources without an explicit user approval step.
+        "preapproved": is_preapproved(str(resp.url) or fetch_url),
+        "citation_policy": (
+            "If using this fetched page in the final answer, cite the URL "
+            "inline or in a `Sources:` section. Do not use KB [N] "
+            "citation markers for web sources."
+        ),
+    }
+    if not args.get("no_cache"):
+        _cache_set(fetch_url, payload)
+    return mcp_json_response(payload)
