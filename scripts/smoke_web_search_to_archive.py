@@ -155,6 +155,7 @@ async def main() -> int:
     )
 
     seen_tools: list[str] = []
+    seen_subagent_tools: list[str] = []
     plan_submitted = [False]
     pending_plan_id = [None]
 
@@ -168,7 +169,11 @@ async def main() -> int:
                 text.append(d["data"].get("text", ""))
             elif t == "tool_call_start":
                 tool_name = (d["data"].get("name") or "").rsplit("__", 1)[-1]
-                seen_tools.append(tool_name)
+                role = d["data"].get("agent_role")
+                if role and role.startswith("subagent"):
+                    seen_subagent_tools.append(tool_name)
+                else:
+                    seen_tools.append(tool_name)
                 args = d["data"].get("arguments") or {}
                 arg_preview = ""
                 if "query" in args:
@@ -177,7 +182,8 @@ async def main() -> int:
                     arg_preview = f" url={args['url']!r}"
                 elif "subagent_type" in args:
                     arg_preview = f" subagent={args['subagent_type']!r}"
-                print(f"   → {tool_name}{arg_preview}")
+                indent = "       ↳" if role and role.startswith("subagent") else "   →"
+                print(f"{indent} {tool_name}{arg_preview}")
             elif t == "plan_submitted":
                 plan_submitted[0] = True
                 pending_plan_id[0] = d["data"].get("pending_id")
@@ -276,10 +282,13 @@ async def main() -> int:
             )
 
     print("\nseen tool calls (parent stream):", seen_tools)
-    print(
-        "(Note: subagent tool calls don't bubble through parent SSE; "
-        "trust DB state for child evidence.)"
-    )
+    if seen_subagent_tools:
+        print("seen tool calls (subagent — bubbled):", seen_subagent_tools)
+    else:
+        warnings.append(
+            "no subagent tool_call events bubbled to parent stream — "
+            "v0.17 bubble-up may have regressed"
+        )
 
     if failures:
         print(f"\nFAIL ({len(failures)})")

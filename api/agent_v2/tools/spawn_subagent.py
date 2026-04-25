@@ -10,6 +10,7 @@ AgentTool 模式：
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 import time
@@ -319,16 +320,66 @@ async def spawn_subagent(args: dict) -> dict:
         cost_usd = 0.0
         last_error: str | None = None
 
+        # Phase 2.7 v0.17 — bubble child events up to the parent SSE stream
+        # so frontend can show what the subagent is doing live (tool calls,
+        # streaming text, plan submission). Each forwarded event carries
+        # ``subagent_trace_id`` so the UI can nest it under the matching
+        # subagent_start card; ``agent_role`` tells the renderer this came
+        # from a named subagent definition (e.g. ``sub_archivist``).
+        # ``end`` events stay private to the child — parent has its own
+        # end semantics and seeing two ``end`` events would confuse stream
+        # consumers.
+        agent_role = (
+            f"subagent:{definition.name}" if definition is not None
+            else "subagent"
+        )
+
+        # CRITICAL — capture the parent's emitter BEFORE iterating
+        # ``child.run(...)``. The runner's ``run()`` calls ``set_ctx`` on the
+        # child's ctx as soon as we await it; from that point on, the
+        # contextvar holds the child's ctx, not the parent's. So we cannot
+        # call ``emit_event`` (which reads the contextvar) from inside the
+        # iteration — it would push events back to the child's own event
+        # bus, where they're either lost or loop. Bind to the parent's
+        # emitter directly here.
+        parent_emitter = ctx.event_emitter
+
+        async def _bubble(event):
+            if parent_emitter is None:
+                return
+            stamped = ev.Event(
+                type=event.type,
+                data={
+                    **event.data,
+                    "subagent_trace_id": trace_id,
+                    "agent_role": agent_role,
+                },
+            )
+            try:
+                res = parent_emitter(stamped)
+                if asyncio.iscoroutine(res):
+                    await res
+            except Exception:
+                pass  # bubble is best-effort — never break the child run
+
         async for event in child.run(prompt):
             t = event.type
             d = event.data
             if t == "text_delta":
                 text_parts.append(d.get("text", ""))
+                await _bubble(event)
             elif t == "error":
                 last_error = d.get("message") or d.get("code")
+                # Errors during child run are surfaced via subagent_end
+                # (status=error). Don't double-emit.
             elif t == "end":
                 usage_dict = d.get("usage") or {}
                 cost_usd = float(usage_dict.get("total_cost_usd") or 0.0)
+            else:
+                # tool_call_start / tool_call_end / plan_submitted /
+                # ask_user_question / thinking / citation_warning / ... —
+                # everything that isn't the child's terminal frame.
+                await _bubble(event)
 
         final_text = "".join(text_parts).strip()
 
