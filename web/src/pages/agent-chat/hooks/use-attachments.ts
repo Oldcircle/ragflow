@@ -14,8 +14,8 @@
  */
 
 import { useCallback, useState } from 'react';
-import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import type { AgentV2Attachment } from '../api';
 import { agentV2Api } from '../api';
 
@@ -47,19 +47,16 @@ export interface UseAttachmentsResult {
 let _counter = 0;
 const makeLocalId = () => `local_${Date.now()}_${++_counter}`;
 
-export function useAttachments(sessionId: string | undefined): UseAttachmentsResult {
+export function useAttachments(
+  sessionId: string | undefined,
+): UseAttachmentsResult {
   const { t } = useTranslation();
   const [staged, setStaged] = useState<StagedAttachment[]>([]);
 
   const upload = useCallback(
     async (files: FileList | File[]) => {
       if (!sessionId) {
-        toast.error(
-          t(
-            'agentV2.attachmentNoSession',
-            '请先创建会话再上传附件',
-          ),
-        );
+        toast.error(t('agentV2.attachmentNoSession', '请先创建会话再上传附件'));
         return;
       }
       const list = Array.from(files);
@@ -83,13 +80,25 @@ export function useAttachments(sessionId: string | undefined): UseAttachmentsRes
           (pct) => {
             setStaged((s) =>
               s.map((it) =>
-                placeholders.some((p) => p.localId === it.localId) && it.status === 'uploading'
+                placeholders.some((p) => p.localId === it.localId) &&
+                it.status === 'uploading'
                   ? { ...it, progress: pct }
                   : it,
               ),
             );
           },
         );
+
+        // Backend may return HTTP 200 with `data: null` when the request
+        // fails server-side validation (RAGFlow's `get_data_error_result`
+        // shape). axios won't throw in that case, so axios's `data.data`
+        // falls through as null. Treat that the same as an exception:
+        // mark placeholders failed and surface the message.
+        if (!res || !Array.isArray((res as { uploaded?: unknown }).uploaded)) {
+          throw new Error(
+            t('agentV2.attachmentUploadFailed', '附件上传失败（服务器拒绝）'),
+          );
+        }
 
         // Replace placeholders with server rows.
         // We correlate by filename; if multiple same-filename files, match
@@ -116,8 +125,9 @@ export function useAttachments(sessionId: string | undefined): UseAttachmentsRes
         });
 
         // Surface rejections (size / MIME / quota)
-        if (res.rejected.length > 0) {
-          for (const r of res.rejected) {
+        const rejected = res.rejected ?? [];
+        if (rejected.length > 0) {
+          for (const r of rejected) {
             toast.error(`${r.filename}: ${r.reason}`);
           }
         }
@@ -168,7 +178,10 @@ export function useAttachments(sessionId: string | undefined): UseAttachmentsRes
   );
 
   const stagedReadyIds = useCallback(
-    () => staged.filter((it) => it.status === 'ready' && !!it.id).map((it) => it.id!),
+    () =>
+      staged
+        .filter((it) => it.status === 'ready' && !!it.id)
+        .map((it) => it.id!),
     [staged],
   );
 
