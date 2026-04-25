@@ -579,6 +579,55 @@ class AgentV2AttachmentService(CommonService):
         )
         return q.execute()
 
+    # ─────────── blob GC ───────────
+
+    @classmethod
+    @DB.connection_context()
+    def list_blob_gc_candidates(
+        cls, *, limit: int = 500, rejected_grace_ms: int = 7 * 24 * 3600 * 1000,
+        now_ms: int | None = None,
+    ) -> list:
+        """Rows whose MinIO blob should be reclaimed:
+
+        - ``status=expired`` and ``blob_path`` still set (no grace — the row
+          already lived 24 h while staged)
+        - ``status=rejected`` and ``update_time < now - rejected_grace_ms``
+
+        Returns at most ``limit`` rows; caller deletes the blob then calls
+        ``mark_blob_reclaimed`` to null out ``blob_path`` so we don't pick the
+        row up again.
+        """
+        cutoff = (now_ms if now_ms is not None else current_timestamp()) - rejected_grace_ms
+        return list(
+            cls.model.select()
+            .where(
+                cls.model.blob_path.is_null(False)
+                & (
+                    (cls.model.status == "expired")
+                    | (
+                        (cls.model.status == "rejected")
+                        & (cls.model.update_time < cutoff)
+                    )
+                )
+            )
+            .order_by(cls.model.update_time.asc())
+            .limit(limit)
+        )
+
+    @classmethod
+    @DB.connection_context()
+    def mark_blob_reclaimed(cls, attachment_id: str) -> bool:
+        """Null out ``blob_path`` so the sweeper stops picking the row up.
+        The row itself is preserved as an audit tombstone."""
+        row = cls.model.select().where(cls.model.id == attachment_id).first()
+        if not row:
+            return False
+        row.blob_path = None
+        row.update_time = current_timestamp()
+        row.update_date = datetime_format(datetime.now())
+        row.save()
+        return True
+
     # ─────────── read paths ───────────
 
     @classmethod

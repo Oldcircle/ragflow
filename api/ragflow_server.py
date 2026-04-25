@@ -145,13 +145,24 @@ if __name__ == '__main__':
         )
         t.start()
 
+    def delayed_start_attachment_sweeper():
+        logging.info("Starting agent_v2 attachment sweeper (delayed)")
+        from api.agent_v2.attachment_sweeper import run_worker
+        t = threading.Thread(
+            target=run_worker, args=(stop_event,), daemon=True,
+            name="agent-v2-attachment-sweeper",
+        )
+        t.start()
+
     if RuntimeConfig.DEBUG:
         if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
             threading.Timer(1.0, delayed_start_update_progress).start()
             threading.Timer(2.0, delayed_start_trigger_worker).start()
+            threading.Timer(3.0, delayed_start_attachment_sweeper).start()
     else:
         threading.Timer(1.0, delayed_start_update_progress).start()
         threading.Timer(2.0, delayed_start_trigger_worker).start()
+        threading.Timer(3.0, delayed_start_attachment_sweeper).start()
 
     # start http server
     try:
