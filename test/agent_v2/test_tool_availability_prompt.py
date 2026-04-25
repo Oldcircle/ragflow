@@ -206,6 +206,41 @@ def test_every_template_prompt_explains_delegation_for_writes():
         )
 
 
+def test_spawn_subagent_section_enumerates_named_subagents():
+    """v0.22 — when ``spawn_subagent`` is in the toolset, the rendered
+    Available Tools section must enumerate which named subagents are
+    reachable + their write capabilities. Without this, the agent reads
+    a vague "delegate a focused task" and never connects delegation to
+    concrete writes like kb_create / doc_ingest_attachment, which is
+    what triggered the live-caught "I can't create KBs" hallucination."""
+    from api.agent_v2.prompting.builder import (
+        render_tool_availability_section,
+    )
+
+    out = render_tool_availability_section(
+        ["rag_retrieve", "spawn_subagent", "submit_plan"],
+        lang="en",
+    )
+    # The named subagent types appear as nested bullets
+    assert "subagent_type='sub_archivist'" in out
+    assert "subagent_type='sub_librarian'" in out
+    # And their key write tools are surfaced
+    assert "kb_create" in out
+    assert "doc_archive" in out
+
+
+def test_spawn_subagent_section_skipped_when_tool_missing():
+    """If the session doesn't grant ``spawn_subagent``, the subagent
+    enumeration must NOT leak into the prompt — that would offer the
+    agent a capability it can't actually invoke."""
+    from api.agent_v2.prompting.builder import (
+        render_tool_availability_section,
+    )
+
+    out = render_tool_availability_section(["rag_retrieve"], lang="en")
+    assert "subagent_type=" not in out
+
+
 def test_every_template_prompt_forbids_emoji():
     """v0.22 — deepseek-v4-flash mis-renders emoji as literal '????'
     in output (verified live: ``????系统性学习平台``). Until the model

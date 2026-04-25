@@ -205,10 +205,53 @@ def render_tool_availability_section(
         seen.add(n)
         ordered_names.append(n)
 
+    # v0.22 — when ``spawn_subagent`` is in the toolset, follow up the
+    # one-liner with an enumeration of which named subagents are
+    # reachable and what they're each good for. Without this, the agent
+    # reads "delegate a focused task" and never connects "delegation"
+    # to concrete write capabilities like kb_create / doc_ingest_attachment.
+    # This is the prompt-side complement to the runtime ``allowed_subagent_types``
+    # gate; we surface what the agent CAN reach so it actually uses it.
+    spawn_subagent_extras: list[str] = []
+    if "spawn_subagent" in ordered_names:
+        try:
+            from ..definitions import list_definitions
+            for d in list_definitions(kind="subagent"):
+                # Short capability summary derived from the definition's
+                # tool list — keep it tight to avoid bloat. The full
+                # tool surface is loaded inside the child runtime.
+                tools = list(d.tools or [])
+                # Highlight the WRITE tools (the ones the agent doesn't
+                # have directly), since that's the gap the supervisor
+                # prompt usually fails to bridge.
+                write_tools = [
+                    t for t in tools
+                    if t.startswith(("kb_", "doc_")) and t != "kb_stats"
+                ]
+                cap_hint = (
+                    f"writes via {', '.join(f'`{t}`' for t in write_tools[:6])}"
+                    if write_tools
+                    else f"reads + reflection via {', '.join(f'`{t}`' for t in tools[:6])}"
+                )
+                # Truncate description at sentence boundary when possible
+                # so we don't end with awkward "...retrieves :" fragments.
+                desc = (d.description or d.name).strip()
+                if len(desc) > 80:
+                    cut = desc[:80].rsplit(".", 1)[0] or desc[:80].rsplit(",", 1)[0] or desc[:80]
+                    desc = cut.strip().rstrip(":") + "…"
+                spawn_subagent_extras.append(
+                    f"  - `subagent_type='{d.name}'` — {desc} ({cap_hint})"
+                )
+        except Exception:
+            # Fall through silently — the base tool line still renders.
+            pass
+
     positive_lines: list[str] = []
     for n in ordered_names:
         hint = SEARCH_HINT_BY_TOOL.get(n, "(no description registered)")
         positive_lines.append(f"- `{n}` — {hint}")
+        if n == "spawn_subagent" and spawn_subagent_extras:
+            positive_lines.extend(spawn_subagent_extras)
 
     # Negative-enumeration masking: any confabulated name that matches an
     # actually-enabled tool (case-insensitive, underscore/space insensitive)
