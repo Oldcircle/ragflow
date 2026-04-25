@@ -169,12 +169,26 @@ class AgentRunner:
             pieces.append("\n---\n" + attachments_section)
         full_system_prompt = "".join(pieces)
 
+        # Capture SDK-CLI subprocess stderr into our logger. The SDK wraps
+        # subprocess crashes in a generic "Command failed / Check stderr
+        # output for details" message; without this callback, the "details"
+        # are just dropped. Common signal: HTTP 402 from upstream means the
+        # billing key has zero balance (DeepSeek is the most common offender
+        # for our local dev setup).
+        sdk_logger = logging.getLogger("ragflow.agent_v2.runner.sdk_cli")
+
+        def _sdk_stderr_callback(line: str) -> None:
+            line = line.rstrip()
+            if line:
+                sdk_logger.warning("[sdk-cli] %s", line)
+
         return ClaudeAgentOptions(
             model=self.model.model,
             fallback_model=self.model.fallback_model,
             system_prompt=full_system_prompt,
             mcp_servers={MCP_SERVER_NAME: mcp_server},
             allowed_tools=allowed,
+            stderr=_sdk_stderr_callback,
             # **硬禁** Claude Code SDK 的所有内建工具 —— KB Agent 只能用我们 MCP
             # 里暴露的工具，绝不允许触达宿主 FS / 启动 shell / 联网抓站 / 用
             # SDK 自己的 Agent 机制绕开我们的 spawn_subagent。实测 A1/A2 里 LLM

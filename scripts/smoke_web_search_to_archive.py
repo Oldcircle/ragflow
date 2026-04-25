@@ -76,9 +76,16 @@ rf_settings.init_settings()
 
 from api.agent_v2.definitions.built_in._common import SUPERVISOR_TOOLS  # noqa: E402
 from api.agent_v2.model_resolver import resolve_model  # noqa: E402
+from api.agent_v2.plan_decision import (  # noqa: E402
+    augment_for_plan_decision,
+    parse_plan_decision,
+)
 from api.agent_v2.runner import AgentRunner  # noqa: E402
 from api.db.db_models import Document  # noqa: E402
-from api.db.services.agent_v2_service import AgentV2SessionService  # noqa: E402
+from api.db.services.agent_v2_service import (  # noqa: E402
+    AgentV2MessageService,
+    AgentV2SessionService,
+)
 
 
 TENANT = "968bd6ec3c9f11f1afc91f3c182e7a61"
@@ -142,33 +149,89 @@ async def main() -> int:
         tenant_id=TENANT,
     ).config
 
-    runner = AgentRunner(
-        tenant_id=TENANT,
-        kb_ids=[KB_ID],
-        system_prompt=SYSTEM_PROMPT,
-        model=model_cfg,
-        tool_names=RESEARCH_TOOLS,
-        max_turns=10,
-        max_budget_usd=0.5,
-        session_id=session.id,
-        user_id=TENANT,
-    )
-
     seen_tools: list[str] = []
     seen_subagent_tools: list[str] = []
     plan_submitted = [False]
     pending_plan_id = [None]
 
     async def run_turn(q: str, label: str) -> str:
+        """Replicates the production ``send_message`` machinery so the
+        smoke can drive multi-turn conversations including plan approval.
+
+        Mirrors the parts of ``api.apps.agent_v2_app.send_message`` that
+        actually affect runtime behavior:
+          1. ``parse_plan_decision`` strips ``[plan approved]`` etc. and
+             returns the cleaned message + decision string
+          2. ``transition_plan_status`` updates the DB so ``@require_kb_write``
+             reads a fresh status before any tool fires
+          3. ``augment_for_plan_decision`` adds an explicit directive when
+             the user message was a bare approval marker (otherwise the
+             supervisor sees an empty message and bails)
+          4. Persist the user message → load history (excluding it) →
+             instantiate the runner with snapshot plan state → run →
+             persist the assistant message
+        """
         print(f"\n── {label} ── user: {q[:120]}{'…' if len(q) > 120 else ''}")
+
+        clean_msg, plan_decision = parse_plan_decision(q)
+        if plan_decision:
+            try:
+                AgentV2SessionService.transition_plan_status(
+                    session.id, plan_decision,
+                )
+                print(f"   [plan_decision={plan_decision!r} applied to session]")
+            except Exception as exc:
+                print(f"   [transition_plan_status failed: {exc!r}]")
+
+        plan_row = AgentV2SessionService.get_pending_plan(session.id) or {}
+        plan_status = plan_row.get("pending_plan_status")
+        plan_id = plan_row.get("pending_plan_id")
+
+        # Persist the user message so list_for_runner can replay it next turn
+        user_msg = AgentV2MessageService.append(
+            session_id=session.id, role="user", content=clean_msg,
+        )
+        user_msg_id = getattr(user_msg, "id", None)
+
+        runner_input = augment_for_plan_decision(
+            user_message=clean_msg,
+            plan_decision=plan_decision,
+            plan_status=plan_status,
+        )
+
+        history = AgentV2MessageService.list_for_runner(
+            session_id=session.id,
+            limit=20,
+            exclude_message_id=user_msg_id,
+            since_create_time=None,
+            include_tool_calls=True,
+        )
+
+        runner = AgentRunner(
+            tenant_id=TENANT,
+            kb_ids=[KB_ID],
+            system_prompt=SYSTEM_PROMPT,
+            model=model_cfg,
+            tool_names=RESEARCH_TOOLS,
+            max_turns=10,
+            max_budget_usd=0.5,
+            session_id=session.id,
+            user_id=TENANT,
+            pending_plan_status=plan_status,
+            pending_plan_id=plan_id,
+        )
+
         text: list[str] = []
-        async for ev in runner.run(q):
+        tool_call_ids: list[str] = []
+        usage: dict = {}
+        async for ev in runner.run(runner_input, history=history):
             d = ev.to_dict()
             t = d["type"]
             if t == "text_delta":
                 text.append(d["data"].get("text", ""))
             elif t == "tool_call_start":
                 tool_name = (d["data"].get("name") or "").rsplit("__", 1)[-1]
+                tool_call_ids.append(d["data"].get("id") or "")
                 role = d["data"].get("agent_role")
                 if role and role.startswith("subagent"):
                     seen_subagent_tools.append(tool_name)
@@ -197,10 +260,44 @@ async def main() -> int:
                 print(f"   ↳ subagent_start: {d['data'].get('subagent_type')}")
             elif t == "subagent_end":
                 print(f"   ↳ subagent_end: {d['data'].get('status')}")
+            elif t == "end":
+                usage = d["data"].get("usage") or {}
             elif t == "error":
-                text.append(f"\n[ERROR: {d['data']}]")
+                err_msg = str(d["data"])
+                text.append(f"\n[ERROR: {err_msg}]")
+                # Most common cause of SDK 'Command failed exit 1' here is
+                # the upstream LLM key having zero balance (DeepSeek 402).
+                # Surface a hint so the user doesn't dig into v0.19 code.
+                if "exit code 1" in err_msg or "Check stderr" in err_msg:
+                    print(
+                        "   [hint] SDK subprocess crashed — check upstream "
+                        "LLM balance. Quick test:\n"
+                        "         curl -X POST https://api.deepseek.com/anthropic/v1/messages \\\n"
+                        "              -H 'x-api-key: $KEY' "
+                        "-H 'anthropic-version: 2023-06-01' \\\n"
+                        "              -d '{\"model\":\"deepseek-chat\","
+                        "\"max_tokens\":10,\"messages\":[{\"role\":\"user\","
+                        "\"content\":\"hi\"}]}'\n"
+                        "         402 = insufficient balance, 401 = bad key."
+                    )
         reply = "".join(text)
         print(f"── reply ({len(reply)} chars) ──\n{reply[:600]}")
+
+        # Persist assistant — this is what makes history compounding work
+        # for the next turn. Without it, run_turn N+1 would replay nothing
+        # but the bare user messages and the supervisor wouldn't know what
+        # the archivist already did.
+        try:
+            AgentV2MessageService.append(
+                session_id=session.id,
+                role="assistant",
+                content=reply,
+                tool_call_ids=tool_call_ids,
+                usage=usage,
+            )
+        except Exception as exc:
+            print(f"   [persist assistant failed: {exc!r}]")
+
         return reply
 
     # Turn 1 — search + propose archive. We pick a query with an obvious
@@ -214,11 +311,12 @@ async def main() -> int:
         "Turn 1",
     )
 
-    # Turn 2 — approval. Skipped by default because exercising the approval
-    # flow correctly requires us to replicate the message-history machinery
-    # in agent_v2_app.send_message (history loading + augment_for_plan_decision
-    # rewrite). Set AGENT_V2_SMOKE_DRIVE_APPROVAL=1 to opt in once those
-    # plumbing bits are wired into this smoke too.
+    # Turn 2 — approval. v0.19 wires send_message's machinery into this
+    # smoke (parse_plan_decision + transition_plan_status + history) so
+    # the supervisor sees a coherent conversation and re-spawns
+    # sub_archivist with the now-approved plan. Set
+    # AGENT_V2_SMOKE_NO_APPROVAL=1 to skip if you only want to verify the
+    # propose-plan half (faster — saves a second LLM round-trip).
     refreshed = AgentV2SessionService.get_by_id(session.id)
     db_plan_waiting = (refreshed.pending_plan_status == "waiting") if refreshed else False
     if db_plan_waiting:
@@ -226,8 +324,11 @@ async def main() -> int:
             f"\n[plan detected via DB] pending_plan_id="
             f"{refreshed.pending_plan_id} status={refreshed.pending_plan_status}"
         )
-    if db_plan_waiting and os.environ.get("AGENT_V2_SMOKE_DRIVE_APPROVAL"):
-        await run_turn("[计划批准] 继续执行归档。", "Turn 2 (approval)")
+    if db_plan_waiting and not os.environ.get("AGENT_V2_SMOKE_NO_APPROVAL"):
+        await run_turn(
+            "[计划批准] 继续执行归档，记得把抓回的内容真正入库。",
+            "Turn 2 (approval)",
+        )
 
     # ── verification ──
     # The "autonomous" chain we want to prove: agent searches the web,
@@ -248,23 +349,26 @@ async def main() -> int:
             "supervisor never spawned a subagent — delegation failed"
         )
 
-    # Proof the child actually did its job: pending_plan_status flipped to
-    # 'waiting' on the parent session. This only happens if sub_archivist
-    # ran submit_plan with an attachment — which means web_fetch_to_attachment
-    # succeeded inside the child too.
+    # Proof the child actually did its job. Expected terminal status:
+    # - 'approved' if we drove the approval turn (default)
+    # - 'waiting' if AGENT_V2_SMOKE_NO_APPROVAL=1
+    # Anything else means the chain bailed somewhere.
     refreshed = AgentV2SessionService.get_by_id(session.id)
-    if not refreshed or refreshed.pending_plan_status != "waiting":
+    expected_status = (
+        "waiting" if os.environ.get("AGENT_V2_SMOKE_NO_APPROVAL") else "approved"
+    )
+    actual_status = getattr(refreshed, "pending_plan_status", None)
+    if actual_status != expected_status:
         warnings.append(
-            f"session.pending_plan_status="
-            f"{getattr(refreshed, 'pending_plan_status', None)!r} "
-            "(expected 'waiting') — subagent may not have called submit_plan"
+            f"session.pending_plan_status={actual_status!r} "
+            f"(expected {expected_status!r}) — chain may have bailed mid-flight"
         )
     else:
         title = (refreshed.pending_plan_body or {}).get("title")
         steps = (refreshed.pending_plan_body or {}).get("steps") or []
         preview = (refreshed.pending_plan_body or {}).get("preview") or {}
         print(
-            f"\n✓ submit_plan landed:\n"
+            f"\n✓ plan landed (status={actual_status}):\n"
             f"  pending_id    = {refreshed.pending_plan_id}\n"
             f"  title         = {title!r}\n"
             f"  steps         = {len(steps)}\n"
@@ -280,6 +384,24 @@ async def main() -> int:
                 f"  • {d.id}  {d.name}  ({d.size} B, "
                 f"status={d.status}, run={d.run})"
             )
+    elif not os.environ.get("AGENT_V2_SMOKE_NO_APPROVAL"):
+        # We drove the approval — there ought to be a doc. Either the
+        # archivist hit the dedupe path (same content already in KB) or
+        # something broke between get_pending_plan and doc_ingest_attachment.
+        # Inspect the session to disambiguate.
+        refreshed = AgentV2SessionService.get_by_id(session.id)
+        plan_status_post = getattr(refreshed, "pending_plan_status", None)
+        if plan_status_post == "approved":
+            warnings.append(
+                "approval applied but no new KB doc — archivist likely "
+                "dedup'd against existing content (acceptable)"
+            )
+        else:
+            failures.append(
+                f"approval ran but no new KB doc landed and plan status is "
+                f"{plan_status_post!r} (expected 'approved' or a fresh doc). "
+                "Check sub_archivist trace for the child's last steps."
+            )
 
     print("\nseen tool calls (parent stream):", seen_tools)
     if seen_subagent_tools:
@@ -290,6 +412,16 @@ async def main() -> int:
             "v0.17 bubble-up may have regressed"
         )
 
+    # When the approval flow ran (default), confirm sub_archivist actually
+    # called doc_ingest_attachment — that is the actual KB-write moment.
+    # Visibility comes via the v0.17 bubble-up.
+    if not os.environ.get("AGENT_V2_SMOKE_NO_APPROVAL"):
+        if "doc_ingest_attachment" not in seen_subagent_tools:
+            failures.append(
+                "approval ran but sub_archivist never called "
+                "doc_ingest_attachment — KB write step missing"
+            )
+
     if failures:
         print(f"\nFAIL ({len(failures)})")
         for f in failures:
@@ -298,7 +430,10 @@ async def main() -> int:
 
     for w in warnings:
         print(f"WARN  {w}")
-    print("\nPASS ✓ — autonomous search → delegate → submit_plan chain validated")
+    if os.environ.get("AGENT_V2_SMOKE_NO_APPROVAL"):
+        print("\nPASS ✓ — autonomous search → delegate → submit_plan chain validated")
+    else:
+        print("\nPASS ✓ — full chain: search → delegate → plan → approval → KB write")
     return 0
 
 
