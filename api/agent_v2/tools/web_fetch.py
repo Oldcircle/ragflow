@@ -22,7 +22,14 @@ import time
 from collections import OrderedDict
 from urllib.parse import urljoin, urlparse
 
-from .base import get_ctx, mcp_json_response, tool  # noqa: F401 — get_ctx used in future
+from .base import (  # noqa: F401 — get_ctx used in future
+    CancelledByCaller,
+    check_cancelled,
+    get_ctx,
+    is_cancelled,
+    mcp_json_response,
+    tool,
+)
 from .web_fetch_preapproved import is_preapproved
 
 logger = logging.getLogger("ragflow.agent_v2.web_fetch")
@@ -422,6 +429,10 @@ async def web_fetch(args: dict) -> dict:
             current_url = fetch_url
             redirect_count = 0
             while True:
+                # v0.20 — bail before each redirect hop so a 10-redirect
+                # chain doesn't keep eating budget after the user cancels.
+                if is_cancelled():
+                    return fail("cancelled", "fetch cancelled by caller", url=url)
                 resp = await client.get(current_url)
                 if resp.status_code not in (301, 302, 303, 307, 308):
                     break
@@ -535,6 +546,16 @@ async def web_fetch(args: dict) -> dict:
     # path (Haiku in their setup; whatever model is in ctx.model_config
     # for us — typically deepseek-chat).
     if user_prompt:
+        # v0.20 — gate the LLM call on cancel since it's a 1-2s round-trip
+        # and the page content is already in memory; user shouldn't pay
+        # token cost for a fetch they cancelled.
+        if is_cancelled():
+            payload["summarized"] = False
+            payload["summary_error"] = "cancelled by caller before secondary model"
+            payload["duration_ms"] = int((time.perf_counter() - start) * 1000)
+            if not args.get("no_cache"):
+                _cache_set(cache_key, payload)
+            return mcp_json_response(payload)
         summary, sec_err = await _summarize_with_secondary_model(
             content=content,
             user_prompt=user_prompt,

@@ -42,7 +42,13 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import urlparse
 
-from .base import get_ctx, mcp_json_response, tool
+from .base import (
+    CancelledByCaller,
+    check_cancelled,
+    get_ctx,
+    mcp_json_response,
+    tool,
+)
 
 logger = logging.getLogger("ragflow.agent_v2.web_search")
 
@@ -468,6 +474,15 @@ async def web_search(args: dict) -> dict:
         out["duration_ms"] = int((time.perf_counter() - start) * 1000)
         out["cache_hit"] = True
         return mcp_json_response(out)
+
+    # v0.20 — pre-flight cancel check before launching the network call.
+    # The thread can't be cancelled mid-flight, so this is the last clean
+    # bail point for ~99% of "user clicked stop right after the search
+    # tool fires" cases.
+    try:
+        check_cancelled()
+    except CancelledByCaller:
+        return fail("cancelled", "search cancelled by caller", query=query)
 
     try:
         # All adapters are sync; offload to thread to keep the event loop

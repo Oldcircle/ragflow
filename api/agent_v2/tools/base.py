@@ -95,6 +95,24 @@ class ToolContext:
     """本次 Agent run 内 submit_plan 是否已调过。只要为 True，同轮后续写工具
     必须被拒——不能 submit_plan 之后立刻接着执行，必须等下一轮用户批。"""
 
+    # ────────── Phase 2.7 v0.20 — abort signal ──────────
+    cancelled: "asyncio.Event | None" = None
+    """Cancellation signal for cooperative tool aborts. ``None`` means no
+    abort support is wired up (backward-compat default for unit tests
+    that don't go through the Runner). When set by the runner and
+    triggered by a caller (HTTP disconnect, cancel endpoint, SDK
+    timeout), tools should:
+
+    1. Check ``ctx.cancelled.is_set()`` at long-running boundaries
+       (between sequential network calls, before kicking off a thread)
+    2. Wrap blocking work in ``check_cancelled()`` for tight loops
+    3. Bail with a clean ``cancelled`` error response on detection,
+       instead of swallowing the signal silently
+
+    See ``claude-code-ref/.../WebSearchTool`` for the equivalent
+    ``context.abortController.signal`` pattern.
+    """
+
     extra: dict = field(default_factory=dict)
 
 
@@ -160,6 +178,37 @@ async def emit_event(event: Any) -> None:
         pass  # 事件推送失败绝不影响工具本身
 
 
+class CancelledByCaller(Exception):
+    """Raised by ``check_cancelled`` when the active ToolContext has had
+    its ``cancelled`` event set. Tools that want to bail with a clean
+    error envelope rather than propagating an exception should catch
+    this and return ``mcp_json_response({"error": "cancelled", ...})``;
+    bare ``raise`` is fine when no cleanup is needed."""
+
+
+def check_cancelled() -> None:
+    """Tight-loop check — raises ``CancelledByCaller`` when the active
+    ctx is signalling cancel. Cheap (``Event.is_set()`` is just an
+    attribute read), so safe to sprinkle through any sequential await
+    chain. Returns silently when no ctx / no cancel event is wired
+    (unit tests that don't go through Runner)."""
+    ctx = _ctx_var.get()
+    if ctx is None or ctx.cancelled is None:
+        return
+    if ctx.cancelled.is_set():
+        raise CancelledByCaller("tool cancelled by caller")
+
+
+def is_cancelled() -> bool:
+    """Non-raising variant for cases where the tool wants to make its
+    own decision about how to bail (e.g. write a partial-result audit
+    line before returning)."""
+    ctx = _ctx_var.get()
+    if ctx is None or ctx.cancelled is None:
+        return False
+    return ctx.cancelled.is_set()
+
+
 # 单次 tool 输出最大字节数（保护上下文不被炸）
 MAX_TOOL_OUTPUT_BYTES = 32 * 1024
 
@@ -198,4 +247,7 @@ __all__ = [
     "mcp_text_response",
     "mcp_json_response",
     "MAX_TOOL_OUTPUT_BYTES",
+    "CancelledByCaller",
+    "check_cancelled",
+    "is_cancelled",
 ]

@@ -123,6 +123,34 @@ class AgentRunner:
         # 子发事件会 emit 到这个 queue，父在 run() loop 里把它们穿插进自己的 SDK 流
         self._event_bus: asyncio.Queue[ev.Event] | None = None
 
+        # Phase 2.7 v0.20 — cancellation. Lazy-init in run() so the Event
+        # is bound to the right loop. ``cancel()`` can be called from the
+        # same loop (e.g. SSE stream consumer detecting client disconnect)
+        # or via ``loop.call_soon_threadsafe`` from a different thread
+        # (e.g. an HTTP cancel endpoint handler).
+        self._cancel_event: asyncio.Event | None = None
+
+    def cancel(self) -> None:
+        """Signal the running tools to abort cooperatively.
+
+        Idempotent — safe to call multiple times. The flag persists, so
+        calling cancel() before ``run()`` makes the run abort on its
+        first cancel-aware boundary. Tools using ``check_cancelled()``
+        from ``api.agent_v2.tools.base`` will raise ``CancelledByCaller``;
+        tools using ``is_cancelled()`` make their own bail decision.
+
+        Note: this is cooperative — synchronous tools that don't poll
+        will run to completion. For hard kill (e.g. SDK-CLI subprocess
+        stuck in I/O), the caller should also cancel the asyncio task
+        wrapping ``run()``; ``CancelledError`` propagates and most
+        ``httpx`` calls handle it natively.
+        """
+        if self._cancel_event is None:
+            # Pre-run cancellation — create the event eagerly so the next
+            # run() inherits it instead of starting fresh.
+            self._cancel_event = asyncio.Event()
+        self._cancel_event.set()
+
     def _build_options(self) -> ClaudeAgentOptions:
         mcp_server = build_mcp_server(enabled=self.tool_names)
         allowed = (
@@ -279,6 +307,11 @@ class AgentRunner:
         # 工具（如 spawn_subagent）往 bus 里推事件，父这里穿插转发。
         self._event_bus = asyncio.Queue()
 
+        # Bind the cancel event to this loop. Reuse if cancel() was called
+        # before run() (preserves the signal); otherwise create fresh.
+        if self._cancel_event is None:
+            self._cancel_event = asyncio.Event()
+
         async def emit(event: ev.Event) -> None:
             await self._event_bus.put(event)  # type: ignore[union-attr]
 
@@ -305,6 +338,7 @@ class AgentRunner:
             pending_plan_id=self.pending_plan_id,
             plan_submitted_this_turn=False,
             attachments=self.attachments,
+            cancelled=self._cancel_event,
         )
         token = set_ctx(ctx)
 
