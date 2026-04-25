@@ -37,9 +37,13 @@ def _ctx(**kw):
 
 @pytest.fixture
 def in_ctx():
+    from api.agent_v2.tools.web_search import _clear_cache_for_tests
+
+    _clear_cache_for_tests()
     token = set_ctx(_ctx())
     yield
     reset_ctx(token)
+    _clear_cache_for_tests()
 
 
 # ───────────────── web_search ─────────────────
@@ -72,16 +76,129 @@ def test_web_search_rejects_domain_filter_conflict(in_ctx):
     assert out["error_code"] == "domain_filter_conflict"
 
 
-def test_web_search_reports_missing_key(in_ctx, monkeypatch):
-    # No TenantLLM row + no env var → explicit error
+def test_web_search_explicit_tavily_without_key_errors(in_ctx, monkeypatch):
+    """Forcing provider=tavily without a key returns a clean error so the
+    caller can surface the misconfig instead of silently downgrading."""
     monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    monkeypatch.delenv("AGENT_V2_WEB_SEARCH_PROVIDER", raising=False)
     with patch(
         "api.agent_v2.tools.web_search._resolve_tavily_key",
         return_value=None,
     ):
-        out = _parse(_call(web_search, {"query": "深圳 保障房"}))
+        out = _parse(
+            _call(web_search, {"query": "深圳 保障房", "provider": "tavily"})
+        )
     assert "error" in out
+    assert out["error_code"] == "no_tavily_api_key"
     assert "no_tavily_api_key" in out["error"]
+
+
+def test_web_search_auto_falls_back_to_duckduckgo_without_key(
+    in_ctx, monkeypatch
+):
+    """No Tavily key + provider='auto' (default) → DuckDuckGo adapter runs."""
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    monkeypatch.delenv("AGENT_V2_WEB_SEARCH_PROVIDER", raising=False)
+
+    fake_ddgs = MagicMock()
+    fake_ddgs.__enter__.return_value = fake_ddgs
+    fake_ddgs.__exit__.return_value = False
+    fake_ddgs.text.return_value = [
+        {"title": "DDG hit 1", "href": "https://example.com/a", "body": "snippet"},
+        {"title": "DDG hit 2", "href": "https://other.com/b", "body": "snippet 2"},
+    ]
+    with patch(
+        "api.agent_v2.tools.web_search._resolve_tavily_key",
+        return_value=None,
+    ), patch("duckduckgo_search.DDGS", return_value=fake_ddgs):
+        out = _parse(_call(web_search, {"query": "深圳 保障房"}))
+
+    assert out.get("error") is None
+    assert out["provider"] == "duckduckgo"
+    assert out["total"] == 2
+    assert out["results"][0]["url"] == "https://example.com/a"
+    fake_ddgs.text.assert_called_once()
+
+
+def test_web_search_explicit_duckduckgo(in_ctx, monkeypatch):
+    """provider='duckduckgo' bypasses Tavily even when a key would be there."""
+    monkeypatch.delenv("AGENT_V2_WEB_SEARCH_PROVIDER", raising=False)
+    fake_ddgs = MagicMock()
+    fake_ddgs.__enter__.return_value = fake_ddgs
+    fake_ddgs.__exit__.return_value = False
+    fake_ddgs.text.return_value = [
+        {"title": "DDG hit", "href": "https://x.gov.cn/page", "body": "..."},
+    ]
+    with patch(
+        "api.agent_v2.tools.web_search._resolve_tavily_key",
+        return_value="should-be-ignored",
+    ), patch("duckduckgo_search.DDGS", return_value=fake_ddgs):
+        out = _parse(_call(web_search, {"query": "test", "provider": "duckduckgo"}))
+    assert out["provider"] == "duckduckgo"
+
+
+def test_web_search_duckduckgo_post_filters_by_allowed_domain(
+    in_ctx, monkeypatch
+):
+    """DDG has no native domain filter — adapter does it client-side."""
+    fake_ddgs = MagicMock()
+    fake_ddgs.__enter__.return_value = fake_ddgs
+    fake_ddgs.__exit__.return_value = False
+    fake_ddgs.text.return_value = [
+        {"title": "in", "href": "https://www.gov.cn/policy", "body": ""},
+        {"title": "out", "href": "https://example.com/blog", "body": ""},
+        {"title": "in-sub", "href": "https://sz.gov.cn/notice", "body": ""},
+    ]
+    with patch("duckduckgo_search.DDGS", return_value=fake_ddgs):
+        out = _parse(
+            _call(
+                web_search,
+                {
+                    "query": "test",
+                    "provider": "duckduckgo",
+                    "allowed_domains": ["gov.cn"],
+                },
+            )
+        )
+    assert out["total"] == 2
+    urls = [r["url"] for r in out["results"]]
+    assert "https://www.gov.cn/policy" in urls
+    assert "https://sz.gov.cn/notice" in urls
+    assert "https://example.com/blog" not in urls
+
+
+def test_web_search_normalizes_domains_with_scheme():
+    """User passing 'https://www.gov.cn/' should match a result on
+    'www.gov.cn'. Domain comparison is post-normalization."""
+    from api.agent_v2.tools.web_search import _normalize_domain
+
+    assert _normalize_domain("https://www.gov.cn/") == "www.gov.cn"
+    assert _normalize_domain("HTTP://Sz.Gov.Cn/x/y") == "sz.gov.cn"
+    assert _normalize_domain("  example.com  ") == "example.com"
+
+
+def test_web_search_lru_cache_returns_cached_payload(in_ctx, monkeypatch):
+    """Same query within TTL skips the adapter entirely."""
+    monkeypatch.delenv("AGENT_V2_WEB_SEARCH_PROVIDER", raising=False)
+
+    fake_ddgs = MagicMock()
+    fake_ddgs.__enter__.return_value = fake_ddgs
+    fake_ddgs.__exit__.return_value = False
+    fake_ddgs.text.return_value = [
+        {"title": "T", "href": "https://e.com/a", "body": "x"},
+    ]
+    with patch(
+        "api.agent_v2.tools.web_search._resolve_tavily_key",
+        return_value=None,
+    ), patch("duckduckgo_search.DDGS", return_value=fake_ddgs):
+        first = _parse(_call(web_search, {"query": "cache-me"}))
+        second = _parse(_call(web_search, {"query": "cache-me"}))
+
+    assert first.get("cache_hit") is False
+    assert second.get("cache_hit") is True
+    assert second["results"] == first["results"]
+    # Adapter ran exactly once across both calls
+    fake_ddgs.text.assert_called_once()
 
 
 def test_web_search_happy_path(in_ctx, monkeypatch):
