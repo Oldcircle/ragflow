@@ -156,8 +156,11 @@ export function SessionSettingsDrawer({
     try {
       const res = await update.mutateAsync({ sessionId: session.id, patch });
       toast.success(t('agentV2.settingsSaved'));
-      // Surface the server's tool-list warning if it came back.
-      for (const w of res.warnings || []) {
+      // Surface server-side warnings if any (e.g. tool_names changed but
+      // the cached system_prompt is now stale). `res` may be null/undefined
+      // on weird success shapes — defensively access via optional chaining.
+      const warnings = res?.warnings ?? [];
+      for (const w of warnings) {
         toast.warning(w);
       }
       onOpenChange(false);
