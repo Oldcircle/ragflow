@@ -238,6 +238,72 @@
 
 ---
 
+### Phase 2.8 — Prompt 系统架构重写（规划中，2026-04-25 立项）
+
+**目标**：把 v0.3 立的"形式上 8 段式 prompt"升级到 claude-code-ref 真正的设计——
+**节级缓存 + 静态/动态分界 + 工具名常量 + 共享段库 + enabledTools 过滤 + 数字
+化长度锚点**。
+
+**触发**：v0.13 后用户审视 prompt 系统，发现 v0.3 抄了节标题没抄到机制：
+
+- 整 prompt 字符串拼接，DeepSeek prompt_cache 命中率 ~0%
+- 22 个工具名以裸字面量散落 50+ 处
+- Hard rules / Workflow / Tool rules 三段重叠 ~30%
+- sub_archivist.py 192 行 = ~3.4K 字符 prompt（vs claude-code-ref `exploreAgent.ts`
+  56 行 = ~1.8K 字符）
+- 没有数字化长度锚点
+
+**核心设计决策（参考 `vendor/claude-code-ref` 精确到行号）**：
+
+1. **`PromptSection(name, compute, cache_break, reason)`**（参考
+   `src/constants/systemPromptSections.ts:8-58`）—— 段是一等公民，可缓存可
+   null 自动消失
+2. **`SYSTEM_PROMPT_DYNAMIC_BOUNDARY`**（参考 `src/constants/prompts.ts:116-117`
+   + `:577`）—— 静态段 / boundary / 动态段三段式，前缀稳定让 prompt cache 可命中
+3. **`tools/_names.py` 工具名常量**（参考 `BASH_TOOL_NAME` /
+   `FILE_READ_TOOL_NAME` 等约 20 个工具名常量模式）—— 单一来源，重命名 = 改一处
+4. **共享段库 `prompting/sections.py`**（参考 `built-in/exploreAgent.ts:25-37`
+   的 `=== CRITICAL: READ-ONLY MODE ===` block 在 planAgent 复用）—— READ-ONLY /
+   PLAN_GATE / CITATION 等共享块一份代码、多处引用
+5. **`enabled_tools: set[str]` 段函数标准入参**（参考
+   `prompts.ts:354` `getSessionSpecificGuidanceSection(enabledTools, ...)`）——
+   工具不存在 → 段返 None 自动消失
+6. **数字化长度锚点**（参考 `prompts.ts:535-541` "≤25 words / ≤100 words"）
+
+**预期改变**：
+
+| 指标 | 当前 | 预期 |
+|---|---:|---:|
+| sub_archivist.py 行数 | 192 | ~80 |
+| 渲染后 sub_archivist prompt 字符数 | ~3.4K | ~2.0K |
+| 静态段缓存命中率（同 session 内）| 0% | 70-80% |
+| 工具名 grep 命中数 | 50+ | 1（`_names.py`） |
+| 加新 subagent 骨架代码行数 | ~150 | ~40 |
+
+**Stage 拆解**（11–14h）：
+- S1 `_names.py` + registry/annotations 切换（1h）
+- S2 `prompting/builder.py` 重写（3h）
+- S3 `prompting/sections.py` 共享段库（3h）
+- S4 4 subagent 重构（2h）
+- S5 6 supervisor 重构（1.5h）
+- S6 测试 + 回归（2h）
+- S7 实机 smoke + 文档收尾（1h）
+- S8 commit 拆分（0.5h）
+
+详见 `PLAN-prompt-architecture.md`（完整设计 + claude-code-ref 引用精确到行号 +
+backward compat 策略 + 风险 / 缓解 / 不做项）。
+
+**明确不做**（推迟）：
+- 真正接通 prompt cache 到 SDK cache_control / DeepSeek prompt_cache 自动模式
+  → 留 v0.15
+- OutputStyle 配置 / 多语言（v0.3 决策保留英文）
+- Coordinator mode / Proactive mode 编排路径
+
+**退出标准**：A1/A2/A3 live 行为不退化；sub_archivist prompt ≤ 2.2K 字符；
+工具名裸字面量 grep 0 命中；478+ 测试全绿。
+
+---
+
 ### Phase 1.7 — 前端产品化重构（当前）
 
 **目标**：把现有 RAGFlow 原版前端包装成我们自己的企业知识库产品，参考 `design-refs/zhiyuan/`「知源 · 企业知识库」稿统一品牌、导航、首页和主要业务页面，同时保留全部功能。
@@ -314,6 +380,7 @@
 | `PLAN-agent-runtime-maturity.md` | Phase 2.5 Agent Runtime 成熟化（Citation validator / 多轮上下文 / Agent definition，参考 `vendor/claude-code-ref`）|
 | `PLAN-doc-ops.md` | Phase 2.6 文档运营工具（doc_tag / rename / archive / reparse / upload / kb_create + ask_user_question / submit_plan + sub_archivist）|
 | `PLAN-attachments.md` | Phase 2.7 附件协议 + 下载-验证-归档（`web_fetch_to_attachment` + `doc_archive_attachment` + `submit_plan.preview`，参照 `claude-code-ref/src/utils/attachments.ts`）|
+| `PLAN-prompt-architecture.md` | Phase 2.8 prompt 系统重写（PromptSection + boundary + `_names.py` + 共享段库 + enabledTools 过滤 + 数字化长度锚点；参照 `claude-code-ref/src/constants/systemPromptSections.ts` + `prompts.ts` + `built-in/exploreAgent.ts`） |
 | `PRODUCT-UI-PLAN.md` | Phase 1.7 前端产品化（已完成，可归档）|
 | `STATUS.md` | 会话交接文档，每次实质进展必更 |
 | `DESIGN.md` | Phase 1 Agent v2 架构设计（稳定，不再改） |
@@ -335,3 +402,4 @@
 | 2026-04-23 | v0.8 | Phase 2.6 v0.6：G7 plan 执行闭环。`AgentV2Session.pending_plan_body` 保存完整 plan payload；新 read-only 工具 `get_pending_plan` 让 archivist 在 approved 状态下读回 title/steps/affected_resources 逐步执行；sub_archivist v1.3.0 要求 `[step K/N done: ...]` 标记；工具总数 17 → 18。+14 测试（272 pass / 8 skip）|
 | 2026-04-23 | v0.3 | Phase 2.5 全部完成（commits `540bfb91f` / `86fb8e867` / `c921ea729`）；Phase 2 + 3.1 + 3.2 + 2.5 全数落地，下一批为 Phase 3.3 企业管理台或 P3.2c 钉钉/企微 |
 | 2026-04-25 | v0.9 | 插入 Phase 2.7（附件协议 + 下载-验证-归档）：深扒 `claude-code-ref/src/utils/attachments.ts` 拿到"attachment-as-independent-message" pattern；决定**复用** `submit_plan + plan_gate` 作 staging 层（ref 全库无 PendingQueue 抽象，我们的 v0.4 plan gate 正是 Plan Mode 等价物）；新 `agent_v2_attachment` 表 + 2 工具（`web_fetch_to_attachment` / `doc_archive_attachment`）+ `submit_plan.preview` 字段扩展 + 前端 composer 文件选择器。11-15h 工作量，详见 `PLAN-attachments.md` |
+| 2026-04-25 | v1.0 | 立项 Phase 2.8（Prompt 系统架构重写）。v0.3 立的"8 段式 prompt"只是抄了节标题没抄到机制；通过深读 `vendor/claude-code-ref/src/constants/systemPromptSections.ts` + `prompts.ts:448-581` + `built-in/exploreAgent.ts` 锁定 6 个偏差（D1-D6）：节级缓存 / 静态-动态分界 / 工具名常量 / 共享段库 / enabledTools 过滤 / 数字化长度锚点。引入 `PromptSection / PromptCtx / PromptCache + SYSTEM_PROMPT_DYNAMIC_BOUNDARY` 抽象。预期 sub_archivist prompt 从 3.4K 降到 2.0K 字符、静态段缓存命中率从 0% 升到 70-80%。8 stage / 11-14h，详见 `PLAN-prompt-architecture.md` 与 `AUDIT-claude-code-alignment.md` §五-e |

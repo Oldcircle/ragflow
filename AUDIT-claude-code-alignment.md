@@ -174,6 +174,84 @@ tool_result）+ 本轮扩展到 #42（per-subagent 模型路由）。全部非�
 
 ---
 
+## 五-e. Phase 2.8 追加（2026-04-25）— Prompt 系统架构重写
+
+**触发**：v0.13 落地后用户问"系统提示词写得很糟，Claude Code 是怎么做的"，复盘
+现状对照 `vendor/claude-code-ref/src/utils/systemPrompt.ts` + `src/constants/
+prompts.ts:448-581` + `built-in/exploreAgent.ts`，发现 v0.3 立的"8 段式 prompt"
+只是**形式上抄了节标题**，没抄到真正核心的 4 个机制。
+
+### 6 个具体偏差
+
+| # | 偏差 | claude-code-ref 怎么做 | 我们现状 | 危害 |
+|---|---|---|---|---|
+| **D1** | **静态/动态分界 + 节级缓存** | `prompts.ts:577` 的 `SYSTEM_PROMPT_DYNAMIC_BOUNDARY` 把可缓存静态段（intro/system/doing-tasks/actions/tools/tone/output）和易变动态段（memory/env/mcp_instructions/scratchpad/...）切开；`systemPromptSection(name, compute)` 默认 memoized 到 `/clear`、`DANGEROUS_uncachedSystemPromptSection(...)` 强制带 reason 标注 | 整 prompt 字符串拼接，`pending_plan_status` / `kb_ids` / `attachments` 任一动 → 全 prompt 重建 | DeepSeek prompt_cache 命中率 ≈ 0%；长会话 input token 线性涨 |
+| **D2** | **`enabledTools: Set<string>` 过滤** | `prompts.ts:354` 的 `getSessionSpecificGuidanceSection(enabledTools, ...)` 内部 `if (enabledTools.has(ASK_USER_QUESTION_TOOL_NAME))` 才渲染相关条款；工具不存在自动消失 | sub_archivist.py 硬编码 `"get_pending_plan"` 字面量、`SEARCH_HINT_BY_TOOL` 全表渲染、不感知 session-level whitelist | 删工具或重命名时 prompt 不同步；模型看到自己没有的工具名混淆决策 |
+| **D3** | **工具名常量化** | `BASH_TOOL_NAME` / `FILE_READ_TOOL_NAME` / `ASK_USER_QUESTION_TOOL_NAME` 等都是 import 常量，prompt 用 f-string 拼 | 22 个工具名以裸字符串散落在 10 个 definition + 4 个 prompt 段函数中（grep `"submit_plan"` 命中 12 处） | 改名 = 多文件 grep + replace；漏改不报错 |
+| **D4** | **段函数化 + null 自动消失** | 每段是 `() => string \| null` 的纯函数；返回 null 段直接从最终 prompt 数组里 filter 掉；`getHooksSection()` 这种 conditionally-empty 段是默认形态 | `_SUPERVISOR_SKELETON` / `_SUBAGENT_SKELETON` 是大字符串模板，每个 `{slot}` 必须有内容；空内容用占位符 `(no annotated tools registered)` 填 | prompt 逻辑分支只能在调用方做，无法把"是否包含此段"的决策下沉到段本身 |
+| **D5** | **Tool 信息单一来源** | tool description（`prompt.ts`）+ system prompt 的 `getUsingYourToolsSection`（`prompts.ts:271`）职责不重——前者讲"用法"，后者讲"何时优先用 X 而非 Bash" | sub_archivist.py 的 `ARCHIVIST_TOOL_RULES` 11 条里**8 条**是重述 tool description（`doc_tag(doc_id, tags, operation)` — tag add/remove/set...），且 v0.5 已加 MCP 协议层 annotations + searchHint，prompt 段是第三份 | 一份信息进 prompt 三次（tool description + Tool rules + Tool cost hints）= 浪费 token + 维护点分散 |
+| **D6** | **数字化长度锚点** | `prompts.ts:538` `Length limits: keep text between tool calls to ≤25 words. Keep final responses to ≤100 words unless the task requires more detail.` — 研究表明 ~1.2% output token 减少（vs 定性 "be concise"） | 所有 output_rules 都是定性 "keep one line per operation" / "do not repeat at length"；模型每次还是来 4-5 行 | 输出 token 浪费、流式延迟 |
+
+### 量化现状
+
+| 项 | 当前 |
+|---|---:|
+| sub_archivist.py 行数（含 hard/workflow/tool/output rules） | 192 行 |
+| 渲染后 sub_archivist system prompt 字符数 | ~3.4K |
+| supervisor_baozhang 渲染后 prompt 字符数 | ~3.0K |
+| 每轮 prompt cache hit rate | 0%（无 boundary）|
+| 工具名字符串裸写 grep 命中数 | 50+ |
+| Hard rules / Workflow / Tool rules 三段重叠估算 | ~30%（同一约束 2-3 处复述） |
+
+### 对标 claude-code-ref 的 exploreAgent.ts
+
+参考实现 56 行 = ~1.8K 字符的 system prompt，覆盖 identity / 强禁令块 /
+strengths / guidelines / NOTE 5 段。**信息密度比我们高 2-3 倍**。原因：
+
+1. 共享段（READ_ONLY_BLOCK / TOOL_PREFERENCE_BLOCK / NOTE_BLOCK）一份代码，
+   exploreAgent 和 planAgent 都直接引用，不重复写
+2. 工具引用全是 import 常量
+3. 没有"Hard rules / Workflow / Tool rules"分立——直接合成"Guidelines"
+   一段，让相关约束并列
+4. 没有"Tool cost hints"段——成本/时延信号走 MCP annotations
+
+### 本批不做的延后
+
+- ❌ 把 `__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__` **真正接到** Anthropic SDK
+  cache_control / DeepSeek prompt_cache 自动模式：先做架构层切分，缓存
+  接入留 v0.15。理由：DeepSeek 的 prompt_cache 是 server-side 自动检测前缀
+  匹配，我们先把"前缀稳定"这一边做对，再确认是否需要显式 control。
+- ❌ Output style config / language section（claude-code-ref 用户可换语言）：
+  我们 prompts 已强制英文（v0.3 决策），不重新引入选项。
+
+### 本批要做的（详见 `PLAN-prompt-architecture.md`）
+
+| 任务 | 对应偏差 | 产物 |
+|---|---|---|
+| **T19. 工具名常量化** | D3 | `api/agent_v2/tools/_names.py`：所有 22 个工具名集中常量；registry / sections / definitions 全切换 |
+| **T20. PromptSection 抽象** | D1 + D4 | `prompting/builder.py` 重写：`PromptSection(name, compute, cache_break, reason)` + `SystemPromptCache` + `SYSTEM_PROMPT_DYNAMIC_BOUNDARY` 标记。assemble 时分静态段 → boundary → 动态段 |
+| **T21. 共享段库** | D4 + D5 | `prompting/sections.py`：`READ_ONLY_BLOCK` / `PLAN_GATE_BLOCK` / `CITATION_RULES` / `TONE_AND_STYLE` / `NUMERIC_LENGTH_ANCHORS` / `IDENTITY_BASE` 等 10+ 段 |
+| **T22. enabledTools 过滤** | D2 | 段函数签名加 `enabled_tools: set[str]` 参数；裸字面量 → `_names.SUBMIT_PLAN in enabled_tools` 判断 |
+| **T23. 删 Tool cost hints 段** | D5 | `_SUPERVISOR_SKELETON` / `_SUBAGENT_SKELETON` 移除该段；MCP annotations 已经传 `readOnly`/`destructive`/`openWorld`，prompt 里再渲染表格属重复 |
+| **T24. 数字化长度锚点** | D6 | 新段 `NUMERIC_LENGTH_ANCHORS`：≤25 words inter-tool / ≤100 words final / ≤30 words per [step K/N done] line |
+| **T25. 4 subagent + 6 supervisor 重构** | 全部 | sub_*.py 从 ~190 行降到 ~80 行；supervisor_*.py 从 ~50 行降到 ~25 行 |
+| **T26. 测试 + 回归** | — | `test_prompting_sections.py` 新增；现有 `test_definitions` / `test_sub_archivist` / `test_tool_availability_prompt` 适配 |
+| **T27. 文档** | — | 本节 + `PLAN-prompt-architecture.md` + `STATUS.md` + `PLAN.md` v1.0 / v0.10 版本号 |
+
+### 预期改变
+
+| 指标 | 当前 | 预期 |
+|---|---:|---:|
+| sub_archivist.py 行数 | 192 | ~80 |
+| 渲染后 sub_archivist prompt 字符数 | ~3.4K | ~2.0K |
+| supervisor 6 个 def 平均行数 | ~50 | ~25 |
+| 静态段缓存命中率（同 session 内） | 0% | 70-80% |
+| 工具名 grep 命中数 | 50+ | 1（`_names.py`）|
+| 加新 subagent 的骨架代码行数 | ~150 | ~40 |
+| pytest 数 | 478 | 478 + ~25 新增 |
+
+---
+
 ## 六、执行完 T1–T9 后的预期改变
 
 | 指标 | 当前 | 预期 |
@@ -206,3 +284,5 @@ tool_result）+ 本轮扩展到 #42（per-subagent 模型路由）。全部非�
 | 2026-04-23 | v0.4 | T10-T14 落地：**真** runtime plan gate（U6）+ tool annotations（U8）+ next_steps 写响应（U10）+ 31 新测试。gate 机制从"prompt 软约束"升级到"数据库 + ctx 两层硬约束" |
 | 2026-04-23 | v0.5 | T15-T17 落地：U3 searchHint 前缀 + MCP 协议原生 annotations（`readOnly`/`destructive`/`openWorld`）、U7 历史保留 tool_use/tool_result breadcrumbs、per-subagent 模型路由（#42）+29 测试。工具元数据从"prompt 段里的 Tool cost hints"进化到"MCP 协议层正式声明"，LLM 得到的是结构化信号 |
 | 2026-04-23 | v0.6 | T18 落地：G7 plan 执行闭环。`AgentV2Session.pending_plan_body` 保存完整 payload；新工具 `get_pending_plan` 让 approved 状态下 archivist 读回 title/steps/affected_resources；sub_archivist v1.3.0 workflow 要求 `[step K/N done: ...]` 标记。+14 测试，工具总数从 17 → 18 |
+| 2026-04-25 | v0.7 | Phase 2.8 立项：6 个 prompt 系统偏差（D1–D6）+ T19–T27 整改清单。重写 `prompting/builder.py` 为 `PromptSection` 模型，引入 `SYSTEM_PROMPT_DYNAMIC_BOUNDARY`，工具名常量化，共享段库，enabledTools 过滤，数字化长度锚点。详见 §五-e + `PLAN-prompt-architecture.md` |
+| 2026-04-25 | v0.8 | Phase 2.8 v1.0 落地：T19–T27 全部完成。`tools/_names.py`（135 行）+ `prompting/builder.py` PromptSection 重写（692 行）+ `prompting/sections.py` 共享段库（590 行）+ 4 subagent + 6 supervisor 全部走 callable + new preset。pytest 478→**560 passed** / 8 skipped；ruff 0 错；裸工具名字面量 grep 50+ → 0（@tool 装饰器自身除外）。sub_archivist prompt 7804→**3248 char (-58%)**；6 偏差 D1-D6 全部得到结构性修正。**注**：v1.0 仅做架构层切分；真接通 SDK cache_control / DeepSeek prompt_cache 留 v0.15。详见 `STATUS.md` 顶部条目 |

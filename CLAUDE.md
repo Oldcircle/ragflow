@@ -200,11 +200,13 @@ cd web && nohup npm run dev > ../logs/frontend.log 2>&1 &
 - `PLAN-agent-runtime-maturity.md` — Phase 2.5 Agent Runtime 成熟化（Citation validator / 多轮上下文 / Agent definition manifest，参考 `~/Opensource/vendor/claude-code-ref/`）
 - `PLAN-doc-ops.md` — Phase 2.6 文档运营工具（doc_tag / doc_rename / doc_archive / doc_reparse / doc_upload_from_url / kb_create + ask_user_question / submit_plan + sub_archivist）
 - `PLAN-attachments.md` — Phase 2.7 附件协议 + 下载-验证-归档（对齐 claude-code-ref attachment-as-message pattern；`web_fetch_to_attachment` + `doc_archive_attachment` + `submit_plan.preview` 扩展）
+- `PLAN-prompt-architecture.md` — Phase 2.8 prompt 系统重写（`PromptSection` + `SYSTEM_PROMPT_DYNAMIC_BOUNDARY` + `tools/_names.py` 工具名常量 + 共享段库 + enabledTools 过滤 + 数字化长度锚点；参照 `vendor/claude-code-ref/src/constants/systemPromptSections.ts` + `prompts.ts` + `built-in/exploreAgent.ts`）
 - `AUDIT-claude-code-alignment.md` — Phase 2.6 v0.3/v0.4：20 维度对齐 Claude Code 设计哲学，10 个用户没提到的发现（U1–U10），P0/P1/P2 分档；v0.4 §5-b 记录 runtime plan gate + tool annotations + next_steps 三项 T10-T14 落地
 - `FINDINGS-phase-26-v02-live.md` — Phase 2.6 v0.2 活体测试的 3 个架构级 bug 修复记录
 - `TEST-MANUAL-v0.4.md` — Phase 2.6 v0.4 人工测试清单（58 用例，G1-G12 分组，含 P0/P1/P2 优先级）
 - `PRODUCT-UI-PLAN.md` — Phase 1.7 企业知识库前端产品化重构计划（已完成）
-- `STATUS.md` — 会话交接，当前进度快照
+- `STATUS.md` — 会话交接，当前进度快照（保持 ≤ 5 个"最近更新"段；老条目挪到 `archive/HISTORY-phase-2.x.md`）
+- `archive/HISTORY-phase-2.x.md` — STATUS 历史归档（仅追溯用，新内容不进这里）
 - `DESIGN.md` — Phase 1 Agent v2 架构设计（稳定，不再改）
 - `FORK.md` — 与上游 infiniflow/ragflow 的差异 + 已推送 commits
 - `README-agent-v2.md` — Agent v2 最终用户/开发者使用指南
