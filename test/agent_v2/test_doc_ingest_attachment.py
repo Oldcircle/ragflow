@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -362,8 +362,8 @@ def test_happy_path_queues_for_parse(in_ctx):
     assert not any("image" in s.lower() for s in out["next_steps"])
 
 
-def test_image_mime_emits_ocr_hint(in_ctx):
-    att = _mock_attachment(mime_type="image/png", filename="scan.png")
+def _run_image_archive(att, *, ocr_result, doc_id="img_doc", doc_name="scan.png"):
+    """Helper for image-branch tests: mock blob, OCR, FileService, run tool."""
     kb = _mock_kb()
     storage = MagicMock()
     storage.get.return_value = b"PNG bytes"
@@ -371,9 +371,12 @@ def test_image_mime_emits_ocr_hint(in_ctx):
     doc_query = MagicMock()
     doc_query.where.return_value.first.return_value = None
 
-    upload_mock = MagicMock(return_value=(
-        [], [({"id": "img_doc", "name": "scan.png"}, b"PNG bytes")]
-    ))
+    captured_upload = {}
+
+    def _upload(_kb, file_objs, _user):
+        captured_upload["filename"] = file_objs[0].filename
+        captured_upload["blob"] = file_objs[0].read()
+        return ([], [({"id": doc_id, "name": doc_name}, captured_upload["blob"])])
 
     with _patch_rbac_allow(), patch(
         "api.db.services.agent_v2_service.AgentV2AttachmentService.get_by_id",
@@ -384,20 +387,83 @@ def test_image_mime_emits_ocr_hint(in_ctx):
     ), patch("common.settings.STORAGE_IMPL", storage), patch(
         "api.db.db_models.Document.select", return_value=doc_query,
     ), patch(
+        "api.agent_v2.tools.doc_ops._image_ocr.run_image_ocr",
+        new=AsyncMock(return_value=ocr_result),
+    ), patch(
         "api.db.services.file_service.FileService.upload_document",
-        upload_mock,
+        side_effect=_upload,
     ), patch(
         "api.db.services.agent_v2_service.AgentV2AttachmentService.mark_archived",
         return_value=True,
     ):
         out = _parse(_call(
             doc_ingest_attachment,
-            {"attachment_id": "att1", "kb_id": "kb1"},
+            {"attachment_id": att.id, "kb_id": "kb1"},
         ))
+    return out, captured_upload
+
+
+def test_image_rich_ocr_emits_markdown_subdoc(in_ctx):
+    from api.agent_v2.tools.doc_ops._image_ocr import OcrResult
+
+    att = _mock_attachment(mime_type="image/png", filename="scan.png")
+    ocr = OcrResult(
+        ok=True,
+        text="第一章 总则\n第二条 适用范围\n本规定适用于全市范围。",
+        char_count=42,
+        elapsed_ms=1230,
+        signal="rich",
+    )
+    out, captured = _run_image_archive(att, ocr_result=ocr)
 
     assert out["status"] == "queued_for_parse"
-    # The image-specific next_step surfaces OCR caveat
-    assert any("ocr" in s.lower() or "paddle" in s.lower() for s in out["next_steps"])
+    assert out["ocr_signal"] == "rich"
+    assert out["ocr_char_count"] == 42
+    # Image is uploaded as a markdown sub-document, NOT raw image bytes
+    assert captured["filename"].endswith(".ocr.md")
+    md = captured["blob"].decode("utf-8")
+    assert "# 来源：scan.png" in md
+    assert "deepdoc.vision.OCR" in md
+    assert "第一章 总则" in md
+    # next_steps should call out the rich-signal outcome
+    assert any("OCR extracted" in s and "42 chars" in s for s in out["next_steps"])
+
+
+def test_image_none_signal_emits_stub_markdown(in_ctx):
+    from api.agent_v2.tools.doc_ops._image_ocr import OcrResult
+
+    att = _mock_attachment(mime_type="image/jpeg", filename="logo.jpg")
+    ocr = OcrResult(
+        ok=True, text="", char_count=0, elapsed_ms=812, signal="none",
+    )
+    out, captured = _run_image_archive(att, ocr_result=ocr)
+
+    assert out["status"] == "queued_for_parse"
+    assert out["ocr_signal"] == "none"
+    assert captured["filename"].endswith(".ocr.md")
+    md = captured["blob"].decode("utf-8")
+    assert "OCR returned no extractable text" in md
+    # And the next_steps suggest manual / vision-LLM follow-up
+    assert any(
+        "no extractable text" in s.lower() or "vision" in s.lower()
+        for s in out["next_steps"]
+    )
+
+
+def test_image_low_signal_emits_warning_markdown(in_ctx):
+    from api.agent_v2.tools.doc_ops._image_ocr import OcrResult
+
+    att = _mock_attachment(mime_type="image/png", filename="stamp.png")
+    ocr = OcrResult(
+        ok=True, text="审核通过", char_count=4, elapsed_ms=901, signal="low",
+    )
+    out, captured = _run_image_archive(att, ocr_result=ocr)
+
+    assert out["ocr_signal"] == "low"
+    md = captured["blob"].decode("utf-8")
+    assert "low-signal output" in md
+    assert "审核通过" in md
+    assert any("4 chars" in s for s in out["next_steps"])
 
 
 # ─────────── Registry parity ───────────

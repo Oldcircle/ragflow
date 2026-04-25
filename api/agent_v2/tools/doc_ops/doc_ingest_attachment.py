@@ -1,13 +1,19 @@
 """Phase 2.7 Stage 2 — archive a session attachment into a KB.
 
 Writes are funnelled through ``FileService.upload_document`` so:
-- Parsing queue handles PDF / docx / xlsx / images uniformly (task executor
-  dispatches based on ``FileType``).
-- Images ship via ``FileType.VISUAL``; upstream pipeline handles thumbnail +
-  downstream OCR when configured (Paddle / MinerU). We don't hard-bind OCR
-  here — that stays optional per RAGFlow tenant config.
+- Parsing queue handles PDF / docx / xlsx uniformly (task executor dispatches
+  based on ``FileType``).
+- Images take a different path: we synchronously run PaddleOCR via
+  ``_image_ocr.run_image_ocr`` and compose a markdown sub-document
+  (``<name>.ocr.md``) with provenance front-matter linking back to the
+  original MinIO blob. Doing OCR at archive time gives the user immediate
+  searchable text and a single review surface (the markdown), instead of
+  silently relying on whatever downstream parser the tenant happens to
+  have wired up.
 - Dedup by content hash against the target KB, consistent with
-  ``doc_upload_from_url``.
+  ``doc_upload_from_url``. Note: dedup uses the *attachment* hash (raw
+  image bytes), not the markdown-text hash — so the same image archived
+  twice still dedupes even if OCR jitter produces different markdown.
 
 Design notes (对齐 ``PLAN-attachments.md`` §3 + §五)：
 - Sub_archivist 专用 — ``@require_kb_write(plan_gated=True)`` 强制走审批流
@@ -85,10 +91,14 @@ def _extra_audit(args: dict, result: Any, _ctx) -> dict:
         "- Plan-gated: first write in a turn must follow an approved "
         "`submit_plan`. Show the user the preview of what you'll archive via "
         "the plan's `preview` field before calling.\n\n"
-        "Images: they go in as `FileType.VISUAL`; OCR happens downstream if "
-        "the tenant has PaddleOCR / MinerU configured. If not, the image is "
-        "archived with a thumbnail but content is not searchable — warn the "
-        "user in that case."
+        "Images: synchronous PaddleOCR runs at archive time; the resulting "
+        "text is composed into a markdown sub-document (`<name>.ocr.md`) "
+        "with provenance front-matter and that markdown — not the raw image "
+        "— is what gets indexed. The original image blob stays in MinIO and "
+        "is referenced via `meta_fields.source_blob` so a future vision-LLM "
+        "re-OCR can find it. The response carries `ocr_signal` "
+        "(rich / low / none) — relay that to the user; for `none` images "
+        "suggest manual description or wait for the vision-LLM path."
     ),
     input_schema={
         "type": "object",
@@ -265,11 +275,43 @@ async def doc_ingest_attachment(args: dict) -> dict:
         args.get("doc_name_override") or ""
     ).strip() or att.filename
 
+    # Image branch: synchronously OCR → emit a markdown sub-document with
+    # provenance front-matter. The original blob is preserved in MinIO under
+    # the attachment row; the markdown is what gets indexed by the KB.
+    is_image = (att.mime_type or "").startswith("image/")
+    ocr_signal: str | None = None
+    ocr_chars: int | None = None
+    ocr_elapsed_ms: int | None = None
+    if is_image:
+        from ._image_ocr import (
+            build_markdown_for_image,
+            derive_markdown_filename,
+            run_image_ocr,
+        )
+
+        ocr_result = await run_image_ocr(blob)
+        ocr_signal = ocr_result.signal
+        ocr_chars = ocr_result.char_count
+        ocr_elapsed_ms = ocr_result.elapsed_ms
+        markdown = build_markdown_for_image(
+            original_filename=doc_name,
+            mime_type=att.mime_type,
+            size_bytes=att.size_bytes,
+            content_hash=content_hash,
+            blob_path=att.blob_path,
+            ocr_result=ocr_result,
+        )
+        upload_blob = markdown.encode("utf-8")
+        upload_name = derive_markdown_filename(doc_name)
+    else:
+        upload_blob = blob
+        upload_name = doc_name
+
     try:
         from api.db.services.file_service import FileService
 
         user_id = ctx.user_id or tenant_id
-        file_obj = _FakeFileUpload(doc_name, blob)
+        file_obj = _FakeFileUpload(upload_name, upload_blob)
         err_list, files = FileService.upload_document(kb, [file_obj], user_id)
     except Exception as exc:  # noqa: BLE001
         logger.exception("doc_ingest_attachment upload failed: %s", exc)
@@ -288,25 +330,43 @@ async def doc_ingest_attachment(args: dict) -> dict:
     new_doc_id = doc_dict.get("id")
     new_doc_name = doc_dict.get("name")
 
-    # ─── 6) Optional tag apply ───
+    # ─── 6) Optional tag apply + image provenance stamp ───
     tags = args.get("tags") or []
     applied_tags: list[str] = []
-    if isinstance(tags, list) and tags and new_doc_id:
+    needs_meta_update = bool(
+        (isinstance(tags, list) and tags) or is_image
+    ) and new_doc_id
+    if needs_meta_update:
         try:
             from api.db.services.document_service import DocumentService
 
             dok, doc = DocumentService.get_by_id(new_doc_id)
             if dok and doc:
                 meta = doc.meta_fields or {}
-                existing_tags = meta.get("tags") or []
-                merged = list({*existing_tags, *(str(t).strip() for t in tags if str(t).strip())})
-                meta["tags"] = merged
+                if isinstance(tags, list) and tags:
+                    existing_tags = meta.get("tags") or []
+                    merged = list({
+                        *existing_tags,
+                        *(str(t).strip() for t in tags if str(t).strip()),
+                    })
+                    meta["tags"] = merged
+                    applied_tags = merged
+                if is_image:
+                    # Provenance: link the markdown doc back to the original
+                    # image blob in MinIO. Lets a future re-OCR job find the
+                    # source even after the attachment row is gc'd.
+                    meta["source_blob"] = att.blob_path
+                    meta["source_mime"] = att.mime_type
+                    meta["source_attachment_id"] = attachment_id
+                    meta["ocr_engine"] = "deepdoc.vision.OCR"
+                    meta["ocr_signal"] = ocr_signal
+                    meta["ocr_char_count"] = ocr_chars
+                    meta["ocr_elapsed_ms"] = ocr_elapsed_ms
                 DocumentService.update_by_id(
                     new_doc_id, {"meta_fields": meta}
                 )
-                applied_tags = merged
         except Exception as exc:  # noqa: BLE001
-            logger.warning("doc_ingest_attachment: tag apply failed: %s", exc)
+            logger.warning("doc_ingest_attachment: meta update failed: %s", exc)
 
     # ─── 7) Flip attachment row status ───
     AgentV2AttachmentService.mark_archived(
@@ -315,7 +375,6 @@ async def doc_ingest_attachment(args: dict) -> dict:
         kb_id=kb_id,
     )
 
-    is_image = att.mime_type.startswith("image/")
     next_steps = [
         (
             "Ask the user to send 'check progress' in the next message; "
@@ -325,11 +384,27 @@ async def doc_ingest_attachment(args: dict) -> dict:
         "The attachment is now status=archived; do NOT archive it again.",
     ]
     if is_image:
-        next_steps.append(
-            "This is an image — OCR / indexing depends on tenant parser "
-            "config. If after 30s rag_retrieve returns empty, suggest the "
-            "user check PaddleOCR / MinerU configuration."
-        )
+        if ocr_signal == "rich":
+            next_steps.append(
+                f"OCR extracted {ocr_chars} chars ({ocr_elapsed_ms}ms) and "
+                "wrote them into a markdown sub-document; original image "
+                "blob is preserved at the attachment's MinIO path."
+            )
+        elif ocr_signal == "low":
+            next_steps.append(
+                f"OCR returned only {ocr_chars} chars (likely a stamp / "
+                "watermark / short label). Indexed as markdown but warn "
+                "the user that the image may need a vision LLM for richer "
+                "description."
+            )
+        else:
+            next_steps.append(
+                "OCR found no extractable text (likely a photo / diagram / "
+                "logo). The markdown stub is searchable by filename; the "
+                "original image is preserved in MinIO. Suggest the user "
+                "describe the image manually or we'll re-OCR with a vision "
+                "LLM when that path lands."
+            )
 
     return ok(
         status="queued_for_parse",
@@ -341,6 +416,9 @@ async def doc_ingest_attachment(args: dict) -> dict:
         mime_type=att.mime_type,
         content_hash=content_hash,
         applied_tags=applied_tags,
+        ocr_signal=ocr_signal,
+        ocr_char_count=ocr_chars,
+        ocr_elapsed_ms=ocr_elapsed_ms,
         reason=args.get("reason"),
         next_steps=next_steps,
     )
