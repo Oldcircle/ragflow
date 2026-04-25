@@ -5,6 +5,69 @@
 
 ---
 
+## 最近更新：2026-04-25（Phase 2.8.1 — Session 可编辑 + kb_create 自动入会话作用域）
+
+**触发**：用户实测踩坑——"聊了一会让 agent 新建 KB，发现新 KB 不能被检索"。
+原因是 session 创建后 kb_ids 锁死、新 KB 不会自动加入；同时 supervisor 把
+"我没 shell" 误当作 "我不能触发解析"（v1.0.1 已修）。本批做两件互补的事：
+
+### Modify A — `kb_create` 自动追加新 KB 到当前 session.kb_ids
+
+`api/agent_v2/tools/doc_ops/kb_create.py`：成功路径读 `ctx.session_id`（在
+sub_archivist 子 runner 里就是父 session id，见 spawn_subagent.py:306-307），
+通过 `AgentV2SessionService.update_fields(kb_ids=...)` append 新 kb_id。
+失败 / 无 session 时静默回退（KB 创建仍成功，只是没自动 attach）。
+
+新参数 `add_to_session: bool = True` 让 supervisor 显式 opt-out（如想先填充
+KB 再 attach）。响应里多一个 `attached_to_session: bool` + `next_steps` 多一行
+确认信息。
+
+### Modify B — `PATCH /v1/agent_v2/session/<id>` + 前端 settings drawer
+
+后端：
+- `api/agent_v2/session_patch.py`（新）— 纯函数 `validate_patch_body`，
+  把请求体校验从 Quart 路由解耦出来好测试
+- `PATCHABLE_FIELDS` 7 字段白名单：`name / kb_ids / tool_names / max_turns /
+  max_budget_usd / citation_enforce_level / citation_numeric_strict /
+  history_turn_limit`
+- **故意锁死** `model_config_json` / `system_prompt` —— cross-provider tool_use
+  格式不兼容、改 system_prompt 等于换 agent 身份；想换走"新建会话"路径，
+  和 Anthropic / OpenAI 行业惯例一致
+- 校验：kb_ids 走 `DatasetAccessService.filter_accessible_kb_ids` RBAC；
+  tool_names 必须 ∈ `ALL_TOOLS`；citation_enforce_level ∈ off/warn/strict；
+  numeric 字段范围保护
+- tool_names 改时 response 加 warning：cached system_prompt 仍引用旧工具集
+  （v0.15 接通 runtime re-eval 后此 warning 消失）
+
+前端：
+- `web/src/pages/agent-chat/components/session-settings-drawer.tsx`（新，
+  330+ 行）— shadcn Sheet 抽屉；7 字段表单（KB 多选 chip / Tool 多选 chip /
+  数字 input / citation enforce select / numeric strict checkbox）；diff
+  patch 计算只发生变更字段；保存后 toast + 失效 react-query 缓存
+- `session-sidebar.tsx` 每个会话条目加齿轮图标（hover 显出，与垃圾桶并列）
+- `api.ts` + `use-sessions.ts` 加 `updateSession` / `useUpdateSession`
+- i18n zh + en 各 +18 keys
+
+### 测试
+
+- **后端**：`test/agent_v2/test_session_patch.py`（新，47 case）覆盖 7 字段
+  white/blacklist contract + 边界 + 类型强制 + happy path；
+  `test_doc_ops_tools.py::TestKbCreate` +3 case（auto-attach default-on /
+  opt-out / idempotent when already in scope）
+- **后端总计**：611 passed / 8 skipped（v1.0 时 561，新增 50）
+- **前端**：tsc 在 agent-chat/ 内 0 错；ESLint clean
+- **ruff**：0 errors
+
+### 下一步入口
+
+1. 真机 smoke：浏览器登录手机/桌面 → 点会话齿轮 → 改 kb_ids 看下一轮 retrieve
+   能不能拿到新 KB；改 tool_names 看 warning 是否触发；改 budget 看下一轮
+   是否生效
+2. v0.15 候选：`AgentRunner.run()` 把 system_prompt 求值挪到 runtime，
+   pending_plan_section / kb_scope_section 真起作用、tool_names 改后真重渲
+
+---
+
 ## 最近更新：2026-04-25（Phase 2.8 **v1.0 落地** — Prompt 系统架构重写）
 
 **S1-S7 全部完成**。`AUDIT-claude-code-alignment.md` §五-e 列的 6 偏差 D1-D6 全部
