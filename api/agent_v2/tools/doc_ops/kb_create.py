@@ -101,6 +101,17 @@ def _extra_audit(args: dict, result: Any, _ctx) -> dict:
                     "with default VIEWER role."
                 ),
             },
+            "add_to_session": {
+                "type": "boolean",
+                "default": True,
+                "description": (
+                    "Auto-add the new KB to the current session's "
+                    "retrieval scope. Default true — without this, the "
+                    "supervisor cannot retrieve from a KB it just "
+                    "created. Set false if you want to populate the KB "
+                    "first and only attach it later."
+                ),
+            },
         },
         "required": ["name"],
     },
@@ -211,6 +222,48 @@ async def kb_create(args: dict) -> dict:
     if not saved:
         return err("storage_error", "KnowledgebaseService.save returned False")
 
+    # Auto-attach to the current session's retrieval scope so the parent
+    # supervisor can immediately retrieve from the new KB. Without this,
+    # the agent creates a bucket it cannot then read — the user's session
+    # had its kb_ids frozen at creation time. ctx.session_id propagates
+    # from the parent via spawn_subagent (see spawn_subagent.py:306-307),
+    # so updating it here updates the parent session row.
+    add_to_session = bool(args.get("add_to_session", True))
+    attached_to_session = False
+    if add_to_session and ctx.session_id:
+        try:
+            from api.db.services.agent_v2_service import AgentV2SessionService
+            sess = AgentV2SessionService.get_by_id(ctx.session_id)
+            if sess is not None:
+                current = list(sess.kb_ids or [])
+                if built["id"] not in current:
+                    current.append(built["id"])
+                    AgentV2SessionService.update_fields(
+                        ctx.session_id, kb_ids=current
+                    )
+                    attached_to_session = True
+        except Exception as exc:  # noqa: BLE001
+            # Non-fatal — KB was created successfully, attach is convenience.
+            logger.warning(
+                "kb_create: auto-attach to session %s failed: %s: %s",
+                ctx.session_id, type(exc).__name__, exc,
+            )
+
+    next_steps = [
+        f"Populate it: doc_upload_from_url(kb_id='{built['id']}', url=...) or have the user upload documents",
+        f"Sanity-check with kb_stats(kb_id='{built['id']}')",
+    ]
+    if attached_to_session:
+        next_steps.insert(
+            0,
+            "KB is now in the session's retrieval scope; rag_retrieve / rag_list_docs can target it next turn.",
+        )
+    elif add_to_session and not ctx.session_id:
+        next_steps.insert(
+            0,
+            "Note: no session context — KB was created but not attached to any session scope.",
+        )
+
     return ok(
         kb_id=built["id"],
         kb_name=built["name"],
@@ -219,10 +272,8 @@ async def kb_create(args: dict) -> dict:
         parser_id=built.get("parser_id"),
         embd_id=built.get("embd_id"),
         permission=permission,
-        next_steps=[
-            f"Populate it: doc_upload_from_url(kb_id='{built['id']}', url=...) or have the user upload documents",
-            f"Sanity-check with kb_stats(kb_id='{built['id']}')",
-        ],
+        attached_to_session=attached_to_session,
+        next_steps=next_steps,
     )
 
 

@@ -263,6 +263,131 @@ class TestKbCreate:
             reset_ctx(token)
         assert _parse(resp)["error"] == "quota_exceeded"
 
+    def test_auto_attach_to_session_default_on(self):
+        """Phase 2.8.1 — kb_create attaches the new KB to ctx.session_id by
+        default so the supervisor can retrieve from it next turn."""
+        token = set_ctx(_ctx(session_id="sess-1"))
+        existing_kbs = ["kb1"]
+        captured: dict = {}
+
+        def _mock_update_fields(session_id: str, **fields):
+            captured["session_id"] = session_id
+            captured.update(fields)
+            return 1
+
+        try:
+            with _patch_audit(), patch(
+                "api.db.services.knowledgebase_service."
+                "KnowledgebaseService.create_with_name",
+                return_value=(
+                    True,
+                    {"id": "kb-new", "name": "Archive", "parser_id": "naive"},
+                ),
+            ), patch(
+                "api.db.services.knowledgebase_service."
+                "KnowledgebaseService.save",
+                return_value=True,
+            ), patch(
+                "api.db.services.agent_v2_service."
+                "AgentV2SessionService.get_by_id",
+                return_value=MagicMock(kb_ids=existing_kbs),
+            ), patch(
+                "api.db.services.agent_v2_service."
+                "AgentV2SessionService.update_fields",
+                side_effect=_mock_update_fields,
+            ):
+                resp = _call(kb_create, {"name": "Archive", "embd_id": "bge"})
+        finally:
+            reset_ctx(token)
+        payload = _parse(resp)
+        assert payload["status"] == "ok"
+        assert payload["attached_to_session"] is True
+        assert captured.get("session_id") == "sess-1"
+        # Existing kb_ids preserved + new appended
+        assert captured.get("kb_ids") == ["kb1", "kb-new"]
+
+    def test_auto_attach_skipped_when_opt_out(self):
+        token = set_ctx(_ctx(session_id="sess-1"))
+        update_called = {"n": 0}
+
+        def _track_update(*a, **kw):
+            update_called["n"] += 1
+            return 1
+
+        try:
+            with _patch_audit(), patch(
+                "api.db.services.knowledgebase_service."
+                "KnowledgebaseService.create_with_name",
+                return_value=(
+                    True,
+                    {"id": "kb-new", "name": "Archive", "parser_id": "naive"},
+                ),
+            ), patch(
+                "api.db.services.knowledgebase_service."
+                "KnowledgebaseService.save",
+                return_value=True,
+            ), patch(
+                "api.db.services.agent_v2_service."
+                "AgentV2SessionService.update_fields",
+                side_effect=_track_update,
+            ):
+                resp = _call(
+                    kb_create,
+                    {
+                        "name": "Archive",
+                        "embd_id": "bge",
+                        "add_to_session": False,
+                    },
+                )
+        finally:
+            reset_ctx(token)
+        payload = _parse(resp)
+        assert payload["status"] == "ok"
+        assert payload["attached_to_session"] is False
+        assert update_called["n"] == 0
+
+    def test_auto_attach_idempotent_when_kb_already_in_scope(self):
+        token = set_ctx(_ctx(session_id="sess-1"))
+        update_called = {"n": 0}
+
+        def _track_update(*a, **kw):
+            update_called["n"] += 1
+            return 1
+
+        try:
+            with _patch_audit(), patch(
+                "api.db.services.knowledgebase_service."
+                "KnowledgebaseService.create_with_name",
+                return_value=(
+                    True,
+                    {
+                        "id": "kb-existing",
+                        "name": "Archive",
+                        "parser_id": "naive",
+                    },
+                ),
+            ), patch(
+                "api.db.services.knowledgebase_service."
+                "KnowledgebaseService.save",
+                return_value=True,
+            ), patch(
+                "api.db.services.agent_v2_service."
+                "AgentV2SessionService.get_by_id",
+                return_value=MagicMock(kb_ids=["kb1", "kb-existing"]),
+            ), patch(
+                "api.db.services.agent_v2_service."
+                "AgentV2SessionService.update_fields",
+                side_effect=_track_update,
+            ):
+                resp = _call(kb_create, {"name": "Archive", "embd_id": "bge"})
+        finally:
+            reset_ctx(token)
+        payload = _parse(resp)
+        assert payload["status"] == "ok"
+        # No-op when already in scope; we don't double-write.
+        assert payload["attached_to_session"] is False
+        assert update_called["n"] == 0
+
 
 # ───────── doc_archive ─────────
 
