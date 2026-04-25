@@ -111,10 +111,20 @@ async def _sleep_until_stop(stop_event: threading.Event, seconds: float) -> None
 
 async def _tick_with_lock() -> SweepStats | None:
     lock = _redis_try_lock()
-    if lock is not None:
-        with lock:
-            return await _tick()
-    return await _tick()
+    if lock is None:
+        return await _tick()
+    # ``RedisDistributedLock`` exposes ``acquire()/release()`` (no context
+    # manager protocol). Acquire returns True on success, False when a
+    # peer holds it; either way we're done — the peer will run the tick.
+    if not lock.acquire():
+        return None
+    try:
+        return await _tick()
+    finally:
+        try:
+            lock.release()
+        except Exception:
+            logger.exception("attachment_sweeper: lock release failed")
 
 
 async def _tick() -> SweepStats:

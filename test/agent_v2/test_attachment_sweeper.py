@@ -150,19 +150,20 @@ def test_tick_with_lock_runs_without_redis(monkeypatch):
 
 
 def test_tick_with_lock_uses_redis_when_available(monkeypatch):
-    entered = []
-    exited = []
+    """Locks ``RedisDistributedLock`` exposes ``acquire()/release()`` —
+    not the context-manager protocol. Confirm sweeper drives them."""
+    acquired = []
+    released = []
 
     class _FakeLock:
-        def __enter__(self):
-            entered.append(True)
-            return self
+        def acquire(self):
+            acquired.append(True)
+            return True
 
-        def __exit__(self, *a):
-            exited.append(True)
-            return False
+        def release(self):
+            released.append(True)
 
-    monkeypatch.setattr(sw, "_redis_try_lock", _FakeLock)
+    monkeypatch.setattr(sw, "_redis_try_lock", lambda: _FakeLock())
 
     async def fake_tick():
         return sw.SweepStats(flipped=2)
@@ -170,7 +171,31 @@ def test_tick_with_lock_uses_redis_when_available(monkeypatch):
     monkeypatch.setattr(sw, "_tick", fake_tick)
     stats = asyncio.run(sw._tick_with_lock())
     assert stats.flipped == 2
-    assert entered and exited
+    assert acquired and released
+
+
+def test_tick_with_lock_skips_when_acquire_fails(monkeypatch):
+    """When a peer pod holds the lock, ``acquire()`` returns False —
+    the sweeper should yield rather than tick (peer will handle it)."""
+
+    class _BusyLock:
+        def acquire(self):
+            return False
+
+        def release(self):  # pragma: no cover — never reached
+            raise AssertionError("release called on un-acquired lock")
+
+    monkeypatch.setattr(sw, "_redis_try_lock", lambda: _BusyLock())
+    tick_calls = {"n": 0}
+
+    async def fake_tick():
+        tick_calls["n"] += 1
+        return sw.SweepStats()
+
+    monkeypatch.setattr(sw, "_tick", fake_tick)
+    out = asyncio.run(sw._tick_with_lock())
+    assert out is None
+    assert tick_calls["n"] == 0
 
 
 # ─────────── Service helpers ───────────
