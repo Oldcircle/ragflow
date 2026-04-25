@@ -252,6 +252,72 @@ async def delete_session(session_id: str):
         return server_error_response(e)
 
 
+# Phase 2.8.1 — PATCH session settings.
+#
+# Whitelisted, conservative subset of fields users can mutate after session
+# creation. Model and system_prompt are intentionally NOT here: cross-provider
+# tool_use format incompatibility makes mid-conversation model switches
+# fragile, and changing system_prompt mid-flow effectively swaps agent
+# identity — both are best handled by creating a new session.
+#
+# When tool_names changes, the session prompt's "# Available Tools" section
+# is now stale relative to the new toolset. Re-rendering the prompt requires
+# knowing which AgentDefinition produced it, which the schema does not yet
+# track (TODO v0.15: add ``definition_name`` column). For now we just flag
+# the user and let them re-render via a new session if they care.
+from api.agent_v2.session_patch import validate_patch_body  # noqa: E402
+
+
+@manager.route("/session/<session_id>", methods=["PATCH"])  # noqa: F821
+@login_required
+async def patch_session(session_id: str):
+    """Update editable session settings (whitelist in ``session_patch.py``)."""
+    try:
+        session = AgentV2SessionService.get_by_id(session_id)
+        if not session or session.tenant_id != current_user.id:
+            return get_data_error_result(message="session not found")
+
+        body = await get_request_json() or {}
+        if not isinstance(body, dict):
+            return get_data_error_result(
+                message="body must be a JSON object",
+            )
+
+        from api.db.services.dataset_access_service import DatasetAccessService
+
+        def _accessible(ids: list[str]) -> list[str]:
+            return DatasetAccessService.filter_accessible_kb_ids(
+                ids, current_user.id
+            )
+
+        updates, error = validate_patch_body(
+            body,
+            valid_tool_names=set(ALL_TOOLS.keys()),
+            filter_accessible_kbs=_accessible,
+        )
+        if error is not None:
+            return get_data_error_result(message=error)
+
+        AgentV2SessionService.update_fields(session_id, **updates)
+        fresh = AgentV2SessionService.get_by_id(session_id)
+        warnings = []
+        if "tool_names" in updates:
+            warnings.append(
+                "Tool list changed but the cached system_prompt still "
+                "references the old tool set. Create a new session to "
+                "fully refresh the prompt."
+            )
+        return get_json_result(
+            data={
+                "session": _session_dict(fresh),
+                "updated_fields": sorted(updates.keys()),
+                "warnings": warnings,
+            }
+        )
+    except Exception as e:
+        return server_error_response(e)
+
+
 @manager.route("/session/<session_id>/cancel", methods=["POST"])  # noqa: F821
 @login_required
 async def cancel_session_run(session_id: str):
