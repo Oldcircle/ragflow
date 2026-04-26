@@ -17,35 +17,38 @@ export const ToolCallsSidebar = memo(function ToolCallsSidebar({
 }: Props) {
   const { t } = useTranslation();
 
-  // 合并：正在流式的 + 历史的，历史的转为 StreamingToolCall 结构
-  const all: StreamingToolCall[] = [
-    ...streamingToolCalls,
-    ...historyToolCalls.map(
-      (tc): StreamingToolCall => ({
-        id: tc.id,
-        name: tc.tool_name,
-        args: tc.args,
-        result: parseMaybeJson(tc.result),
-        error: tc.error || undefined,
-        durationMs: tc.duration_ms,
-        status:
-          tc.status === 'success'
-            ? 'success'
-            : tc.status === 'error'
-              ? 'error'
-              : 'pending',
-        startTs: tc.start_time ?? 0,
-      }),
-    ),
-  ];
-
-  // 去重，保持先后顺序（流式 > 历史）
-  const seen = new Set<string>();
-  const dedup = all.filter((c) => {
-    if (seen.has(c.id)) return false;
-    seen.add(c.id);
-    return true;
-  });
+  // 合并 streaming + history，按 startTs 升序排（与左侧消息流 "老→新 自上而下" 对齐）。
+  //
+  // 旧实现按 [...streaming, ...history] 拼接 + 首位保留，导致**当前轮**的工具调用
+  // 强行顶到列表顶部、上一轮的反而排在下方，整体看起来乱序。
+  //
+  // 现策略：history 是后端 `start_time asc` 的 canonical 真值，覆盖 streaming
+  // 同 id 项；但保留 streaming 上 subagent_start/end 注入的内联 trace（history 没有）。
+  const byId = new Map<string, StreamingToolCall>();
+  for (const c of streamingToolCalls) {
+    byId.set(c.id, c);
+  }
+  for (const tc of historyToolCalls) {
+    const existing = byId.get(tc.id);
+    byId.set(tc.id, {
+      ...(existing ?? {}),
+      id: tc.id,
+      name: tc.tool_name,
+      args: tc.args,
+      result: parseMaybeJson(tc.result),
+      error: tc.error || undefined,
+      durationMs: tc.duration_ms,
+      status:
+        tc.status === 'success'
+          ? 'success'
+          : tc.status === 'error'
+            ? 'error'
+            : 'pending',
+      // 优先用 history 的服务端时间戳（同一时钟基准），其次保留 streaming 的本地时间戳。
+      startTs: tc.start_time ?? existing?.startTs ?? 0,
+    });
+  }
+  const dedup = Array.from(byId.values()).sort((a, b) => a.startTs - b.startTs);
 
   return (
     <aside
