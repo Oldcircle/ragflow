@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import uuid
 
-from .base import emit_event, get_ctx, mcp_json_response, tool
+from .base import emit_event, get_ctx, mcp_json_response, mcp_pause_response, tool
 from .. import event as ev
 
 logger = logging.getLogger("ragflow.agent_v2.ask_user_question")
@@ -144,6 +144,28 @@ async def ask_user_question(args: dict) -> dict:
     except Exception:
         logger.exception("ask_user_question: emit_event failed (not fatal)")
 
+    # Phase 2.8.3 — 把整个 question payload 持久化到 session.pending_question_*。
+    # 下一轮入口校验用户回复的 label 是否在 options 里时要 read-back 这份 body。
+    # 持久化失败不阻塞工具返回（事件已发，UI 已渲染）；下一轮校验会失败、
+    # 用户重发即可——等于优雅降级到 fire-and-forget。
+    if ctx.session_id:
+        try:
+            from api.db.services.agent_v2_service import AgentV2SessionService
+
+            AgentV2SessionService.set_pending_question(
+                session_id=ctx.session_id,
+                pending_id=pending_id,
+                question_body={
+                    "question": question,
+                    "header": header,
+                    "options": clean_options,
+                    "multi_select": multi_select,
+                    "tool_use_id": ctx.current_tool_call_id,
+                },
+            )
+        except Exception:
+            logger.exception("ask_user_question: set_pending_question failed (not fatal)")
+
     # 审计（非破坏，写 allow）
     try:
         from api.db.services.audit_log_service import AuditLogService
@@ -166,7 +188,11 @@ async def ask_user_question(args: dict) -> dict:
     except Exception:
         logger.exception("ask_user_question: audit write failed (not fatal)")
 
-    return mcp_json_response({
+    # Phase 2.8.3 — pause_loop=true 标记由 runner 在 tool_call_end 处观察后
+    # 强制 force-stop SDK loop。模型不会读到这条响应（runner 在 SSE 流出来
+    # 之前就 emit end 了），文字 message 仅做降级保护：万一 runner 错过标记
+    # （bug / 旧版本），prompt 嘱托还能软兜一层。
+    return mcp_pause_response({
         "status": "waiting",
         "pending_id": pending_id,
         "question": question,
@@ -174,7 +200,8 @@ async def ask_user_question(args: dict) -> dict:
         "multi_select": multi_select,
         "message": (
             "Question has been shown to the user via the frontend card. "
-            "STOP generating further output in this turn — the user's "
-            "answer will arrive as the next user message."
+            "The runner is force-stopping this turn now. STOP generating "
+            "further output — the user's answer arrives as the next "
+            "user message via the [answer:] prefix."
         ),
     })

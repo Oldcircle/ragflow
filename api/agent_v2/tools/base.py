@@ -236,6 +236,38 @@ def mcp_json_response(obj, *, truncate: bool = True) -> dict:
     )
 
 
+# Marker key recognized by ``runner._merge_streams``: when a tool's JSON
+# response contains ``pause_loop=true``, the runner force-stops the SDK
+# loop right after observing the tool_call_end event (mirrors the
+# consecutive_empty_rag force_stopped pattern).
+#
+# Why a marker, not an exception: MCP tool exceptions get caught by the
+# SDK and re-emitted as tool errors, which the model sees and tries to
+# "recover" from. A marker that the runner recognizes lets us short-circuit
+# WITHOUT the model ever seeing an error or having a chance to generate
+# more text in this turn — the architectural equivalent of Claude Code's
+# permission-flow await pause within our HTTP-SSE constraints.
+PAUSE_LOOP_KEY = "pause_loop"
+
+
+def mcp_pause_response(payload: dict) -> dict:
+    """Wrap a tool's success payload as a ``pause_loop`` marker response.
+
+    Used by interactive tools (``ask_user_question`` / ``submit_plan``) to
+    request that the runner force-stop the SDK loop after this tool
+    returns. The model never gets to consume this response — the runner
+    intercepts the ``tool_call_end`` event and emits ``end`` instead.
+
+    The wrapper guarantees the marker key always lives at the top level of
+    the JSON body so the runner's check stays a one-line dict lookup.
+    """
+    if not isinstance(payload, dict):
+        raise TypeError(
+            f"mcp_pause_response expects a dict payload, got {type(payload)}"
+        )
+    return mcp_json_response({**payload, PAUSE_LOOP_KEY: True})
+
+
 __all__ = [
     "tool",
     "ToolContext",
@@ -246,6 +278,8 @@ __all__ = [
     "emit_event",
     "mcp_text_response",
     "mcp_json_response",
+    "mcp_pause_response",
+    "PAUSE_LOOP_KEY",
     "MAX_TOOL_OUTPUT_BYTES",
     "CancelledByCaller",
     "check_cancelled",

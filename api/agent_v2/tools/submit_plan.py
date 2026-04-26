@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import uuid
 
-from .base import emit_event, get_ctx, mcp_json_response, tool
+from .base import emit_event, get_ctx, mcp_json_response, mcp_pause_response, tool
 from .. import event as ev
 
 logger = logging.getLogger("ragflow.agent_v2.submit_plan")
@@ -335,7 +335,11 @@ async def submit_plan(args: dict) -> dict:
     except Exception:
         logger.exception("submit_plan: audit write failed (not fatal)")
 
-    return mcp_json_response({
+    # Phase 2.8.3 — pause_loop=true 让 runner 在 tool_call_end 处 force-stop
+    # SDK loop。supervisor 不再有机会在 plan 卡片下方继续生成文本 / 调其它
+    # 工具；下一轮 user 消息（[plan approved/rejected]）走 parse_plan_decision
+    # 路径正常 resume。文字 message 是 prompt 软兜底。
+    return mcp_pause_response({
         "status": "waiting",
         "pending_id": pending_id,
         "title": title,
@@ -344,8 +348,9 @@ async def submit_plan(args: dict) -> dict:
         "reversible": reversible,
         "message": (
             "Plan has been shown to the user via the frontend approval card. "
-            "STOP generating further output in this turn — the user will "
-            "approve / reject / request changes in their next message. "
-            "Respect their decision when you resume."
+            "The runner is force-stopping this turn now. STOP generating "
+            "further output — the user will approve / reject / request "
+            "changes in their next message. Respect their decision when "
+            "you resume."
         ),
     })

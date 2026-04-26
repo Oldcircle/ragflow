@@ -380,6 +380,29 @@ class AgentRunner:
                     result = event.data.get("result")
                     _collect_evidence_from_tool(evidence, tname, result)
 
+                    # Phase 2.8.3 — Interactive Tool Pause Framework：交互工具
+                    # （ask_user_question / submit_plan）在 result 顶层设
+                    # ``pause_loop=true`` 标记，让 runner 立刻 force-stop SDK loop。
+                    #
+                    # 不靠 prompt 嘱托模型 STOP（软约束、易漂移），而是程序硬
+                    # 拦截 —— 模型根本没有机会拿到 tool_result 后继续生成文本。
+                    # 这是 Claude Code AskUserQuestionTool 的 ``shouldDefer=true``
+                    # + ``checkPermissions: 'ask'`` 在 HTTP-SSE 约束下的等价
+                    # 实现（详见 STATUS Phase 2.8.3 段）。
+                    if _has_pause_loop_marker(result):
+                        # 先 yield tool_call_end 让前端把卡片 + 工具状态画出来
+                        yield event
+                        logger.info(
+                            "Runner.run: pause_loop marker on %s — force-stopping turn",
+                            tname,
+                        )
+                        force_stopped = True
+                        # pause 路径下不跑 citation validator：那一轮没产出文本，
+                        # 只有交互卡片，没什么可校验的（且本轮 evidence 大概率
+                        # 已经收集到了，留给恢复后的 turn 校验）。
+                        yield ev.end()
+                        return
+
                     # 空检索计数 — 只对 rag_* 读工具计；其它工具（doc_ops / web_* /
                     # spawn_subagent / ask_user_question 等）不影响。
                     if _is_empty_rag_result(tname, result):
@@ -954,6 +977,27 @@ _EMPTY_RAG_TOOLS = (
     tool_names.RAG_READ_DOC,
     tool_names.RAG_GRAPH_QUERY,
 )
+
+
+def _has_pause_loop_marker(result) -> bool:
+    """Phase 2.8.3 — observe ``pause_loop=true`` in a tool's JSON result.
+
+    The marker is set by interactive tools via ``mcp_pause_response()``
+    (see ``tools/base.py``) to request that the runner force-stop the SDK
+    loop. We accept either a parsed dict or a raw JSON string — the
+    surrounding code already passes both shapes through to other detectors
+    like ``_is_empty_rag_result``.
+
+    Defensive parsing: any exception → False (don't accidentally pause on
+    a benign tool result that happens to fail to parse).
+    """
+    if result is None:
+        return False
+    try:
+        data = json.loads(result) if isinstance(result, str) else result
+    except (json.JSONDecodeError, TypeError):
+        return False
+    return isinstance(data, dict) and bool(data.get("pause_loop"))
 
 
 def _is_empty_rag_result(tool_name: str, result) -> bool:

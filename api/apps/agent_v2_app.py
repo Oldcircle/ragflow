@@ -31,7 +31,12 @@ from api.utils.api_utils import (
     validate_request,
 )
 from api.agent_v2.model_resolver import list_available_chat_models, resolve_model
-from api.agent_v2.plan_decision import augment_for_plan_decision, parse_plan_decision
+from api.agent_v2.plan_decision import (
+    augment_for_plan_decision,
+    augment_for_question_answer,
+    parse_plan_decision,
+    parse_question_answer,
+)
 from api.agent_v2.registry import ALL_TOOLS, list_tool_names
 from api.agent_v2 import runner_registry
 from api.agent_v2.runner import AgentRunner, ModelConfig
@@ -741,6 +746,18 @@ async def send_message():
         except Exception:
             logger.exception("failed to transition plan status to %s", plan_decision)
 
+    # Phase 2.8.3 — Interactive Tool Pause Framework: parse a `[answer: ...]`
+    # prefix mirroring the plan-decision flow. plan_decision and
+    # question_answer are mutually exclusive in normal usage (the supervisor
+    # only emits one pause-tool per turn), but we parse both defensively
+    # for robustness against legacy / replayed messages.
+    user_message, question_answer = parse_question_answer(user_message)
+    if question_answer:
+        try:
+            AgentV2SessionService.transition_question_status(session_id, "answered")
+        except Exception:
+            logger.exception("failed to transition question status to answered")
+
     # Snapshot plan state for the runner so @require_kb_write can gate writes.
     plan_row = None
     try:
@@ -755,8 +772,8 @@ async def send_message():
     )
 
     # 登记 user 消息（保留 id 以便 2.5.2 拉 history 时排除本条）
-    # 注意：落库的是**用户原始消息**（已剥 plan 前缀），不包含我们追加给 LLM 的
-    # meta 指令——那只是 runner 喂 LLM 的上下文，不属于用户说过的话。
+    # 注意：落库的是**用户原始消息**（已剥 plan / answer 前缀），不包含我们追加
+    # 给 LLM 的 meta 指令——那只是 runner 喂 LLM 的上下文，不属于用户说过的话。
     user_msg = AgentV2MessageService.append(
         session_id=session_id, role="user", content=user_message
     )
@@ -775,6 +792,21 @@ async def send_message():
         plan_decision=plan_decision,
         plan_status=plan_status_at_turn_start,
     )
+
+    # Phase 2.8.3 — same augment dance for ask_user_question resume. Only
+    # apply when no plan_decision was already injected (mutual exclusion;
+    # stacking two `[xxx system]` directives confuses the supervisor).
+    if question_answer and not plan_decision:
+        runner_input = augment_for_question_answer(
+            user_message=runner_input,
+            answer=question_answer,
+        )
+        # 清空 pending_question_*：本轮已消费，不再让校验器或前端误以为
+        # 还在等回复。失败不阻塞——下一轮 set_pending_question 会覆盖。
+        try:
+            AgentV2SessionService.clear_pending_question(session_id)
+        except Exception:
+            logger.exception("failed to clear pending_question for session %s", session_id)
 
     try:
         model_cfg = _build_model_config(session.model_config_json, session.tenant_id)

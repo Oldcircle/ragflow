@@ -12,11 +12,19 @@ import { memo, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { PendingQuestion } from '../hooks/use-agent-stream';
 
+/** Phase 2.8.3 — 结构化 payload，让父组件构造 [answer: ...] 前缀，而不是
+ *  在卡片里硬拼一段 user-facing 文本。labels = 选中的 option.label 列表（按
+ *  顺序，单选时长度=1）；notes = 用户在"自定义答复"输入框里写的自由文本。 */
+export interface PendingQuestionAnswer {
+  labels: string[];
+  notes: string;
+}
+
 interface Props {
   question: PendingQuestion;
   disabled?: boolean;
-  /** user 点完 submit 后调；父组件负责把 text 作为下一条 user message 发出 */
-  onSubmit: (answerText: string) => void;
+  /** user 点完 submit 后调；父组件负责把 payload 编码成下一条 user message */
+  onSubmit: (answer: PendingQuestionAnswer) => void;
 }
 
 export const PendingQuestionCard = memo(function PendingQuestionCard({
@@ -52,11 +60,8 @@ export const PendingQuestionCard = memo(function PendingQuestionCard({
     const labels = [...selected]
       .sort((a, b) => a - b)
       .map((i) => question.options[i]?.label)
-      .filter(Boolean);
-    const answer = [...labels, custom.trim() ? `其他：${custom.trim()}` : null]
-      .filter(Boolean)
-      .join('，');
-    onSubmit(answer);
+      .filter((s): s is string => Boolean(s));
+    onSubmit({ labels, notes: custom.trim() });
   };
 
   return (

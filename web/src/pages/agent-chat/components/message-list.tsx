@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef } from 'react';
+import { memo, useCallback, useLayoutEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AgentV2Message, AgentV2ToolCall } from '../api';
 import {
@@ -36,14 +36,34 @@ export const MessageList = memo(function MessageList({
 }: Props) {
   const { t } = useTranslation();
   const endRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  // 用户是否处于"贴底跟随"模式。新对话从 true 起步；用户手动上滚到 80px
+  // 容差以外即转为 false，停止自动跟随，直到用户重新滚到底部。
+  // 用 ref 而非 state：滚动事件每帧多次触发，state 会引发不必要的 re-render。
+  const stickToBottomRef = useRef(true);
 
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  const handleScroll = useCallback(() => {
+    const c = containerRef.current;
+    if (!c) return;
+    const distFromBottom = c.scrollHeight - c.scrollTop - c.clientHeight;
+    stickToBottomRef.current = distFromBottom < 80;
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!stickToBottomRef.current) return; // 用户已上滚，绝不打扰
+    // 流式中用 'auto'（瞬时跳）而非 'smooth' —— 后者在每秒数十次 text_delta
+    // 触发下会出现严重抖动 + 滚动队列堆积，CPU 飙升。非流式（一次性
+    // 加载历史）才用 smooth 给视觉缓冲。
+    endRef.current?.scrollIntoView({
+      behavior: isStreaming ? 'auto' : 'smooth',
+      block: 'end',
+    });
   }, [
     historyMessages.length,
     streaming?.text,
     streaming?.toolCalls.length,
     pendingUser,
+    isStreaming,
   ]);
 
   const toolCallsByMessage = new Map<string, AgentV2ToolCall[]>();
@@ -56,6 +76,8 @@ export const MessageList = memo(function MessageList({
 
   return (
     <div
+      ref={containerRef}
+      onScroll={handleScroll}
       style={{
         flex: 1,
         overflow: 'auto',
@@ -128,7 +150,18 @@ export const MessageList = memo(function MessageList({
           <PendingQuestionCard
             question={streaming.pendingQuestion}
             disabled={isStreaming}
-            onSubmit={(text) => onSubmitAnswer(text)}
+            onSubmit={(payload) => {
+              // Phase 2.8.3 — 用 [answer: <labels>] 前缀让后端 parse_question_answer
+              // 识别这是对 ask_user_question 的回复，而非普通用户消息。前缀后追加
+              // 用户的"自定义答复"作为残留正文（parse 后变成 supervisor 看到的
+              // accompanying note）。与 plan_card 的 [plan approved] 前缀同模式。
+              const labels = payload.labels.join(', ');
+              const prefix = `[answer: ${labels}]`;
+              const text = payload.notes
+                ? `${prefix} ${payload.notes}`
+                : prefix;
+              onSubmitAnswer(text);
+            }}
           />
         )}
 

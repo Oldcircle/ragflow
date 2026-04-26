@@ -1416,6 +1416,39 @@ class AgentV2Session(DataBaseModel):
         help_text="Full submit_plan payload; cleared together with pending_plan_status",
     )
 
+    # Phase 2.8.3 — Interactive Tool Pause Framework：question 维度的等待状态
+    #
+    # 与 pending_plan 平行（plan = "我打算做这些写操作请批准"，question =
+    # "请你在这几个选项里选一个"）。两者互斥但 schema 层不强制 —— 同时挂起
+    # 两个等待项是合法状态（虽然 UX 上罕见）。
+    #
+    # ``pending_question_status`` 合法值：
+    #   - NULL / ""   — 无待回答问题
+    #   - "waiting"   — ask_user_question 已 emit，runner 已 force-stop
+    #   - "answered"  — 用户回复了 [answer: ...] 前缀，下一轮入口已消费
+    #
+    # 不像 plan 有 approved / rejected / request_changes 三态分叉，question
+    # 只有"等"和"答"两态 —— 用户不能"拒绝回答"（不答就放任 supervisor 假设
+    # 默认）。
+    pending_question_id = CharField(
+        max_length=32, null=True, default=None, index=True,
+        help_text="Current ask_user_question pending_id awaiting user reply.",
+    )
+    pending_question_status = CharField(
+        max_length=24, null=True, default=None, index=True,
+        help_text="waiting | answered | null",
+    )
+    pending_question_submitted_at = BigIntegerField(
+        null=True, default=None,
+        help_text="ask_user_question 提交时的 ms timestamp；TTL 过期判断",
+    )
+    # 完整 payload（question / header / options / multi_select），下一轮入口
+    # 校验用户回复的 label 是否合法 + 重新渲染卡片时不丢字段。
+    pending_question_body = JSONField(
+        null=True, default=None,
+        help_text="Full ask_user_question payload; cleared together with status",
+    )
+
     class Meta:
         db_table = "agent_v2_session"
 
@@ -2155,6 +2188,11 @@ def migrate_db():
     alter_db_add_column(migrator, "agent_v2_session", "pending_plan_status", CharField(max_length=24, null=True, default=None, index=True, help_text="waiting | approved | rejected | request_changes | null"))
     alter_db_add_column(migrator, "agent_v2_session", "pending_plan_submitted_at", BigIntegerField(null=True, default=None, help_text="submit_plan 提交时的 ms timestamp；用于 TTL 过期判断"))
     alter_db_add_column(migrator, "agent_v2_session", "pending_plan_body", JSONField(null=True, default=None, help_text="Full submit_plan payload; cleared together with pending_plan_status"))
+    # Phase 2.8.3 — Interactive Tool Pause Framework：question 维度（与 plan 平行）
+    alter_db_add_column(migrator, "agent_v2_session", "pending_question_id", CharField(max_length=32, null=True, default=None, index=True, help_text="Current ask_user_question pending_id awaiting user reply."))
+    alter_db_add_column(migrator, "agent_v2_session", "pending_question_status", CharField(max_length=24, null=True, default=None, index=True, help_text="waiting | answered | null"))
+    alter_db_add_column(migrator, "agent_v2_session", "pending_question_submitted_at", BigIntegerField(null=True, default=None, help_text="ask_user_question 提交时的 ms timestamp；TTL 过期判断"))
+    alter_db_add_column(migrator, "agent_v2_session", "pending_question_body", JSONField(null=True, default=None, help_text="Full ask_user_question payload; cleared together with status"))
     logging.disable(logging.NOTSET)
     # this is after re-enabling logging to allow logging changed user emails
     migrate_add_unique_email(migrator)

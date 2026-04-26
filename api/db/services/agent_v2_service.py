@@ -260,6 +260,103 @@ class AgentV2SessionService(CommonService):
             return None
         return row
 
+    # ────────────────────────────── Pending Question (Phase 2.8.3) ──────────────────────────────
+    #
+    # Mirrors the pending_plan state machine (set / transition / clear / get)
+    # for the ``ask_user_question`` tool. ask_user_question force-stops the
+    # runner mid-turn (via the ``pause_loop`` marker observed in
+    # ``runner._merge_streams``) and persists the question + options here so
+    # the next user message can resume cleanly.
+    #
+    # 合法状态机：
+    #   NULL ─set_pending_question→ "waiting" ─transition_status→ "answered"
+    #                                                          ─clear_pending_question→ NULL
+    #
+    # 与 plan 不同点：question 没有"拒绝"状态——用户只能"答"或"不答"（不答的
+    # 话下一轮 user 消息没有 [answer:] 前缀，supervisor 走默认推理路径）。
+
+    _VALID_QUESTION_STATUSES = ("waiting", "answered")
+
+    @classmethod
+    @DB.connection_context()
+    def set_pending_question(
+        cls,
+        session_id: str,
+        pending_id: str,
+        question_body: dict | None = None,
+    ) -> int:
+        """ask_user_question 调用后标记 session 进入 'waiting' 状态。
+
+        ``question_body`` 存完整 payload（question / header / options /
+        multi_select），下一轮入口校验用户回复的 label 时用得着。
+        """
+        updates: dict = {
+            "pending_question_id": pending_id,
+            "pending_question_status": "waiting",
+            "pending_question_submitted_at": current_timestamp(),
+            "update_time": current_timestamp(),
+            "update_date": datetime_format(datetime.now()),
+        }
+        if question_body is not None:
+            updates["pending_question_body"] = question_body
+        q = cls.model.update(**updates).where(cls.model.id == session_id)
+        return q.execute()
+
+    @classmethod
+    @DB.connection_context()
+    def transition_question_status(cls, session_id: str, status: str) -> int:
+        """把 waiting 推进到 answered。"""
+        if status not in cls._VALID_QUESTION_STATUSES:
+            raise ValueError(
+                f"invalid question status {status!r}; must be one of "
+                f"{cls._VALID_QUESTION_STATUSES}"
+            )
+        q = cls.model.update(
+            pending_question_status=status,
+            update_time=current_timestamp(),
+            update_date=datetime_format(datetime.now()),
+        ).where(cls.model.id == session_id)
+        return q.execute()
+
+    @classmethod
+    @DB.connection_context()
+    def clear_pending_question(cls, session_id: str) -> int:
+        """answered 处理完后清空。"""
+        q = cls.model.update(
+            pending_question_id=None,
+            pending_question_status=None,
+            pending_question_submitted_at=None,
+            pending_question_body=None,
+            update_time=current_timestamp(),
+            update_date=datetime_format(datetime.now()),
+        ).where(cls.model.id == session_id)
+        return q.execute()
+
+    @classmethod
+    @DB.connection_context()
+    def get_pending_question(cls, session_id: str, include_body: bool = False) -> dict | None:
+        """读回 session 当前 question 状态；查不到返 None。
+
+        ``include_body=True`` 才拉完整 payload（options / multi_select），
+        校验 label 合法性时需要；只想知道有没有等待问题时不拉 body 省 IO。
+        """
+        cols = [
+            cls.model.pending_question_id,
+            cls.model.pending_question_status,
+            cls.model.pending_question_submitted_at,
+        ]
+        if include_body:
+            cols.append(cls.model.pending_question_body)
+        rows = list(
+            cls.model.select(*cols).where(cls.model.id == session_id).dicts()
+        )
+        if not rows:
+            return None
+        row = rows[0]
+        if not row.get("pending_question_status"):
+            return None
+        return row
+
 
 # ────────────────────────────── Message ──────────────────────────────
 
