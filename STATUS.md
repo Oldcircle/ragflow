@@ -5,6 +5,83 @@
 
 ---
 
+## 最近更新：2026-04-26（Phase 2.8.3 — Interactive Tool Pause Framework + 前端滚动锁修复）
+
+**触发**：用户实测踩坑两条 ——
+1. supervisor 调 `ask_user_question` 后没等用户点选项就自己往下答了——交互卡片
+   和完整答案并列出现（旧实现是 fire-and-forget + 一行 prompt 嘱托 STOP，
+   软约束扛不住模型漂移）
+2. 流式输出期间右侧滚轮被无条件 `scrollIntoView` 锁在最底，用户无法滚上去
+   看历史
+
+### Modify A — Interactive Tool Pause Framework（参照 Claude Code）
+
+参照 `~/Opensource/vendor/claude-code-ref/packages/builtin-tools/src/tools/AskUserQuestionTool/AskUserQuestionTool.tsx`
+的 `shouldDefer=true` + `checkPermissions: 'ask'` 模式 —— 它通过 SDK 的
+permission flow 真正阻塞 agent loop，模型根本没机会在 `call()` 之后继续生成。
+我们用 HTTP-SSE，没法挂请求等用户点击；落地为 cancel + resume：
+- 工具 emit 事件后**持久化 pending 状态 + 在响应里设 `pause_loop=true` 标记**
+- runner 在 `tool_call_end` 处观察标记，**force-stop 整个 turn**（与 Phase
+  2.6 v0.8.3 的 `consecutive_empty_rag` force_stopped 同模式）
+- 用户在前端点选项 → 下一个 user message 带 `[answer: <label>]` 前缀
+- 后端 `parse_question_answer` 剥前缀 + `augment_for_question_answer` 注入
+  `[question system]` directive，让 supervisor 知道这是 resume 信号
+
+落地清单：
+
+| 层 | 改动 |
+|---|---|
+| **Schema** (`db_models.py`) | `AgentV2Session` 加 `pending_question_id/status/submitted_at/body` 4 列 + 迁移；与 `pending_plan_*` 平行设计 |
+| **Service** (`agent_v2_service.py`) | `AgentV2SessionService.{set,transition,clear,get}_pending_question` 4 个方法，状态机 `NULL → waiting → answered → NULL` |
+| **Decision parser** (`plan_decision.py`) | 新增 `parse_question_answer(message) -> (cleaned, {labels, raw_payload})` + `augment_for_question_answer`；支持 `[answer:]` / `[user answer:]` / `[选择:]` / `[回答:]` 等中英文前缀；只匹配带 `[]` 形式（避免误吃普通 user message） |
+| **Tool helper** (`tools/base.py`) | 新增 `mcp_pause_response(payload)` + `PAUSE_LOOP_KEY` 常量，统一两个交互工具的标记 |
+| **`ask_user_question`** | emit_event 后调 `set_pending_question(body=...)` 持久化整个 payload，返回 `mcp_pause_response(...)` |
+| **`submit_plan`** | 同 pause_loop 标记（顺手修第 2 个 bug —— supervisor 提交 plan 后也会继续生成） |
+| **Runner** (`runner.py`) | `_has_pause_loop_marker` helper + `tool_call_end` 处的早期短路：observe pause_loop → yield event → emit end → return；不跑 citation validator（pause turn 没产文本） |
+| **HTTP** (`agent_v2_app.py::send_message`) | `parse_question_answer` 与 `parse_plan_decision` 并列，命中后 `transition_question_status('answered')` + `augment_for_question_answer` 注入 directive + `clear_pending_question`。互斥保护（同时命中两个前缀时只跑 plan，不堆叠 directive） |
+| **前端** | `pending-question-card` 改输出结构化 `{labels, notes}`，`message-list` 包成 `[answer: <labels>]` 前缀 + 用户自定义 notes 作残余 —— 与 plan_card 的 `[plan approved]` 模式对齐 |
+
+### Modify B — 滚动锁修复
+
+`web/src/pages/agent-chat/components/message-list.tsx` 旧实现 `useEffect` 监听
+`streaming?.text` 无条件 `scrollIntoView({behavior: 'smooth'})`，每秒数十次
+delta 把用户拽回最底。改为：
+- `containerRef` 监听 `onScroll`，`stickToBottomRef` 跟踪用户是否在 80px 容
+  差内（"贴底跟随"模式）
+- `useLayoutEffect` 替代 `useEffect`，避免 paint 后再滚视觉跳一下
+- 流式中用 `behavior: 'auto'`（瞬时跳）而非 'smooth'，避免高频触发抖动；非
+  流式才用 smooth
+
+模式参照所有现代聊天 UI（Claude.ai / ChatGPT / iMessage）的"pin-to-bottom
+only when at bottom"。
+
+### 测试
+
+- 后端 +25 case（test_question_answer.py：parse 11 / augment 4 / pause marker
+  helper 7 / ask_user_question pause 注入 2 / submit_plan pause 注入 1）
+- 总计 **650 passed / 8 skipped**（v1.0.1 → 615 → 625 → 650）
+- ruff clean / tsc clean（agent-chat/ 0 错）
+
+### 真机 smoke 入口
+
+1. 让 supervisor 触发 `ask_user_question` —— 验证：
+   (a) SSE 流在 tool_call_end 后立即 emit `end`，supervisor 没机会再生成文本
+   (b) 浏览器卡片渲染后用户上滚能滚动，下一个 delta 不会拽回去
+   (c) 用户点选项后下条 message 是 `[answer: <label>]` 前缀，supervisor
+       resume 后 `[question system]` directive 被消费
+2. 同样流程跑 `submit_plan`：plan 卡片下方应该**没有**多余 supervisor 文本
+3. SQL 看 `agent_v2_session` 表：`pending_question_id` 在 turn 内 = uuid，
+   下一轮被 `clear_pending_question` 设回 NULL
+
+### 下一步候选
+
+- v0.16: pending_question TTL 清扫（与 attachment_sweeper 同模式，避免遗弃
+  会话的 stale waiting state 永久占着 UI）
+- v0.17: 前端检测 SSE end + 仍处于 pending_question 时自动 focus 卡片，提升
+  键盘可达性
+
+---
+
 ## 最近更新：2026-04-26（Phase 2.8.2 — citation_without_evidence harness + spawn_subagent 子代理可见性）
 
 **触发**：用户实测踩坑两条 ——
