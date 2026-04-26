@@ -485,6 +485,8 @@ function CitationWarningPanel({
 
 function issueKindLabel(kind: string, t: (k: string) => string): string {
   switch (kind) {
+    case 'citation_without_evidence':
+      return t('agentV2.citationKindPhantom');
     case 'missing_chunk':
       return t('agentV2.citationKindMissing');
     case 'number_unsupported':

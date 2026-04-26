@@ -265,6 +265,7 @@ export default {
       viewChunks: 'View retrieved snippets',
       citationWarningTitle:
         'Citation check: {{count}} issue(s) may be inaccurate',
+      citationKindPhantom: 'Cited sources without retrieval',
       citationKindMissing: 'Footnote index missing',
       citationKindNumber: 'Number not supported by source',
       citationKindNoCite: 'Numeric claim has no citation',

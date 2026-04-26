@@ -89,6 +89,53 @@ def list_tool_names() -> list[str]:
 
 
 _HINT_MARKER = "[intent]"
+_AGENT_LISTING_MARKER = "Available subagent types and the tools they have access to:"
+
+
+def _format_subagent_line(defn) -> str:
+    """Mirror claude-code-ref's ``formatAgentLine`` (packages/builtin-tools/
+    src/tools/AgentTool/prompt.ts:43): ``- name: when_to_use (Tools: ...)``.
+
+    Translates ``AgentDefinition.tools`` ("*" / list / []) +
+    ``disallowed_tools`` into a human-readable tool description so the
+    spawning agent can see — at the spawn_subagent description level —
+    exactly which tools each subagent has, instead of hallucinating that
+    "subagents share my toolset".
+    """
+    tools = defn.tools
+    deny = tuple(defn.disallowed_tools or ())
+
+    if tools == "*":
+        if deny:
+            tools_str = "All tools except " + ", ".join(deny)
+        else:
+            tools_str = "All tools"
+    elif isinstance(tools, list):
+        if deny:
+            effective = [t for t in tools if t not in set(deny)]
+        else:
+            effective = list(tools)
+        tools_str = ", ".join(effective) if effective else "None"
+    else:
+        tools_str = "Unknown"
+
+    when = (defn.when_to_use or defn.description or "").strip().replace("\n", " ")
+    return f"- {defn.name}: {when} (Tools: {tools_str})"
+
+
+def _build_subagent_listing() -> str | None:
+    """Render registered subagent definitions as a Claude Code-style listing.
+
+    Returns ``None`` when no subagents are registered (testing / minimal
+    deploys), so callers can skip injecting the section.
+    """
+    from .definitions.registry import list_definitions
+
+    subs = [d for d in list_definitions(kind="subagent")]
+    if not subs:
+        return None
+    lines = "\n".join(_format_subagent_line(d) for d in subs)
+    return f"{_AGENT_LISTING_MARKER}\n{lines}"
 
 
 def _decorate_for_mcp(tool: SdkMcpTool) -> SdkMcpTool:
@@ -98,18 +145,33 @@ def _decorate_for_mcp(tool: SdkMcpTool) -> SdkMcpTool:
     ``annotations`` is already populated, those channels are left alone. We
     copy first so the underlying module-level ``@tool`` objects stay clean
     — tests introspect the original descriptions.
+
+    For ``spawn_subagent`` specifically we also append a Claude Code-style
+    "Available subagent types ..." block listing each registered subagent's
+    tool whitelist, so the parent agent does not have to guess what each
+    subagent can or cannot do (mirrors
+    claude-code-ref/packages/builtin-tools/src/tools/AgentTool/prompt.ts).
     """
     from .annotations import ANNOTATIONS
     from .prompting import SEARCH_HINT_BY_TOOL
 
     decorated = copy.copy(tool)
+    description = tool.description
 
-    # (1) searchHint prefix
+    # (1) Subagent listing — only for spawn_subagent
+    if tool.name == names.SPAWN_SUBAGENT and _AGENT_LISTING_MARKER not in description:
+        listing = _build_subagent_listing()
+        if listing:
+            description = f"{description}\n\n{listing}"
+
+    # (2) searchHint prefix
     hint = SEARCH_HINT_BY_TOOL.get(tool.name)
-    if hint and not tool.description.lstrip().startswith(_HINT_MARKER):
-        decorated.description = f"{_HINT_MARKER} {hint}\n\n{tool.description}"
+    if hint and not description.lstrip().startswith(_HINT_MARKER):
+        description = f"{_HINT_MARKER} {hint}\n\n{description}"
 
-    # (2) MCP protocol annotations (readOnly / destructive / openWorld)
+    decorated.description = description
+
+    # (3) MCP protocol annotations (readOnly / destructive / openWorld)
     ann = ANNOTATIONS.get(tool.name)
     if ann is not None and decorated.annotations is None:
         mcp_ann: McpToolAnnotations = {

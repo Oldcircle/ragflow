@@ -149,3 +149,69 @@ def test_build_mcp_server_returns_decorated_tools():
     values = list(tools_attr.values()) if isinstance(tools_attr, dict) else list(tools_attr)
     for t in values:
         assert "[intent]" in t.description
+
+
+# ───────────────────────  Subagent listing in spawn_subagent  ──────────────────
+
+
+def test_format_subagent_line_allowlist():
+    """``- name: when_to_use (Tools: a, b, c)`` for explicit list — mirrors
+    claude-code-ref/packages/builtin-tools/src/tools/AgentTool/prompt.ts."""
+    from api.agent_v2.definitions.schema import AgentDefinition
+
+    d = AgentDefinition(
+        name="sub_demo",
+        version="1.0.0",
+        description="demo",
+        when_to_use="use this when demoing",
+        kind="subagent",
+        tools=["rag_retrieve", "rag_read_doc"],
+    )
+    line = registry._format_subagent_line(d)
+    assert line == "- sub_demo: use this when demoing (Tools: rag_retrieve, rag_read_doc)"
+
+
+def test_format_subagent_line_star_with_denylist():
+    """``tools="*"`` + denylist → "All tools except X, Y"."""
+    from api.agent_v2.definitions.schema import AgentDefinition
+
+    d = AgentDefinition(
+        name="sub_open",
+        version="1.0.0",
+        description="x",
+        when_to_use="open agent",
+        kind="subagent",
+        tools="*",
+        disallowed_tools=("doc_archive",),
+    )
+    line = registry._format_subagent_line(d)
+    assert "All tools except doc_archive" in line
+
+
+def test_spawn_subagent_description_lists_each_subagent():
+    """spawn_subagent 的 MCP description 必须包含每个已注册 subagent 的工具白名单。
+
+    防止 supervisor 幻觉"我的子代理共享我的工具集" —— 这是用户实测踩坑。
+    """
+    from api.agent_v2.tools.spawn_subagent import spawn_subagent
+
+    d = registry._decorate_for_mcp(spawn_subagent)
+    assert "Available subagent types and the tools they have access to:" in d.description
+    # 至少包含 4 个内置 subagent 中的 archivist + 它的写工具白名单
+    assert "sub_archivist" in d.description
+    assert "doc_archive" in d.description  # archivist 独占的写工具
+    # researcher 只有 2 个读工具，archivist 的 doc_tag 不应出现在它的行里 —
+    # 这点用 split-by-line 检查更直接
+    rlines = [
+        ln for ln in d.description.splitlines() if ln.startswith("- sub_policy_researcher:")
+    ]
+    assert rlines, "sub_policy_researcher row missing"
+    assert "doc_tag" not in rlines[0]
+
+
+def test_decorate_does_not_inject_listing_for_other_tools():
+    """非 spawn_subagent 工具不应被注入 subagent listing。"""
+    from api.agent_v2.tools.rag_retrieve import rag_retrieve
+
+    d = registry._decorate_for_mcp(rag_retrieve)
+    assert "Available subagent types" not in d.description

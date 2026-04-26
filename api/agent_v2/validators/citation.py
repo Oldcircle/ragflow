@@ -1,6 +1,14 @@
 """CitationValidator — 对比 Agent 答复和 EvidenceIndex。
 
-规则（v1，简单 + 低误报为先）：
+规则（按发现根因严重度排序，前者命中即短路返回）：
+  0. **citation_without_evidence**：答复里出现 ``[N]``，但本轮 evidence 完全为空。
+     这是 prompt drift 的标志 —— Agent 没调任何 rag_* 工具却凭训练知识 / 历史
+     编造了 [N] 引用。命中时 **跳过规则 1-3**：它们都是同一根因的回声（每个
+     [N] 都会触发 missing_chunk，每个数字都会触发 number_unsupported），上报
+     一条聚合 issue 给 strict-mode 走 ``rewrite_to_no_basis`` 重写更干净。
+     设计参照 claude-code-ref/packages/builtin-tools/src/tools/AgentTool/
+     built-in/verificationAgent.ts 的 distinct VERDICT 模式 —— 不同根因走
+     不同 label，便于 dashboard 聚合 + 对症下药。
   1. **missing_chunk**：答复里出现 ``[N]``，但 evidence 里没有第 N 条
   2. **number_unsupported**：答复里的数字型断言（百分比 / 年限 / 金额 / 岁数 /
      日期）在任何 evidence 的同类数字集合里都找不到
@@ -25,6 +33,7 @@ from .evidence_index import EvidenceIndex, NumberMatch, extract_numbers
 logger = logging.getLogger("ragflow.agent_v2.validators.citation")
 
 CitationIssueKind = Literal[
+    "citation_without_evidence",
     "missing_chunk",
     "number_unsupported",
     "no_citation_for_numeric",
@@ -110,8 +119,37 @@ def validate_citations(
     if not final_text:
         return issues
 
-    # ── 规则 1：missing_chunk ──
     cites = CitationExtractor.extract_citations(final_text)
+
+    # ── 规则 0：citation_without_evidence（短路检查）──
+    #
+    # 当本轮 EvidenceIndex 完全为空（Agent 没调任何 rag_* 工具，或所有调用
+    # 都返 0 chunk），任何 [N] 都是无源凭空生成的，原因是 prompt drift 或
+    # Agent 用训练知识 / 压缩历史答题。
+    #
+    # 命中时聚合上报一条，**跳过规则 1-3**：避免每个 [N] 都被规则 1 重复
+    # 标成 missing_chunk、每个数字都被规则 2 标成 number_unsupported（造成
+    # N+M 条噪音 issue），让上层走专门的 ``rewrite_to_no_basis`` 路径而非
+    # 通用 strict rewrite（后者要求 evidence ≥ 1，无法对 0 evidence 工作）。
+    if cites and len(index) == 0:
+        first_n, first_off = cites[0]
+        issues.append(
+            CitationIssue(
+                kind="citation_without_evidence",
+                citation_index=first_n,
+                claim=_context_window(final_text, first_off, 60),
+                detail=(
+                    f"Answer contains {len(cites)} citation marker(s) "
+                    f"(first is [{first_n}]) but no retrieval tool produced "
+                    f"any evidence this turn. Either call rag_retrieve / "
+                    f"rag_read_doc / rag_graph_query before citing, or use "
+                    f"the no-basis fallback line without [N] markers."
+                ),
+            )
+        )
+        return issues
+
+    # ── 规则 1：missing_chunk ──
     for n, offset in cites:
         if index.lookup_by_citation_id(n) is None:
             issues.append(

@@ -24,6 +24,7 @@ export type AgentV2EventType =
   | 'end';
 
 export type CitationIssueKind =
+  | 'citation_without_evidence'
   | 'missing_chunk'
   | 'number_unsupported'
   | 'no_citation_for_numeric';

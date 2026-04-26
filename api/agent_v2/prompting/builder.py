@@ -210,6 +210,13 @@ STRICT_RAG_CONSTRAINTS: list[str] = [
 
 
 RETRIEVAL_OUTPUT_RULES: list[str] = [
+    "If you did NOT call rag_retrieve / rag_read_doc / rag_graph_query this "
+    "turn (or those calls returned 0 usable chunks), DO NOT emit any [N] "
+    "markers. [N] is a binding to a real chunk produced this turn — fabricating "
+    "one when no chunk exists is a hallucination. In that case, follow the "
+    "fallback constraint above (say there is no direct basis in the KB) "
+    "instead of dressing a training-knowledge or conversation-history answer "
+    "in fake citations.",
     "Annotate every factual sentence with a footnote marker like [1], [2], [3] "
     "corresponding to the order chunks appeared in rag_retrieve / rag_read_doc "
     "results this turn. Multiple markers like [1][2] are allowed when a sentence "

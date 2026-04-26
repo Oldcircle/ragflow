@@ -27,4 +27,4 @@ from .citation import (  # noqa: F401
     validate_citations,
 )
 from .evidence_index import EvidenceIndex, Evidence  # noqa: F401
-from .rewrite import rewrite_answer_strict  # noqa: F401
+from .rewrite import rewrite_answer_strict, rewrite_to_no_basis  # noqa: F401

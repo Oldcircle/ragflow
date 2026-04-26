@@ -18,6 +18,7 @@ from api.agent_v2.validators import (
     CitationExtractor,
     EvidenceIndex,
     rewrite_answer_strict,
+    rewrite_to_no_basis,
     validate_citations,
 )
 from api.agent_v2.validators.evidence_index import extract_numbers
@@ -328,6 +329,165 @@ class TestRewriteAnswerStrict:
                 original_text="原",
                 issues=[{"kind": "number_unsupported", "detail": "x", "claim": "y"}],
                 evidence=evidence_sample,
+                model="claude-sonnet-4-5",
+                base_url=None,
+                auth_token="sk-fake",
+            )
+        assert result is None
+
+
+# ───────── citation_without_evidence (Phase 2.8.2) ─────────
+
+
+@pytest.mark.p1
+class TestCitationWithoutEvidence:
+    """Phase 2.8.2 — empty-evidence harness check.
+
+    Mirrors claude-code-ref's pattern: distinct VERDICT-style label per
+    distinct root cause, downstream rules suppressed when the dominant
+    cause already explains everything.
+    """
+
+    def test_fires_when_evidence_empty_and_cite_present(self):
+        empty_idx = EvidenceIndex()
+        text = "申请人须年满 18 周岁 [1]，社保满 3 年 [2]。"
+        issues = validate_citations(text, empty_idx, numeric_strict=True)
+        assert len(issues) == 1
+        assert issues[0].kind == "citation_without_evidence"
+        assert issues[0].citation_index == 1  # 第一个 [N]
+        # detail 必须报"实际有几个 [N]"，便于运维诊断
+        assert "2 citation marker" in issues[0].detail
+
+    def test_does_not_fire_when_evidence_empty_but_no_cite(self):
+        """模型说"未查到相关规定"（无 [N]）→ 这是正确行为，不应报警。"""
+        empty_idx = EvidenceIndex()
+        text = "本知识库未直接覆盖此问题，请咨询当地住建局。"
+        issues = validate_citations(text, empty_idx, numeric_strict=True)
+        # 不应有 citation_without_evidence；可能仍有 no_citation_for_numeric，
+        # 但本测试用例里没有数字断言，所以应完全空
+        assert all(i.kind != "citation_without_evidence" for i in issues)
+
+    def test_does_not_fire_when_evidence_present(self, evidence_sample):
+        """有 evidence 时即使 [N] 编号超界也走 missing_chunk 旧路径，不走新规则。"""
+        text = "见 [9]。"  # evidence_sample 只有 [1][2]
+        issues = validate_citations(text, evidence_sample, numeric_strict=True)
+        kinds = [i.kind for i in issues]
+        assert "missing_chunk" in kinds
+        assert "citation_without_evidence" not in kinds
+
+    def test_suppresses_downstream_noise(self):
+        """关键短路语义：触发后不应再多发 missing_chunk / number_unsupported。
+
+        否则会出现 N+M 条同根因 issue 把告警面板淹没。
+        """
+        empty_idx = EvidenceIndex()
+        # 3 个 [N] + 2 个数字断言：旧实现会发 3 + 2 = 5 条 issue
+        text = "条件 [1][2][3]：年满 18 周岁，社保满 3 年。"
+        issues = validate_citations(text, empty_idx, numeric_strict=True)
+        # 新实现：只发 1 条聚合 issue
+        assert len(issues) == 1
+        assert issues[0].kind == "citation_without_evidence"
+
+
+# ───────── rewrite_to_no_basis ─────────
+
+
+@pytest.mark.p1
+@pytest.mark.asyncio
+class TestRewriteToNoBasis:
+    async def test_no_auth_token_returns_none(self):
+        result = await rewrite_to_no_basis(
+            original_text="原答复 [1]",
+            citation_count=1,
+            fallback_hint=None,
+            model="claude-sonnet-4-5",
+            base_url=None,
+            auth_token="",
+        )
+        assert result is None
+
+    async def test_zero_citation_count_returns_none(self):
+        """没有 [N] 就没有"需要校正"的事，调用方逻辑错误时 fail-safe。"""
+        result = await rewrite_to_no_basis(
+            original_text="原答复",
+            citation_count=0,
+            fallback_hint=None,
+            model="claude-sonnet-4-5",
+            base_url=None,
+            auth_token="sk-fake",
+        )
+        assert result is None
+
+    async def test_successful_rewrite(self):
+        mock_resp = _mock_httpx_response(
+            200,
+            {"content": [{"type": "text", "text": "本知识库未直接覆盖该问题，请咨询当地住建局。"}]},
+        )
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_client.return_value.__aenter__.return_value.post = AsyncMock(return_value=mock_resp)
+            result = await rewrite_to_no_basis(
+                original_text="申请人须年满 18 周岁 [1]，社保满 3 年 [2]。",
+                citation_count=2,
+                fallback_hint="请咨询当地住建局",
+                model="claude-sonnet-4-5",
+                base_url=None,
+                auth_token="sk-fake",
+            )
+        assert result is not None
+        assert "[1]" not in result
+        assert "[2]" not in result
+
+    async def test_fallback_hint_injected_into_system_prompt(self):
+        """传入 fallback_hint 时必须出现在 system prompt 里 —— 这是 supervisor
+        领域定制（深圳保障房 vs 通用法务）的关键参数."""
+        captured: dict = {}
+
+        async def _capture(url, headers=None, json=None):
+            captured["payload"] = json
+            return _mock_httpx_response(
+                200,
+                {"content": [{"type": "text", "text": "ok"}]},
+            )
+
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_client.return_value.__aenter__.return_value.post = AsyncMock(side_effect=_capture)
+            await rewrite_to_no_basis(
+                original_text="原 [1]",
+                citation_count=1,
+                fallback_hint="请咨询当地住建局",
+                model="claude-sonnet-4-5",
+                base_url=None,
+                auth_token="sk-fake",
+            )
+        sys_prompt = captured["payload"]["system"]
+        assert "请咨询当地住建局" in sys_prompt
+        # claude-code 风格 prompt 必须包含对抗式定位 + 命名 rationalization
+        assert "FAILURE MODES" in sys_prompt
+        assert "Forbidden openings" in sys_prompt
+
+    async def test_non_200_returns_none(self):
+        mock_resp = _mock_httpx_response(500, {}, text="server error")
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_client.return_value.__aenter__.return_value.post = AsyncMock(return_value=mock_resp)
+            result = await rewrite_to_no_basis(
+                original_text="原 [1]",
+                citation_count=1,
+                fallback_hint=None,
+                model="claude-sonnet-4-5",
+                base_url=None,
+                auth_token="sk-fake",
+            )
+        assert result is None
+
+    async def test_exception_returns_none(self):
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_client.return_value.__aenter__.return_value.post = AsyncMock(
+                side_effect=RuntimeError("boom")
+            )
+            result = await rewrite_to_no_basis(
+                original_text="原 [1]",
+                citation_count=1,
+                fallback_hint=None,
                 model="claude-sonnet-4-5",
                 base_url=None,
                 auth_token="sk-fake",

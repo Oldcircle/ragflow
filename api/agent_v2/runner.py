@@ -637,9 +637,32 @@ class AgentRunner:
         - strict 模式：尝试一次 rewrite（HTTP POST /v1/messages），再 validator 复检
           - 复检通过 → yield text_delta（追加校正段）+ ``citation_warning`` level=strict_rewritten
           - 复检仍失败 / rewrite 调用失败 → yield text_delta（降级文案）+ ``citation_warning`` level=strict_failed
+
+        Phase 2.8.2 — citation_without_evidence 走专门分支：
+          - 不论 enforce 模式都先打审计（``agent_v2.citation_phantom``，便于
+            dashboard 聚合 prompt drift 指标，对齐 claude-code-ref 的
+            ``logEvent`` 全程审计模式）
+          - strict 模式走 ``rewrite_to_no_basis`` 重写为无出处免责文案
+            （而非 ``rewrite_answer_strict`` —— 后者要求 evidence ≥ 1 才能
+            修引用，无 evidence 时只会返 None）
         """
         from .validators import validate_citations
-        from .validators.rewrite import rewrite_answer_strict
+        from .validators.rewrite import rewrite_answer_strict, rewrite_to_no_basis
+
+        # Phase 2.8.2 — citation_without_evidence 专用分支
+        phantom_issue = next(
+            (i for i in issues if i.kind == "citation_without_evidence"),
+            None,
+        )
+        if phantom_issue is not None:
+            self._audit_citation_phantom(final_text=final_text)
+            async for e in self._handle_phantom_citations(
+                final_text=final_text,
+                phantom_issue=phantom_issue,
+                rewriter=rewrite_to_no_basis,
+            ):
+                yield e
+            return
 
         if self.citation_enforce_level != "strict":
             yield ev.citation_warning(
@@ -692,6 +715,87 @@ class AgentRunner:
             level="strict_failed",
         )
 
+    # ──────────────────  Phase 2.8.2 — phantom citations  ──────────────────
+
+    def _audit_citation_phantom(self, *, final_text: str) -> None:
+        """记录"无证据却带 [N]"事件到 access_audit_log，便于运维 dashboard。
+
+        参照 claude-code-ref 在每个关键决策点都 ``logEvent`` 的模式。审计写入
+        失败绝不阻塞业务流程（``AuditLogService.log`` 自身已 try/except 兜底）。
+        """
+        try:
+            from api.db.services.audit_log_service import AuditLogService
+
+            AuditLogService.log(
+                user_id=self.user_id,
+                tenant_id=self.tenant_id or "",
+                action="agent_v2.citation_phantom",
+                resource_type="agent_v2_session",
+                resource_id=self.session_id,
+                result="deny",  # deny = 校验未通过
+                reason="answer_cited_without_retrieval",
+                metadata={
+                    "answer_chars": len(final_text or ""),
+                    "model": self.model.model if self.model else None,
+                },
+            )
+        except Exception:
+            logger.exception("citation_phantom audit log failed")
+
+    async def _handle_phantom_citations(
+        self,
+        *,
+        final_text: str,
+        phantom_issue,
+        rewriter,
+    ) -> AsyncIterator[ev.Event]:
+        """处理 ``citation_without_evidence`` 单一 issue 的事件序列。
+
+        - warn 模式：发一条 ``citation_warning`` level=warn，**不**重写。
+          前端按新 kind 渲染（红色"未检索却带引用"标签）。
+        - strict 模式：调 ``rewrite_to_no_basis`` 把答复降级为无出处免责
+          文案，**追加**到原答复后（而非替换），让用户能对比看到原始
+          幻觉版 + 校正版。
+
+        Args:
+            rewriter: ``rewrite_to_no_basis`` 函数；通过参数注入便于测试 mock。
+        """
+        issues_dict = [phantom_issue.to_dict()]
+
+        if self.citation_enforce_level != "strict":
+            yield ev.citation_warning(issues=issues_dict, level="warn")
+            return
+
+        # strict：尝试 no-basis 重写
+        rewritten = await rewriter(
+            original_text=final_text,
+            citation_count=_count_citations(final_text),
+            fallback_hint=None,  # 未来可从 supervisor 配置读
+            model=self.model.model,
+            base_url=self.model.base_url,
+            auth_token=self.model.auth_token or "",
+        )
+
+        if rewritten:
+            banner = (
+                "\n\n---\n"
+                "**🛡️ 校正答复（strict 模式：检测到无检索却带引用，已自动改写"
+                "为免责声明）**\n\n"
+            )
+            yield ev.text_delta(banner + rewritten + "\n")
+            yield ev.citation_warning(issues=issues_dict, level="strict_rewritten")
+            return
+
+        # 重写失败：硬编码 fallback
+        fallback = (
+            "\n\n---\n"
+            "**⚠️ 系统提示**：本次答复带有 [N] 引用，但实际并未从知识库检索到"
+            "任何片段（strict 模式自动校验）。前述内容**未经知识库核实**，"
+            "建议以官方政策原文或向相应部门咨询为准。\n"
+        )
+        yield ev.text_delta(fallback)
+        yield ev.citation_warning(issues=issues_dict, level="strict_failed")
+
     @staticmethod
     def _extract_tool_result_text(block: ToolResultBlock) -> str | dict | None:
         """从 ToolResultBlock 中提取文本/结构化内容。"""
@@ -709,6 +813,19 @@ class AgentRunner:
                     parts.append(str(p))
             return "\n".join(parts)
         return str(content)
+
+
+def _count_citations(text: str) -> int:
+    """Count [N] markers in ``text`` — used to brief ``rewrite_to_no_basis``.
+
+    Lightweight helper to avoid pulling :class:`CitationExtractor` into the
+    runner module just for one int.
+    """
+    if not text:
+        return 0
+    from .validators.citation import CitationExtractor
+
+    return len(CitationExtractor.extract_citations(text))
 
 
 _TOOL_CALL_ARG_CHARS = 180
