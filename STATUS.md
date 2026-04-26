@@ -5,6 +5,99 @@
 
 ---
 
+## 最近更新：2026-04-26（Phase 2.8.2 — citation_without_evidence harness + spawn_subagent 子代理可见性）
+
+**触发**：用户实测踩坑两条 ——
+1. supervisor 没调 rag_* 工具时仍带 [N] 引用（凭训练知识/历史答题，给 [N] 涂上"权威感"）
+2. 模型自述"子代理共享我的工具集"——supervisor 不知道每个 subagent 的真实工具白名单
+
+参照 `~/Opensource/vendor/claude-code-ref/` 的几个设计模式做：
+
+### Modify A — spawn_subagent 注入子代理工具清单（claude-code 的 `formatAgentLine` 模式）
+
+`api/agent_v2/registry.py`：新增 `_format_subagent_line()` + `_build_subagent_listing()`，
+`_decorate_for_mcp` 在 `tool.name == SPAWN_SUBAGENT` 时把 listing 拼到 description
+末尾（带 `_AGENT_LISTING_MARKER` 哨兵保证幂等）。supervisor 在工具描述里直接看到：
+
+```
+Available subagent types and the tools they have access to:
+- sub_archivist: <whenToUse> (Tools: doc_tag, doc_rename, ...)
+- sub_librarian: ... (Tools: kb_stats, kb_audit, ..., doc_create_note, ...)
+- sub_policy_researcher: ... (Tools: rag_retrieve, rag_read_doc)
+- sub_evidence_checker: ... (Tools: rag_retrieve, rag_read_doc)
+```
+
+### Modify B — citation_without_evidence 校验规则 + 专用重写路径
+
+`api/agent_v2/validators/citation.py`：
+- `CitationIssueKind` Literal 加 `citation_without_evidence`
+- `validate_citations` 新增**短路前置规则**：cites 非空 + index 为空 → 聚合一条
+  issue 立即返回，不再跑 missing_chunk / number_unsupported / no_citation_for_numeric
+  （它们都是同一根因的 N+M 条噪音）
+- 设计参照 verificationAgent.ts 的 distinct-VERDICT-per-distinct-cause 模式
+
+`api/agent_v2/validators/rewrite.py`：
+- 新增 `rewrite_to_no_basis()` 函数，与 `rewrite_answer_strict` 互斥（前者要 evidence==0
+  时把答复降级为免责声明，后者要 evidence≥1 时把引用修对）—— 不重载一个函数吃两种状态
+- system prompt 用 claude-code-ref/verificationAgent.ts 的对抗式风格：
+  `Your job is not to polish — it's to STRIP` / `FAILURE MODES YOU WILL REACH FOR`
+  列 4 条 LLM 真实会用的"理性化跳过"借口逐条反驳 / `HARD RULES` A-E /
+  `Forbidden openings` 禁掉道歉式开场 / `OUTPUT` 数字化字数锚点
+
+`api/agent_v2/runner.py`：
+- `_handle_citation_issues` 顶部加 phantom-issue 分支，命中走 `_handle_phantom_citations`
+  专用通路（warn / strict 各自分支），不走通用 strict rewrite
+- `_audit_citation_phantom` 写 `access_audit_log(action=agent_v2.citation_phantom,
+  result=deny)`，便于运维 dashboard 聚合"% turn 无检索却带引用"指标
+- 新增模块级 `_count_citations` helper
+
+**前端**：`web/src/pages/agent-chat/hooks/use-agent-stream.ts` 的 `CitationIssueKind`
+union + `message-list.tsx::issueKindLabel` switch + `web/src/locales/{zh,en}.ts` 各
+新增 `citationKindPhantom` —— 三处一并加（claude-code 的 single-source-of-truth 纪律）。
+
+### 测试
+
+- 新增 `TestCitationWithoutEvidence` (4) + `TestRewriteToNoBasis` (6) +
+  `_format_subagent_line` / `_build_subagent_listing` / spawn_subagent description
+  注入 (4) — 共 14 case
+- **后端**：625 passed / 8 skipped（v1.0.1 → 615 → 625）
+- **前端**：tsc 在 agent-chat/ 内 0 错；ruff clean
+
+### 下一步入口
+
+1. 真机 smoke：故意问知识库范围外问题，观察是否：
+   (a) supervisor 不再带 [N]（prompt 加固）
+   (b) 若仍带 [N]，warn 模式前端出"未检索却带引用"红色标签 + audit log 多一条
+   (c) strict 模式自动重写为免责文案
+2. 30 天后看 `access_audit_log WHERE action='agent_v2.citation_phantom'` 命中率，
+   决定是否把默认 `citation_enforce_level` 升到 strict
+3. v0.15 候选：runtime system_prompt 求值（让 pending_plan_section / kb_scope_section
+   / tool_names 真起作用、enabledTools 改后 cached prompt 重渲）
+
+---
+
+## 最近更新：2026-04-26（前端修复 — 右侧工具调用边栏乱序）
+
+**触发**：用户实测反馈 agent 页面右侧"工具调用"列表顺序乱。
+
+**根因**：`web/src/pages/agent-chat/components/tool-calls-sidebar.tsx` 旧实现
+`[...streamingToolCalls, ...historyToolCalls]` + `Set` 首位保留，把当前轮调用
+强行顶到列表最前，多轮会话时上面是当前轮 #1/#2/#3、下面才接上一轮的 #1/#2/#3。
+后端 `agent_v2_service.AgentV2ToolCallService.list_by_session`（service.py:450）
+本身按 `start_time asc` 已排好，不是后端的锅。
+
+**修复**：改用 Map 合并，`history` 覆盖同 id 的 `streaming`（history 是 canonical
+真值 + 服务端时钟一致），用 `...(existing ?? {})` 保留 streaming 上
+`subagent_start/end` 注入的内联 trace（history 没有这字段），最后按 `startTs`
+升序排，与左侧消息流"老→新 自上而下"对齐。
+
+**验证**：`npx tsc --noEmit` 在 `agent-chat/` 内 0 错。
+
+**下一步入口**：真机 smoke —— 同一 session 连发 2 轮带工具的问题，确认右侧
+编号 #1→#N 严格按时间从上到下递增、跨轮无穿插。
+
+---
+
 ## 最近更新：2026-04-25（Phase 2.8.1 — Session 可编辑 + kb_create 自动入会话作用域）
 
 **触发**：用户实测踩坑——"聊了一会让 agent 新建 KB，发现新 KB 不能被检索"。
